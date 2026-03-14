@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+*.db
+*.db-journal
+.env
+config.yaml
+.DS_Store
+*.log
+coverage/
+.vite/

@@ -1,0 +1,180 @@
+const BASE_URL = '/admin';
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: { message: res.statusText } }));
+    throw new Error(error.error?.message ?? `HTTP ${res.status}`);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+// Stats
+export function fetchStats() {
+  return request<{
+    overview: {
+      totalRequests: number;
+      successRate: string;
+      avgLatencyMs: number;
+      totalTokens: number;
+    };
+    byProvider: Array<{ provider: string; count: number; successCount: number; avgLatencyMs: number }>;
+    byModel: Array<{ modelAlias: string; provider: string; count: number }>;
+  }>('/stats');
+}
+
+// Logs
+export function fetchLogs(params?: { limit?: number; offset?: number }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  const qs = query.toString();
+  return request<{
+    data: Array<{
+      id: string;
+      requestId: string;
+      modelAlias: string;
+      provider: string;
+      actualModel: string;
+      status: string;
+      latencyMs: number;
+      ttfbMs: number | null;
+      isStream: boolean;
+      totalTokens: number | null;
+      errorMessage: string | null;
+      createdAt: string;
+    }>;
+    pagination: { limit: number; offset: number };
+  }>(`/logs${qs ? `?${qs}` : ''}`);
+}
+
+// Model Mappings
+export interface ModelMapping {
+  id: string;
+  alias: string;
+  provider: string;
+  actualModel: string;
+  displayName: string | null;
+  priority: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function fetchModelMappings() {
+  return request<ModelMapping[]>('/model-mappings');
+}
+
+export function createModelMapping(data: {
+  alias: string;
+  provider: string;
+  actual_model: string;
+  display_name?: string;
+  priority?: number;
+}) {
+  return request<ModelMapping>('/model-mappings', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateModelMapping(id: string, data: Partial<{
+  alias: string;
+  provider: string;
+  actual_model: string;
+  display_name: string;
+  priority: number;
+  enabled: boolean;
+}>) {
+  return request<ModelMapping>(`/model-mappings/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteModelMapping(id: string) {
+  return request<void>(`/model-mappings/${id}`, { method: 'DELETE' });
+}
+
+// API Keys
+export interface ApiKey {
+  id: string;
+  keyPrefix: string;
+  name: string;
+  enabled: boolean;
+  rateLimitRpm: number | null;
+  rateLimitRpd: number | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+}
+
+export function fetchApiKeys() {
+  return request<ApiKey[]>('/api-keys');
+}
+
+export function createApiKey(data: { name: string; rate_limit_rpm?: number; rate_limit_rpd?: number }) {
+  return request<{ id: string; key: string; key_prefix: string; name: string; message: string }>('/api-keys', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateApiKey(id: string, data: Partial<{ name: string; enabled: boolean; rate_limit_rpm: number | null; rate_limit_rpd: number | null }>) {
+  return request<ApiKey>(`/api-keys/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteApiKey(id: string) {
+  return request<void>(`/api-keys/${id}`, { method: 'DELETE' });
+}
+
+// Providers
+export interface ProviderInfo {
+  name: string;
+  status: string;
+  lastCheckAt: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  queue: { pending: number; size: number; concurrency: number } | null;
+}
+
+export function fetchProviders() {
+  return request<ProviderInfo[]>('/providers');
+}
+
+export function triggerHealthCheck(name: string) {
+  return request<{ provider: string; status: string }>(`/providers/${name}/health-check`, {
+    method: 'POST',
+  });
+}
+
+// Test Model
+export interface TestModelResult {
+  success: boolean;
+  provider: string;
+  model: string;
+  response?: string;
+  error?: string;
+  latencyMs: number;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+}
+
+export function testModel(provider: string, actual_model: string, signal?: AbortSignal) {
+  return request<TestModelResult>('/test-model', {
+    method: 'POST',
+    body: JSON.stringify({ provider, actual_model }),
+    signal,
+  });
+}

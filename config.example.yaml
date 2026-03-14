@@ -1,0 +1,92 @@
+server:
+  port: 8300
+  host: "127.0.0.1"
+  cors:
+    origins: ["http://localhost:5300"]
+
+dashboard:
+  port: 5300
+  host: "127.0.0.1"
+
+database:
+  path: "./data/cliproxy.db"
+
+auth:
+  enabled: true
+  admin_token: "${ADMIN_TOKEN}"
+  initial_keys:
+    - name: "default"
+      key: "${PROXY_API_KEY}"
+
+providers:
+  claude:
+    enabled: true
+    cli_path: "claude"
+    default_model: "claude-sonnet-4-6"
+    max_concurrent: 2
+    timeout_ms: 300000
+    extra_args:
+      - "--no-session-persistence"
+
+  codex:
+    enabled: true
+    cli_path: "codex"
+    default_model: "gpt-5.4"
+    max_concurrent: 2
+    timeout_ms: 300000
+    extra_args:
+      - "--skip-git-repo-check"
+
+  gemini:
+    enabled: true
+    cli_path: "gemini"
+    default_model: "gemini-2.5-pro"
+    max_concurrent: 2
+    timeout_ms: 300000
+    extra_args: []
+
+rate_limits:
+  global:
+    rpm: 60
+    rpd: 1000
+  per_provider:
+    claude:
+      rpm: 20
+    codex:
+      rpm: 20
+    gemini:
+      rpm: 20
+
+cache:
+  enabled: true
+  ttl_seconds: 3600
+  max_entries: 1000
+
+model_mappings:
+  # Claude models
+  - alias: "claude-opus"
+    provider: "claude"
+    actual_model: "claude-opus-4-6"
+  - alias: "claude-sonnet"
+    provider: "claude"
+    actual_model: "claude-sonnet-4-6"
+  - alias: "claude-haiku"
+    provider: "claude"
+    actual_model: "claude-haiku-4-5-20251001"
+  # Codex/OpenAI models
+  - alias: "gpt-4"
+    provider: "codex"
+    actual_model: "gpt-5.4"
+  - alias: "gpt-4o"
+    provider: "codex"
+    actual_model: "gpt-5.4"
+  - alias: "o4-mini"
+    provider: "codex"
+    actual_model: "o4-mini"
+  # Gemini models
+  - alias: "gemini-pro"
+    provider: "gemini"
+    actual_model: "gemini-2.5-pro"
+  - alias: "gemini-flash"
+    provider: "gemini"
+    actual_model: "gemini-2.5-flash"
