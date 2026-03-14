@@ -18,6 +18,54 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// Dashboard (통합 데이터)
+export interface DashboardData {
+  overview: {
+    totalRequests: number;
+    successCount: number;
+    errorCount: number;
+    timeoutCount: number;
+    successRate: number;
+    avgLatencyMs: number;
+    totalTokens: number;
+    streamCount: number;
+  };
+  today: {
+    count: number;
+    successCount: number;
+    avgLatencyMs: number;
+  };
+  apiKeys: { total: number; active: number };
+  modelMappings: { total: number; active: number };
+  providers: Array<{
+    name: string;
+    status: string;
+    lastCheckAt: string | null;
+    consecutiveFailures: number;
+    queue: { pending: number; size: number; concurrency: number } | null;
+  }>;
+  cache: { totalEntries: number; activeEntries: number };
+  rateLimits: { global: { rpm: number; rpd: number }; perProvider: Record<string, { rpm: number }> };
+  providerStats: Array<{ provider: string; count: number; successCount: number; avgLatencyMs: number; totalTokens: number }>;
+  popularModels: Array<{ modelAlias: string; provider: string; count: number; avgLatencyMs: number }>;
+  dailyTrend: Array<{ date: string; count: number; successCount: number; errorCount: number }>;
+  recentRequests: Array<{
+    id: string;
+    modelAlias: string;
+    provider: string;
+    actualModel: string;
+    status: string;
+    latencyMs: number;
+    totalTokens: number | null;
+    isStream: boolean;
+    createdAt: string;
+  }>;
+}
+
+export function fetchDashboard() {
+  return request<DashboardData>('/dashboard');
+}
+
 // Stats
 export function fetchStats() {
   return request<{
@@ -176,5 +224,26 @@ export function testModel(provider: string, actual_model: string, signal?: Abort
     method: 'POST',
     body: JSON.stringify({ provider, actual_model }),
     signal,
+  });
+}
+
+// Rate Limits
+export interface RateLimitsConfig {
+  global: { rpm: number; rpd: number };
+  perProvider: {
+    claude?: { rpm: number };
+    codex?: { rpm: number };
+    gemini?: { rpm: number };
+  };
+}
+
+export function fetchRateLimits() {
+  return request<RateLimitsConfig>('/rate-limits');
+}
+
+export function updateRateLimits(config: RateLimitsConfig) {
+  return request<{ success: boolean; config: RateLimitsConfig }>('/rate-limits', {
+    method: 'PUT',
+    body: JSON.stringify(config),
   });
 }

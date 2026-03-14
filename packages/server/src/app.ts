@@ -15,6 +15,8 @@ import { registerApiKeysRoutes } from './routes/admin/api-keys.js';
 import { registerStatsRoutes } from './routes/admin/stats.js';
 import { registerProvidersRoutes } from './routes/admin/providers.js';
 import { registerTestModelRoute } from './routes/admin/test-model.js';
+import { registerRateLimitsRoutes, loadRateLimitsFromDb } from './routes/admin/rate-limits.js';
+import { registerDashboardRoute } from './routes/admin/dashboard.js';
 import { seedDatabase } from './db/seed.js';
 
 export async function createApp(config: AppConfig) {
@@ -27,10 +29,13 @@ export async function createApp(config: AppConfig) {
   // Provider 레지스트리
   const registry = createProviderRegistry(config.providers);
 
+  // DB에서 저장된 Rate Limits 로드 (없으면 config.yaml 기본값 사용)
+  const savedRateLimits = await loadRateLimitsFromDb(config.rateLimits);
+
   // 서비스
   const router = new ModelRouter(registry);
   const queueManager = new QueueManager();
-  const rateLimiter = new RateLimiter(config.rateLimits);
+  const rateLimiter = new RateLimiter(savedRateLimits);
   const healthChecker = new HealthChecker(registry);
 
   // Provider별 큐 설정
@@ -101,6 +106,8 @@ export async function createApp(config: AppConfig) {
     queueManager,
   });
   registerTestModelRoute(app, registry);
+  registerRateLimitsRoutes(app, rateLimiter, config.rateLimits);
+  registerDashboardRoute(app, { registry, queueManager });
 
   // 건강 체크 시작
   healthChecker.start(60_000);

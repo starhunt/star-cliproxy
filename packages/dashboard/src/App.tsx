@@ -3,12 +3,16 @@ import DashboardPage from './pages/DashboardPage';
 import ModelMappingsPage from './pages/ModelMappingsPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import LogsPage from './pages/LogsPage';
+import ApiGuidePage from './pages/ApiGuidePage';
+import RateLimitsPage from './pages/RateLimitsPage';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: '~' },
   { to: '/models', label: 'Models', icon: '#' },
   { to: '/keys', label: 'API Keys', icon: '*' },
+  { to: '/rate-limits', label: 'Rate Limits', icon: '%' },
   { to: '/logs', label: 'Logs', icon: '>' },
+  { to: '/guide', label: 'API Guide', icon: '?' },
 ];
 
 export default function App() {
@@ -51,6 +55,8 @@ export default function App() {
           <Route path="/models" element={<ModelMappingsPage />} />
           <Route path="/keys" element={<ApiKeysPage />} />
           <Route path="/logs" element={<LogsPage />} />
+          <Route path="/rate-limits" element={<RateLimitsPage />} />
+          <Route path="/guide" element={<ApiGuidePage />} />
         </Routes>
       </main>
     </div>
