@@ -20,6 +20,11 @@ import { registerDashboardRoute } from './routes/admin/dashboard.js';
 import { seedDatabase } from './db/seed.js';
 
 export async function createApp(config: AppConfig) {
+  // admin token 검증 (빈 토큰으로 시작 방지)
+  if (config.auth.enabled && !config.auth.adminToken) {
+    throw new Error('ADMIN_TOKEN must be set when auth is enabled. Set it in .env or config.yaml.');
+  }
+
   // DB 초기화
   initDatabase(config.database.path);
 
@@ -117,6 +122,7 @@ export async function createApp(config: AppConfig) {
   // 종료 처리
   app.addHook('onClose', () => {
     healthChecker.stop();
+    rateLimiter.destroy();
   });
 
   return app;

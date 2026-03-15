@@ -2,10 +2,11 @@ import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } f
 import { BaseProvider } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { readFile, unlink } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 export class GeminiProvider extends BaseProvider {
   readonly name = 'gemini' as const;
@@ -29,26 +30,35 @@ export class GeminiProvider extends BaseProvider {
     return args;
   }
 
-  // stdout pipe 대신 파일 리다이렉션으로 8KB 버퍼 제한 우회 (비동기)
+  // spawn() + 파일 스트림으로 stdout 캡처 (exec shell injection 방지)
   override async execute(options: ExecuteOptions): Promise<ExecuteResult> {
     const args = this.buildArgs({ ...options, stream: false });
     const tmpFile = join(tmpdir(), `gemini-out-${randomBytes(8).toString('hex')}.json`);
 
     try {
-      // shell 명령으로 실행, stdout을 파일로 리다이렉트 (비동기)
-      const cmd = [this.config.cli_path, ...args.map(a => `'${a.replace(/'/g, "'\\''")}'`)].join(' ');
       await new Promise<void>((resolve, reject) => {
-        exec(`${cmd} > '${tmpFile}' 2>/dev/null`, {
-          timeout: this.config.timeout_ms,
+        const child = spawn(this.config.cli_path, args, {
+          stdio: ['ignore', 'pipe', 'pipe'],
           env: this._cleanEnv(),
           cwd: '/tmp',
-        }, (error) => {
-          if (error && error.killed) {
-            reject(new Error(`gemini CLI timed out after ${this.config.timeout_ms}ms`));
-          } else {
-            // exit code != 0이어도 파일에 부분 출력이 있을 수 있으므로 resolve
-            resolve();
-          }
+        });
+
+        const writeStream = createWriteStream(tmpFile);
+        child.stdout.pipe(writeStream);
+
+        const timeout = setTimeout(() => {
+          child.kill('SIGTERM');
+          reject(new Error(`gemini CLI timed out after ${this.config.timeout_ms}ms`));
+        }, this.config.timeout_ms);
+
+        child.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(new Error(`Failed to spawn gemini CLI: ${err.message}`));
+        });
+
+        child.on('close', () => {
+          clearTimeout(timeout);
+          writeStream.end(() => resolve());
         });
       });
 
@@ -87,15 +97,9 @@ export class GeminiProvider extends BaseProvider {
       return { content: '', usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, finishReason: 'error' };
     }
 
-    // JSON 객체 추출
-    let jsonStr = trimmed;
-    const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[0];
-    }
-
+    // JSON 파싱 우선 시도
     try {
-      const data = JSON.parse(jsonStr);
+      const data = JSON.parse(trimmed);
 
       let content = data.response ?? data.result ?? data.text ?? data.content ?? '';
       // 리터럴 \n 복원
@@ -115,7 +119,24 @@ export class GeminiProvider extends BaseProvider {
         finishReason: 'stop',
       };
     } catch {
-      // JSON 파싱 실패 → "response" 필드를 정규식으로 추출 시도
+      // JSON 실패 → JSON 객체 추출 시도
+      const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const data = JSON.parse(jsonMatch[0]);
+          let content = data.response ?? data.result ?? data.text ?? data.content ?? '';
+          if (typeof content === 'string' && content.includes('\\n')) {
+            content = content.replace(/\\n/g, '\n');
+          }
+          return {
+            content,
+            usage: { promptTokens: 0, completionTokens: Math.ceil(content.length / 4), totalTokens: Math.ceil(content.length / 4) },
+            finishReason: 'stop',
+          };
+        } catch { /* fallback */ }
+      }
+
+      // "response" 필드를 정규식으로 추출
       const responseMatch = trimmed.match(/"response"\s*:\s*"([\s\S]*)$/);
       if (responseMatch) {
         let content = responseMatch[1];
@@ -132,6 +153,7 @@ export class GeminiProvider extends BaseProvider {
           finishReason: 'stop',
         };
       }
+
       // 최종 fallback
       return super.parseNonStreamOutput(stdout);
     }

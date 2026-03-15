@@ -184,25 +184,48 @@ export function registerChatCompletionsRoute(
               temperature: body.temperature,
             });
 
-            for await (const chunk of streamIterator) {
-              if (!ttfbMs) {
-                ttfbMs = Date.now() - startTime;
-              }
+            try {
+              for await (const chunk of streamIterator) {
+                if (!ttfbMs) {
+                  ttfbMs = Date.now() - startTime;
+                }
 
-              const sseData = formatAsSSE(chunk, requestId, body.model);
-              if (sseData) {
-                reply.raw.write(sseData);
-              }
-              if (chunk.type === 'delta' && chunk.content) {
-                totalContent += chunk.content;
-              }
+                const sseData = formatAsSSE(chunk, requestId, body.model);
+                if (sseData) {
+                  reply.raw.write(sseData);
+                }
+                if (chunk.type === 'delta' && chunk.content) {
+                  totalContent += chunk.content;
+                }
 
-              // 응답 크기 제한
-              if (totalContent.length > v.maxResponseLength) {
-                const doneSSE = formatAsSSE({ type: 'done' }, requestId, body.model);
-                if (doneSSE) reply.raw.write(doneSSE);
-                break;
+                // 응답 크기 제한
+                if (totalContent.length > v.maxResponseLength) {
+                  const doneSSE = formatAsSSE({ type: 'done' }, requestId, body.model);
+                  if (doneSSE) reply.raw.write(doneSSE);
+                  break;
               }
+              }
+            } catch (streamErr) {
+              // 헤더 전송 후 에러: 스트림 에러 이벤트 전송 후 종료 (폴백 불가)
+              const errMsg = streamErr instanceof Error ? streamErr.message : 'Stream interrupted';
+              reply.raw.write(`data: ${JSON.stringify({ error: { message: errMsg } })}\n\n`);
+              reply.raw.write('data: [DONE]\n\n');
+              reply.raw.end();
+
+              logRequest({
+                requestId,
+                apiKeyId,
+                modelAlias: body.model,
+                provider: route.provider,
+                actualModel: route.actualModel,
+                status: 'error',
+                statusCode: 200,
+                latencyMs: Date.now() - startTime,
+                isStream: true,
+                errorMessage: errMsg,
+              });
+
+              return;
             }
 
             reply.raw.end();

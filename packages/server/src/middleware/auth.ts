@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { eq, and } from 'drizzle-orm';
 import { getDatabase } from '../db/client.js';
@@ -13,6 +13,16 @@ export function getKeyPrefix(key: string): string {
   return key.substring(0, 12);
 }
 
+// 타이밍 공격 방지 문자열 비교
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a, 'utf-8'), Buffer.from(b, 'utf-8'));
+  } catch {
+    return false;
+  }
+}
+
 export async function authMiddleware(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -20,7 +30,7 @@ export async function authMiddleware(
   const authHeader = request.headers.authorization;
 
   if (!authHeader?.startsWith('Bearer ')) {
-    reply.status(401).send({
+    return reply.status(401).send({
       error: {
         message: 'Missing or invalid Authorization header. Expected: Bearer sk-proxy-xxx',
         type: 'invalid_request_error',
@@ -28,13 +38,12 @@ export async function authMiddleware(
         code: 'invalid_api_key',
       },
     });
-    return;
   }
 
   const apiKey = authHeader.substring(7);
 
   if (!apiKey.startsWith(API_KEY_PREFIX)) {
-    reply.status(401).send({
+    return reply.status(401).send({
       error: {
         message: 'Invalid API key format. Keys must start with "sk-proxy-"',
         type: 'invalid_request_error',
@@ -42,7 +51,6 @@ export async function authMiddleware(
         code: 'invalid_api_key',
       },
     });
-    return;
   }
 
   const db = getDatabase();
@@ -57,7 +65,7 @@ export async function authMiddleware(
   const keyRecord = results[0];
 
   if (!keyRecord) {
-    reply.status(401).send({
+    return reply.status(401).send({
       error: {
         message: 'Invalid API key.',
         type: 'invalid_request_error',
@@ -65,12 +73,11 @@ export async function authMiddleware(
         code: 'invalid_api_key',
       },
     });
-    return;
   }
 
   // 만료 체크
   if (keyRecord.expiresAt && new Date(keyRecord.expiresAt) < new Date()) {
-    reply.status(401).send({
+    return reply.status(401).send({
       error: {
         message: 'API key has expired.',
         type: 'invalid_request_error',
@@ -78,17 +85,16 @@ export async function authMiddleware(
         code: 'invalid_api_key',
       },
     });
-    return;
   }
 
-  // 마지막 사용 시간 업데이트
-  await db
-    .update(apiKeys)
+  // 마지막 사용 시간 업데이트 (fire-and-forget, 성능 최적화)
+  db.update(apiKeys)
     .set({ lastUsedAt: new Date().toISOString() })
-    .where(eq(apiKeys.id, keyRecord.id));
+    .where(eq(apiKeys.id, keyRecord.id))
+    .catch(() => {});
 
   // 요청에 키 정보 첨부
-  (request as FastifyRequest & { apiKeyId?: string; apiKeyRateLimits?: { rpm?: number; rpd?: number } }).apiKeyId = keyRecord.id;
+  (request as FastifyRequest & { apiKeyId?: string }).apiKeyId = keyRecord.id;
   (request as FastifyRequest & { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits = {
     rpm: keyRecord.rateLimitRpm,
     rpd: keyRecord.rateLimitRpd,
@@ -108,8 +114,8 @@ export async function adminAuthMiddleware(
   }
 
   const token = request.headers['x-admin-token'] as string | undefined;
-  if (!token || token !== adminToken) {
-    reply.status(403).send({
+  if (!token || !safeCompare(token, adminToken)) {
+    return reply.status(403).send({
       error: {
         message: 'Forbidden. Admin token required.',
         type: 'invalid_request_error',

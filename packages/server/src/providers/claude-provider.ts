@@ -56,7 +56,7 @@ export class ClaudeProvider extends BaseProvider {
           completionTokens: outputTokens,
           totalTokens: inputTokens + outputTokens + cacheRead + cacheCreate,
         },
-        finishReason: data.stop_reason === 'end_turn' ? 'stop' : 'stop',
+        finishReason: data.stop_reason === 'max_tokens' ? 'length' : 'stop',
       };
     } catch {
       // JSON 파싱 실패 시 텍스트로 처리

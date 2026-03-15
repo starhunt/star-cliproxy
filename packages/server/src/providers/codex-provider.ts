@@ -18,6 +18,7 @@ export class CodexProvider extends BaseProvider {
       'exec',
       ...this.config.extra_args,
       '-m', model,
+      '--', // 옵션 종료 마커 (prompt가 CLI 플래그로 해석되지 않도록)
       prompt,
     ];
 
