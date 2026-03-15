@@ -17,6 +17,7 @@ import { registerProvidersRoutes } from './routes/admin/providers.js';
 import { registerTestModelRoute } from './routes/admin/test-model.js';
 import { registerRateLimitsRoutes, loadRateLimitsFromDb } from './routes/admin/rate-limits.js';
 import { registerDashboardRoute } from './routes/admin/dashboard.js';
+import { ActiveRequestTracker } from './services/active-requests.js';
 import { seedDatabase } from './db/seed.js';
 
 export async function createApp(config: AppConfig) {
@@ -42,6 +43,7 @@ export async function createApp(config: AppConfig) {
   const queueManager = new QueueManager();
   const rateLimiter = new RateLimiter(savedRateLimits);
   const healthChecker = new HealthChecker(registry);
+  const activeRequests = new ActiveRequestTracker();
 
   // Provider별 큐 설정
   for (const [name, providerConfig] of Object.entries(config.providers)) {
@@ -100,6 +102,7 @@ export async function createApp(config: AppConfig) {
     registry,
     healthChecker,
     validation: config.validation,
+    activeRequests,
   });
   registerModelsRoute(app);
 
@@ -114,7 +117,15 @@ export async function createApp(config: AppConfig) {
   });
   registerTestModelRoute(app, registry);
   registerRateLimitsRoutes(app, rateLimiter, config.rateLimits);
-  registerDashboardRoute(app, { registry, queueManager });
+  registerDashboardRoute(app, { registry, queueManager, activeRequests });
+
+  // 활성 요청 API
+  app.get('/admin/active-requests', async (_request, reply) => {
+    return reply.send({
+      count: activeRequests.count(),
+      requests: activeRequests.getAll(),
+    });
+  });
 
   // 건강 체크 시작
   healthChecker.start(60_000);

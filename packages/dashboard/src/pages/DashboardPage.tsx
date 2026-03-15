@@ -35,9 +35,23 @@ export default function DashboardPage() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
-  }, []);
+    // 활성 요청이 있으면 5초, 없으면 30초 간격
+    const getInterval = () => (data?.activeRequests?.count ?? 0) > 0 ? 5_000 : 30_000;
+    let timer = setInterval(load, getInterval());
+
+    const adjustInterval = () => {
+      clearInterval(timer);
+      timer = setInterval(load, getInterval());
+    };
+
+    // 데이터 변경 시 간격 조정
+    const checkInterval = setInterval(adjustInterval, 10_000);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(checkInterval);
+    };
+  }, [data?.activeRequests?.count]);
 
   if (error) {
     return (
@@ -53,7 +67,7 @@ export default function DashboardPage() {
     return <div className="text-gray-500 text-center py-20">Loading...</div>;
   }
 
-  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, hourlyTrend, recentRequests, recentErrors } = data;
+  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, hourlyTrend, recentRequests, recentErrors, activeRequests } = data;
 
   return (
     <div className="space-y-6">
@@ -102,6 +116,39 @@ export default function DashboardPage() {
           accent="amber"
         />
       </div>
+
+      {/* Active Requests */}
+      {activeRequests.count > 0 && (
+        <div className="bg-gray-900 border border-blue-500/30 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
+            </span>
+            <h3 className="text-sm font-semibold text-blue-400">
+              Processing {activeRequests.count} request{activeRequests.count > 1 ? 's' : ''}
+            </h3>
+          </div>
+          <div className="space-y-1.5">
+            {activeRequests.requests.map((req) => (
+              <div key={req.requestId} className="flex items-center justify-between py-2 px-3 bg-blue-500/5 border border-blue-500/10 rounded-lg text-xs">
+                <div className="flex items-center gap-3">
+                  <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-gray-300 font-mono">{req.modelAlias}</span>
+                  <span className="text-gray-500">{req.provider}</span>
+                  <span className="text-gray-600 font-mono">{req.actualModel}</span>
+                  {req.isStream && <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs">SSE</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`font-mono ${req.elapsedMs > 30000 ? 'text-red-400' : req.elapsedMs > 10000 ? 'text-yellow-400' : 'text-blue-400'}`}>
+                    {req.elapsedMs >= 1000 ? `${(req.elapsedMs / 1000).toFixed(1)}s` : `${req.elapsedMs}ms`}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Middle Row: Hourly Trend + System Status */}
       <div className="grid grid-cols-5 gap-4">

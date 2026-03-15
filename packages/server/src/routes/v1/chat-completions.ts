@@ -13,6 +13,7 @@ import type { QueueManager } from '../../services/queue.js';
 import type { RateLimiter } from '../../middleware/rate-limiter.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import type { HealthChecker } from '../../services/health-checker.js';
+import type { ActiveRequestTracker } from '../../services/active-requests.js';
 
 interface ChatCompletionDeps {
   router: ModelRouter;
@@ -21,6 +22,7 @@ interface ChatCompletionDeps {
   registry: ProviderRegistry;
   healthChecker: HealthChecker;
   validation: ValidationConfig;
+  activeRequests: ActiveRequestTracker;
 }
 
 // null byte 제거 (CLI 인젝션 방지)
@@ -155,6 +157,16 @@ export function registerChatCompletionsRoute(
           continue;
         }
 
+        // 활성 요청 추적 시작
+        deps.activeRequests.start({
+          requestId,
+          modelAlias: body.model,
+          provider: route.provider,
+          actualModel: route.actualModel,
+          isStream: body.stream ?? false,
+          startedAt: startTime,
+        });
+
         try {
           if (body.stream) {
             // 스트리밍 응답
@@ -225,6 +237,7 @@ export function registerChatCompletionsRoute(
                 errorMessage: errMsg,
               });
 
+              deps.activeRequests.finish(requestId);
               return;
             }
 
@@ -244,6 +257,7 @@ export function registerChatCompletionsRoute(
               isStream: true,
             });
 
+            deps.activeRequests.finish(requestId);
             return;
           }
 
@@ -302,6 +316,7 @@ export function registerChatCompletionsRoute(
             isStream: false,
           });
 
+          deps.activeRequests.finish(requestId);
           return reply.status(200).send(response);
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
@@ -319,6 +334,7 @@ export function registerChatCompletionsRoute(
             errorMessage: lastError.message,
           });
 
+          deps.activeRequests.finish(requestId);
           continue;
         }
       }

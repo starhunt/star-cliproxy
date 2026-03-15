@@ -4,10 +4,12 @@ import { getDatabase } from '../../db/client.js';
 import { requestLogs, apiKeys, modelMappings, providerHealth, responseCache, settings } from '../../db/schema.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import type { QueueManager } from '../../services/queue.js';
+import type { ActiveRequestTracker } from '../../services/active-requests.js';
 
 interface DashboardDeps {
   registry: ProviderRegistry;
   queueManager: QueueManager;
+  activeRequests: ActiveRequestTracker;
 }
 
 export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps): void {
@@ -187,6 +189,10 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       hourlyTrend,
       recentRequests,
       recentErrors,
+      activeRequests: {
+        count: deps.activeRequests.count(),
+        requests: deps.activeRequests.getAll(),
+      },
     });
   });
 }

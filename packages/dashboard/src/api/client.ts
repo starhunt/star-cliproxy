@@ -70,6 +70,18 @@ export interface DashboardData {
     latencyMs: number;
     createdAt: string;
   }>;
+  activeRequests: {
+    count: number;
+    requests: Array<{
+      requestId: string;
+      modelAlias: string;
+      provider: string;
+      actualModel: string;
+      isStream: boolean;
+      startedAt: number;
+      elapsedMs: number;
+    }>;
+  };
 }
 
 export function fetchDashboard() {
