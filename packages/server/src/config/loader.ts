@@ -12,6 +12,11 @@ import {
   DEFAULT_CACHE_MAX_ENTRIES,
   DEFAULT_RATE_LIMIT_RPM,
   DEFAULT_RATE_LIMIT_RPD,
+  DEFAULT_MAX_MESSAGE_COUNT,
+  DEFAULT_MAX_MESSAGE_LENGTH,
+  DEFAULT_MAX_PROMPT_LENGTH,
+  DEFAULT_MAX_RESPONSE_LENGTH,
+  DEFAULT_BODY_LIMIT_BYTES,
 } from '@star-cliproxy/shared';
 
 // 환경변수 치환: "${VAR_NAME}" → process.env.VAR_NAME
@@ -50,6 +55,7 @@ export function loadConfig(configPath?: string): AppConfig {
   const providers = rawConfig.providers as Record<string, Record<string, unknown>> | undefined;
   const rateLimits = rawConfig.rate_limits as Record<string, unknown> | undefined;
   const cache = rawConfig.cache as Record<string, unknown> | undefined;
+  const validation = rawConfig.validation as Record<string, unknown> | undefined;
   const modelMappings = rawConfig.model_mappings as Array<Record<string, string>> | undefined;
 
   const corsObj = server?.cors as Record<string, unknown> | undefined;
@@ -102,6 +108,13 @@ export function loadConfig(configPath?: string): AppConfig {
       enabled: (cache?.enabled as boolean) ?? true,
       ttlSeconds: (cache?.ttl_seconds as number) ?? DEFAULT_CACHE_TTL_SECONDS,
       maxEntries: (cache?.max_entries as number) ?? DEFAULT_CACHE_MAX_ENTRIES,
+    },
+    validation: {
+      maxMessageCount: (validation?.max_message_count as number) ?? DEFAULT_MAX_MESSAGE_COUNT,
+      maxMessageLength: (validation?.max_message_length as number) ?? DEFAULT_MAX_MESSAGE_LENGTH,
+      maxPromptLength: (validation?.max_prompt_length as number) ?? DEFAULT_MAX_PROMPT_LENGTH,
+      maxResponseLength: (validation?.max_response_length as number) ?? DEFAULT_MAX_RESPONSE_LENGTH,
+      bodyLimitBytes: (validation?.body_limit_bytes as number) ?? DEFAULT_BODY_LIMIT_BYTES,
     },
     modelMappings: modelMappings?.map((m) => ({
       alias: m.alias,

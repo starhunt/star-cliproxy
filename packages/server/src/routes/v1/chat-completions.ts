@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
-import { createHash } from 'node:crypto';
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ProviderName,
+  ValidationConfig,
 } from '@star-cliproxy/shared';
+import { ALLOWED_ROLES } from '@star-cliproxy/shared';
 import { createRequestId, formatAsSSE } from '../../utils/stream-transformer.js';
-import { logRequest, type LogEntry } from '../../middleware/request-logger.js';
+import { logRequest } from '../../middleware/request-logger.js';
 import type { ModelRouter } from '../../services/router.js';
 import type { QueueManager } from '../../services/queue.js';
 import type { RateLimiter } from '../../middleware/rate-limiter.js';
@@ -19,12 +20,31 @@ interface ChatCompletionDeps {
   rateLimiter: RateLimiter;
   registry: ProviderRegistry;
   healthChecker: HealthChecker;
+  validation: ValidationConfig;
+}
+
+// null byte 제거 (CLI 인젝션 방지)
+function sanitizeString(str: string): string {
+  return str.replace(/\x00/g, '');
+}
+
+function makeValidationError(message: string, param?: string) {
+  return {
+    error: {
+      message,
+      type: 'invalid_request_error',
+      param: param ?? null,
+      code: 'invalid_request',
+    },
+  };
 }
 
 export function registerChatCompletionsRoute(
   app: FastifyInstance,
   deps: ChatCompletionDeps,
 ): void {
+  const v = deps.validation;
+
   app.post<{ Body: ChatCompletionRequest }>(
     '/v1/chat/completions',
     async (request, reply) => {
@@ -32,19 +52,59 @@ export function registerChatCompletionsRoute(
       const requestId = createRequestId();
       const body = request.body;
 
-      // 요청 검증
+      // === 입력 검증 ===
+
+      // 기본 필드 존재 확인
       if (!body.model || !body.messages?.length) {
-        return reply.status(400).send({
-          error: {
-            message: 'model and messages are required.',
-            type: 'invalid_request_error',
-            param: null,
-            code: 'invalid_request',
-          },
-        });
+        return reply.status(400).send(makeValidationError('model and messages are required.'));
       }
 
-      // 모델 라우팅 (폴백 포함)
+      // messages가 배열인지 확인
+      if (!Array.isArray(body.messages)) {
+        return reply.status(400).send(makeValidationError('messages must be an array.', 'messages'));
+      }
+
+      // 메시지 수 제한
+      if (body.messages.length > v.maxMessageCount) {
+        return reply.status(400).send(makeValidationError(`Too many messages: ${body.messages.length}. Maximum is ${v.maxMessageCount}.`, 'messages'));
+      }
+
+      // 메시지별 검증
+      let totalPromptLength = 0;
+      for (let i = 0; i < body.messages.length; i++) {
+        const msg = body.messages[i];
+
+        // role 화이트리스트 검증
+        if (!ALLOWED_ROLES.includes(msg.role as typeof ALLOWED_ROLES[number])) {
+          return reply.status(400).send(makeValidationError(`Invalid role "${msg.role}" at messages[${i}]. Allowed: ${ALLOWED_ROLES.join(', ')}`, 'messages'));
+        }
+
+        // content 타입 검증
+        if (typeof msg.content !== 'string') {
+          return reply.status(400).send(makeValidationError(`messages[${i}].content must be a string.`, 'messages'));
+        }
+
+        // null byte 제거
+        msg.content = sanitizeString(msg.content);
+
+        // 개별 메시지 길이 제한
+        if (msg.content.length > v.maxMessageLength) {
+          return reply.status(400).send(makeValidationError(`messages[${i}].content too long: ${msg.content.length} chars. Maximum is ${v.maxMessageLength}.`, 'messages'));
+        }
+
+        totalPromptLength += msg.content.length;
+      }
+
+      // 전체 프롬프트 총 길이 제한
+      if (totalPromptLength > v.maxPromptLength) {
+        return reply.status(400).send(makeValidationError(`Total prompt length too long: ${totalPromptLength} chars. Maximum is ${v.maxPromptLength}.`, 'messages'));
+      }
+
+      // model명 sanitize
+      body.model = sanitizeString(body.model);
+
+      // === 라우팅 ===
+
       const routes = await deps.router.resolve(body.model);
       if (routes.length === 0) {
         return reply.status(400).send({
@@ -57,24 +117,20 @@ export function registerChatCompletionsRoute(
         });
       }
 
-      // 요청 정보 추출
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
 
-      // 폴백 루프: priority 순으로 시도
+      // === 폴백 루프 ===
+
       let lastError: Error | null = null;
-      let usedProvider: ProviderName | null = null;
-      let usedModel: string | null = null;
 
       for (const route of routes) {
-        // 건강 체크
         const healthy = await deps.healthChecker.isHealthy(route.provider);
         if (!healthy) {
           lastError = new Error(`Provider ${route.provider} is unhealthy`);
           continue;
         }
 
-        // 레이트 리밋 체크
         const rateResult = deps.rateLimiter.checkAndIncrement(
           apiKeyId ?? 'anonymous',
           route.provider,
@@ -99,9 +155,6 @@ export function registerChatCompletionsRoute(
           continue;
         }
 
-        usedProvider = route.provider;
-        usedModel = route.actualModel;
-
         try {
           if (body.stream) {
             // 스트리밍 응답
@@ -113,7 +166,6 @@ export function registerChatCompletionsRoute(
               ...(routes.indexOf(route) > 0 ? { 'X-Fallback-Provider': route.provider } : {}),
             });
 
-            // 첫 번째 chunk: role
             const roleChunk = formatAsSSE(
               { type: 'delta', content: '' },
               requestId,
@@ -144,11 +196,17 @@ export function registerChatCompletionsRoute(
               if (chunk.type === 'delta' && chunk.content) {
                 totalContent += chunk.content;
               }
+
+              // 응답 크기 제한
+              if (totalContent.length > v.maxResponseLength) {
+                const doneSSE = formatAsSSE({ type: 'done' }, requestId, body.model);
+                if (doneSSE) reply.raw.write(doneSSE);
+                break;
+              }
             }
 
             reply.raw.end();
 
-            // 로그 기록
             logRequest({
               requestId,
               apiKeyId,
@@ -178,6 +236,12 @@ export function registerChatCompletionsRoute(
             }),
           );
 
+          // 응답 크기 제한
+          let content = result.content;
+          if (content.length > v.maxResponseLength) {
+            content = content.substring(0, v.maxResponseLength);
+          }
+
           const response: ChatCompletionResponse = {
             id: requestId,
             object: 'chat.completion',
@@ -185,7 +249,7 @@ export function registerChatCompletionsRoute(
             model: body.model,
             choices: [{
               index: 0,
-              message: { role: 'assistant', content: result.content },
+              message: { role: 'assistant', content },
               finish_reason: result.finishReason === 'error' ? 'stop' : result.finishReason,
             }],
             usage: {
@@ -195,7 +259,6 @@ export function registerChatCompletionsRoute(
             },
           };
 
-          // 폴백 사용 시 헤더 추가
           if (routes.indexOf(route) > 0) {
             reply.header('X-Fallback-Provider', route.provider);
           }
@@ -233,12 +296,10 @@ export function registerChatCompletionsRoute(
             errorMessage: lastError.message,
           });
 
-          // 다음 폴백 시도
           continue;
         }
       }
 
-      // 모든 provider 실패
       return reply.status(502).send({
         error: {
           message: `All providers failed for model "${body.model}". Last error: ${lastError?.message ?? 'unknown'}`,

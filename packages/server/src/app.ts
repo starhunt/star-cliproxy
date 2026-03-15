@@ -47,6 +47,7 @@ export async function createApp(config: AppConfig) {
 
   // Fastify 앱
   const app = Fastify({
+    bodyLimit: config.validation.bodyLimitBytes,
     logger: {
       level: 'info',
       transport: {
@@ -93,6 +94,7 @@ export async function createApp(config: AppConfig) {
     rateLimiter,
     registry,
     healthChecker,
+    validation: config.validation,
   });
   registerModelsRoute(app);
 
