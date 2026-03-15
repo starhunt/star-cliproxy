@@ -53,7 +53,7 @@ export default function DashboardPage() {
     return <div className="text-gray-500 text-center py-20">Loading...</div>;
   }
 
-  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, dailyTrend, recentRequests } = data;
+  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, hourlyTrend, recentRequests, recentErrors } = data;
 
   return (
     <div className="space-y-6">
@@ -103,40 +103,18 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Middle Row: Daily Trend + System Status */}
+      {/* Middle Row: Hourly Trend + System Status */}
       <div className="grid grid-cols-5 gap-4">
-        {/* Daily Trend */}
+        {/* Hourly Request Trend (24h) */}
         <div className="col-span-3 bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">Daily Request Trend</h3>
-          {dailyTrend.length === 0 ? (
-            <div className="h-40 flex items-center justify-center text-gray-600 text-sm">
-              No request data yet
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-400">Hourly Requests (24h)</h3>
+            <div className="flex items-center gap-3 text-xs text-gray-600">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-green-500/60 rounded-sm inline-block" /> success</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-red-500/60 rounded-sm inline-block" /> failed</span>
             </div>
-          ) : (
-            <div className="space-y-1">
-              {dailyTrend.map((day) => {
-                const maxCount = Math.max(...dailyTrend.map((d) => d.count), 1);
-                const barWidth = (day.count / maxCount) * 100;
-                const successWidth = (day.successCount / Math.max(day.count, 1)) * barWidth;
-                return (
-                  <div key={day.date} className="flex items-center gap-3 text-xs">
-                    <span className="w-20 text-gray-500 font-mono">{day.date.slice(5)}</span>
-                    <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden relative">
-                      <div
-                        className="h-full bg-green-500/40 absolute left-0 top-0"
-                        style={{ width: `${successWidth}%` }}
-                      />
-                      <div
-                        className="h-full bg-red-500/40 absolute top-0"
-                        style={{ left: `${successWidth}%`, width: `${barWidth - successWidth}%` }}
-                      />
-                    </div>
-                    <span className="w-10 text-right text-gray-400">{day.count}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          </div>
+          <HourlyChart data={hourlyTrend} />
         </div>
 
         {/* System Status */}
@@ -197,22 +175,29 @@ export default function DashboardPage() {
               No requests yet
             </div>
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {recentRequests.map((req) => (
-                <div key={req.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-800/30 rounded text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600 font-mono w-14">
-                      {new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span className="text-gray-300 font-mono">{req.modelAlias}</span>
-                    <span className="text-gray-600">{req.provider}</span>
+                <div key={req.id} className={`py-1.5 px-3 rounded text-xs ${req.status !== 'success' ? 'bg-red-500/5 border border-red-500/20' : 'bg-gray-800/30'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600 font-mono w-14">
+                        {formatTime(req.createdAt)}
+                      </span>
+                      <span className="text-gray-300 font-mono">{req.modelAlias}</span>
+                      <span className="text-gray-600">{req.provider}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={reqStatusStyle[req.status] ?? 'text-gray-400'}>
+                        {req.status}
+                      </span>
+                      <span className="text-gray-600 w-16 text-right">{req.latencyMs?.toLocaleString()}ms</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={reqStatusStyle[req.status] ?? 'text-gray-400'}>
-                      {req.status}
-                    </span>
-                    <span className="text-gray-600 w-16 text-right">{req.latencyMs?.toLocaleString()}ms</span>
-                  </div>
+                  {req.status !== 'success' && req.errorMessage && (
+                    <div className="mt-1 text-red-400/80 text-xs truncate pl-16" title={req.errorMessage}>
+                      {req.errorMessage}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -268,6 +253,33 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Recent Errors */}
+      {recentErrors.length > 0 && (
+        <div className="bg-gray-900 border border-red-500/20 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-red-400 mb-3">Recent Errors</h3>
+          <div className="space-y-2">
+            {recentErrors.map((err) => (
+              <div key={err.id} className="bg-red-500/5 border border-red-500/10 rounded-lg px-4 py-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600 font-mono">{formatTime(err.createdAt)}</span>
+                    <span className="text-gray-300 font-mono">{err.modelAlias}</span>
+                    <span className="text-gray-600">{err.provider}</span>
+                    <span className={`px-1.5 py-0.5 rounded ${err.status === 'timeout' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {err.status}
+                    </span>
+                  </div>
+                  <span className="text-gray-600">{err.latencyMs?.toLocaleString()}ms</span>
+                </div>
+                {err.errorMessage && (
+                  <p className="text-xs text-red-300/70 mt-1.5 break-all">{err.errorMessage}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -306,6 +318,95 @@ function SummaryCard({
       <div className="text-xs text-gray-500 uppercase tracking-wider">{label}</div>
       <div className={`text-2xl font-bold mt-2 ${valueColors[accent]}`}>{value}</div>
       <div className="text-xs text-gray-600 mt-1">{sub}</div>
+    </div>
+  );
+}
+
+// UTC 문자열 → 로컬 시간 표시 (Invalid Date 방지)
+function formatTime(dateStr: string): string {
+  if (!dateStr || dateStr.includes('datetime')) return '--:--';
+  // SQLite의 "YYYY-MM-DD HH:MM:SS" 형식에 T와 Z 추가
+  const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return '--:--';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// 24시간 시간대별 바 차트
+function HourlyChart({ data }: { data: Array<{ hour: number; count: number; successCount: number; errorCount: number }> }) {
+  const BAR_MAX_HEIGHT = 120; // px
+
+  // 0~23시 전체 슬롯 생성
+  const slots = Array.from({ length: 24 }, (_, i) => {
+    const match = data.find((d) => d.hour === i);
+    return {
+      hour: i,
+      count: match?.count ?? 0,
+      successCount: match?.successCount ?? 0,
+      errorCount: match?.errorCount ?? 0,
+    };
+  });
+
+  const maxCount = Math.max(...slots.map((s) => s.count), 1);
+  const hasData = slots.some((s) => s.count > 0);
+  const totalRequests = slots.reduce((sum, s) => sum + s.count, 0);
+
+  if (!hasData) {
+    return (
+      <div className="h-36 flex items-center justify-center text-gray-600 text-sm">
+        No requests in the last 24 hours
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="text-xs text-gray-600 mb-2 text-right">Total: {totalRequests} requests</div>
+      {/* Bars */}
+      <div className="flex items-end gap-1" style={{ height: `${BAR_MAX_HEIGHT}px` }}>
+        {slots.map((slot) => {
+          const totalPx = Math.round((slot.count / maxCount) * BAR_MAX_HEIGHT);
+          const successPx = Math.round((slot.successCount / Math.max(slot.count, 1)) * totalPx);
+          const errorPx = totalPx - successPx;
+
+          return (
+            <div
+              key={slot.hour}
+              className="flex-1 flex flex-col justify-end relative group cursor-default"
+            >
+              {slot.count > 0 ? (
+                <>
+                  <div
+                    className="w-full bg-blue-500/60 rounded-t-sm"
+                    style={{ height: `${successPx}px` }}
+                  />
+                  {errorPx > 0 && (
+                    <div
+                      className="w-full bg-red-500/60 rounded-b-sm"
+                      style={{ height: `${errorPx}px` }}
+                    />
+                  )}
+                </>
+              ) : (
+                <div className="w-full bg-gray-800/30 rounded-sm" style={{ height: '2px' }} />
+              )}
+              {/* Tooltip */}
+              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 text-gray-300 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                <div>{slot.hour}:00</div>
+                <div>{slot.count} req ({slot.errorCount > 0 ? `${slot.errorCount} err` : 'all ok'})</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Hour labels */}
+      <div className="flex gap-1 mt-1.5 border-t border-gray-800 pt-1">
+        {slots.map((slot) => (
+          <div key={slot.hour} className="flex-1 text-center text-xs text-gray-600">
+            {slot.hour % 3 === 0 ? `${String(slot.hour).padStart(2, '0')}` : ''}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

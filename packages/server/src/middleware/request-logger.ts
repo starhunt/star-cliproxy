@@ -25,6 +25,7 @@ export async function logRequest(entry: LogEntry): Promise<void> {
     const db = getDatabase();
     await db.insert(requestLogs).values({
       id: nanoid(),
+      createdAt: new Date().toISOString(),
       requestId: entry.requestId,
       apiKeyId: entry.apiKeyId,
       modelAlias: entry.modelAlias,

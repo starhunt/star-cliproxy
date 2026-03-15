@@ -103,7 +103,7 @@ export default function ApiKeysPage() {
                   {k.rateLimitRpm ? `${k.rateLimitRpm} RPM` : 'Global'}
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">
-                  {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString() : 'Never'}
+                  {k.lastUsedAt ? formatKeyDate(k.lastUsedAt) : 'Never'}
                 </td>
                 <td className="px-4 py-3">
                   <button
@@ -113,8 +113,8 @@ export default function ApiKeysPage() {
                     {k.enabled ? 'Active' : 'Disabled'}
                   </button>
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => handleDelete(k.id)} className="text-gray-400 hover:text-red-400 text-xs">
+                <td className="px-4 py-3 text-right space-x-2">
+                  <button onClick={() => handleDelete(k.id)} className="px-2 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded text-xs transition-colors">
                     Revoke
                   </button>
                 </td>
@@ -128,4 +128,12 @@ export default function ApiKeysPage() {
       </div>
     </div>
   );
+}
+
+function formatKeyDate(dateStr: string): string {
+  if (!dateStr || dateStr.includes('datetime')) return '-';
+  const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleString();
 }

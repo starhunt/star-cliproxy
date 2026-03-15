@@ -26,9 +26,7 @@ export class ClaudeProvider extends BaseProvider {
       args.push('--system-prompt', systemPrompt);
     }
 
-    if (options.maxTokens) {
-      args.push('--max-tokens', String(options.maxTokens));
-    }
+    // Claude CLI는 --max-tokens를 지원하지 않음 (API 전용 옵션)
 
     args.push(...this.config.extra_args);
 

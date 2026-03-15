@@ -48,7 +48,7 @@ export interface DashboardData {
   rateLimits: { global: { rpm: number; rpd: number }; perProvider: Record<string, { rpm: number }> };
   providerStats: Array<{ provider: string; count: number; successCount: number; avgLatencyMs: number; totalTokens: number }>;
   popularModels: Array<{ modelAlias: string; provider: string; count: number; avgLatencyMs: number }>;
-  dailyTrend: Array<{ date: string; count: number; successCount: number; errorCount: number }>;
+  hourlyTrend: Array<{ hour: number; count: number; successCount: number; errorCount: number }>;
   recentRequests: Array<{
     id: string;
     modelAlias: string;
@@ -58,6 +58,16 @@ export interface DashboardData {
     latencyMs: number;
     totalTokens: number | null;
     isStream: boolean;
+    errorMessage: string | null;
+    createdAt: string;
+  }>;
+  recentErrors: Array<{
+    id: string;
+    modelAlias: string;
+    provider: string;
+    status: string;
+    errorMessage: string | null;
+    latencyMs: number;
     createdAt: string;
   }>;
 }

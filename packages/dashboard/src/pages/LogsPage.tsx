@@ -72,7 +72,7 @@ export default function LogsPage() {
             {logs.map((log) => (
               <tr key={log.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                 <td className="px-4 py-2.5 text-gray-500 font-mono text-xs">
-                  {new Date(log.createdAt).toLocaleString()}
+                  {formatLogTime(log.createdAt)}
                 </td>
                 <td className="px-4 py-2.5 font-mono text-blue-400">{log.modelAlias}</td>
                 <td className="px-4 py-2.5 capitalize">{log.provider}</td>
@@ -116,4 +116,12 @@ export default function LogsPage() {
       </div>
     </div>
   );
+}
+
+function formatLogTime(dateStr: string): string {
+  if (!dateStr || dateStr.includes('datetime')) return '-';
+  const normalized = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleString();
 }

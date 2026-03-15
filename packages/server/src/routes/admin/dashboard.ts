@@ -106,19 +106,19 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       .limit(5)
       .all();
 
-    // 10. 일별 요청 추이 (최근 14일)
-    const dailyTrend = db.select({
-      date: sql<string>`date(created_at)`,
+    // 10. 24시간 시간대별 요청 추이
+    const hourlyTrend = db.select({
+      hour: sql<number>`cast(strftime('%H', created_at) as integer)`,
       count: sql<number>`count(*)`,
       successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
       errorCount: sql<number>`coalesce(sum(case when status != 'success' then 1 else 0 end), 0)`,
     }).from(requestLogs)
-      .where(sql`created_at >= datetime('now', '-14 days')`)
-      .groupBy(sql`date(created_at)`)
-      .orderBy(sql`date(created_at) ASC`)
+      .where(sql`created_at >= datetime('now', '-24 hours')`)
+      .groupBy(sql`strftime('%H', created_at)`)
+      .orderBy(sql`strftime('%H', created_at) ASC`)
       .all();
 
-    // 11. 최근 요청 (5건)
+    // 11. 최근 요청 (10건)
     const recentRequests = db.select({
       id: requestLogs.id,
       modelAlias: requestLogs.modelAlias,
@@ -128,8 +128,24 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       latencyMs: requestLogs.latencyMs,
       totalTokens: requestLogs.totalTokens,
       isStream: requestLogs.isStream,
+      errorMessage: requestLogs.errorMessage,
       createdAt: requestLogs.createdAt,
     }).from(requestLogs)
+      .orderBy(desc(requestLogs.createdAt))
+      .limit(10)
+      .all();
+
+    // 12. 최근 에러 (5건)
+    const recentErrors = db.select({
+      id: requestLogs.id,
+      modelAlias: requestLogs.modelAlias,
+      provider: requestLogs.provider,
+      status: requestLogs.status,
+      errorMessage: requestLogs.errorMessage,
+      latencyMs: requestLogs.latencyMs,
+      createdAt: requestLogs.createdAt,
+    }).from(requestLogs)
+      .where(sql`status != 'success'`)
       .orderBy(desc(requestLogs.createdAt))
       .limit(5)
       .all();
@@ -168,8 +184,9 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       rateLimits,
       providerStats,
       popularModels,
-      dailyTrend,
+      hourlyTrend,
       recentRequests,
+      recentErrors,
     });
   });
 }
