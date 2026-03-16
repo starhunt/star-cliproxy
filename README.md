@@ -2,6 +2,8 @@
 
 AI CLI Subscription Proxy Service - Claude, Codex, Gemini CLI를 활용한 OpenAI-compatible API 프록시
 
+![Dashboard](docs/images/dashboard.png)
+
 ---
 
 ## What is this?
