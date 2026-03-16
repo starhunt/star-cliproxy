@@ -40,7 +40,7 @@ export class GeminiProvider extends BaseProvider {
         const child = spawn(this.config.cli_path, args, {
           stdio: ['ignore', 'pipe', 'pipe'],
           env: this._cleanEnv(),
-          cwd: '/tmp',
+          cwd: tmpdir(),
         });
 
         const writeStream = createWriteStream(tmpFile);

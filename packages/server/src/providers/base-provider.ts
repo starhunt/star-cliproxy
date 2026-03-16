@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { tmpdir } from 'node:os';
 import type {
   ExecuteOptions,
   ExecuteResult,
@@ -98,7 +99,7 @@ export abstract class BaseProvider {
     return spawn(this.config.cli_path, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: cleanEnv,
-      cwd: '/tmp',
+      cwd: tmpdir(),
     });
   }
 
