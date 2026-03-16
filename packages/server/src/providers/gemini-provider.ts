@@ -46,19 +46,42 @@ export class GeminiProvider extends BaseProvider {
         const writeStream = createWriteStream(tmpFile);
         child.stdout.pipe(writeStream);
 
+        let childExited = false;
+        let fileFinished = false;
+
         const timeout = setTimeout(() => {
           child.kill('SIGTERM');
+          writeStream.destroy();
           reject(new Error(`gemini CLI timed out after ${this.config.timeout_ms}ms`));
         }, this.config.timeout_ms);
 
+        const tryResolve = () => {
+          if (childExited && fileFinished) {
+            clearTimeout(timeout);
+            resolve();
+          }
+        };
+
         child.on('error', (err) => {
           clearTimeout(timeout);
+          writeStream.destroy();
           reject(new Error(`Failed to spawn gemini CLI: ${err.message}`));
         });
 
         child.on('close', () => {
+          childExited = true;
+          tryResolve();
+        });
+
+        // pipe가 끝나면 writeStream이 자동으로 finish됨 — 파일 쓰기 완료 보장
+        writeStream.on('finish', () => {
+          fileFinished = true;
+          tryResolve();
+        });
+
+        writeStream.on('error', (err) => {
           clearTimeout(timeout);
-          writeStream.end(() => resolve());
+          reject(new Error(`Failed to write gemini output: ${err.message}`));
         });
       });
 
