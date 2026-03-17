@@ -33,25 +33,15 @@ export default function DashboardPage() {
       .catch((e) => setError(e.message));
   };
 
+  // 초기 로드 (1회)
+  useEffect(() => { load(); }, []);
+
+  // 자동 리프레시: 활성 요청 유무에 따라 간격 조정
   useEffect(() => {
-    load();
-    // 활성 요청이 있으면 5초, 없으면 30초 간격
-    const getInterval = () => (data?.activeRequests?.count ?? 0) > 0 ? 5_000 : 30_000;
-    let timer = setInterval(load, getInterval());
-
-    const adjustInterval = () => {
-      clearInterval(timer);
-      timer = setInterval(load, getInterval());
-    };
-
-    // 데이터 변경 시 간격 조정
-    const checkInterval = setInterval(adjustInterval, 10_000);
-
-    return () => {
-      clearInterval(timer);
-      clearInterval(checkInterval);
-    };
-  }, [data?.activeRequests?.count]);
+    const intervalMs = (data?.activeRequests?.count ?? 0) > 0 ? 5_000 : 30_000;
+    const timer = setInterval(load, intervalMs);
+    return () => clearInterval(timer);
+  }, [(data?.activeRequests?.count ?? 0) > 0]);
 
   if (error) {
     return (
