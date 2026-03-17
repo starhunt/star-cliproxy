@@ -19,7 +19,8 @@ export class CodexProvider extends BaseProvider {
       // streaming: --json으로 JSONL 이벤트 출력
       ...(options.stream ? ['--json'] : []),
       ...this.config.extra_args,
-      '-m', model,
+      // 모델 지정 (빈 값이면 Codex 기본 모델 사용)
+      ...(model ? ['-m', model] : []),
       '--', // 옵션 종료 마커 (prompt가 CLI 플래그로 해석되지 않도록)
       prompt,
     ];

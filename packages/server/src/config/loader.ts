@@ -90,7 +90,7 @@ export function loadConfig(configPath?: string): AppConfig {
     },
     providers: {
       claude: mergeProviderConfig(providers?.claude, 'claude', 'claude-sonnet-4-6'),
-      codex: mergeProviderConfig(providers?.codex, 'codex', 'gpt-5.4'),
+      codex: mergeProviderConfig(providers?.codex, 'codex', ''),
       gemini: mergeProviderConfig(providers?.gemini, 'gemini', 'gemini-2.5-pro'),
     },
     rateLimits: {
@@ -124,9 +124,9 @@ export function loadConfig(configPath?: string): AppConfig {
       { alias: 'claude-opus', provider: 'claude', actual_model: 'claude-opus-4-6' },
       { alias: 'claude-sonnet', provider: 'claude', actual_model: 'claude-sonnet-4-6' },
       { alias: 'claude-haiku', provider: 'claude', actual_model: 'claude-haiku-4-5-20251001' },
-      { alias: 'gpt-4', provider: 'codex', actual_model: 'gpt-5.4' },
-      { alias: 'gpt-4o', provider: 'codex', actual_model: 'gpt-5.4' },
-      { alias: 'o4-mini', provider: 'codex', actual_model: 'o4-mini' },
+      { alias: 'gpt-4', provider: 'codex', actual_model: '' },
+      { alias: 'gpt-4o', provider: 'codex', actual_model: '' },
+      { alias: 'o4-mini', provider: 'codex', actual_model: '' },
       { alias: 'gemini-pro', provider: 'gemini', actual_model: 'gemini-2.5-pro' },
       { alias: 'gemini-flash', provider: 'gemini', actual_model: 'gemini-2.5-flash' },
     ],

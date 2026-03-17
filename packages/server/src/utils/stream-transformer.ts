@@ -58,9 +58,12 @@ export class CodexStreamParser implements StreamParser {
     try {
       const data = JSON.parse(trimmed);
 
-      // item.completed: 응답 텍스트 포함
+      // item.completed: 응답 텍스트 포함 (에러 아이템은 제외)
       if (data.type === 'item.completed' && data.item) {
-        const text = data.item.text ?? data.item.message ?? '';
+        if (data.item.type === 'error') {
+          return { type: 'error', error: data.item.message ?? 'Codex item error' };
+        }
+        const text = data.item.text ?? '';
         if (text) return { type: 'delta', content: text };
         return null;
       }
