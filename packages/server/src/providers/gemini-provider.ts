@@ -36,56 +36,35 @@ export class GeminiProvider extends BaseProvider {
     const tmpFile = join(tmpdir(), `gemini-out-${randomBytes(8).toString('hex')}.json`);
 
     try {
+      // shell 리다이렉트로 실행: spawn의 stdout pipe 잘림 문제 완전 우회
+      const escapedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+      const shellCmd = `${this.config.cli_path} ${escapedArgs} > '${tmpFile}' 2>/dev/null`;
+
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(this.config.cli_path, args, {
-          stdio: ['ignore', 'pipe', 'pipe'],
+        const child = spawn('sh', ['-c', shellCmd], {
+          stdio: 'ignore',
           env: this._cleanEnv(),
           cwd: tmpdir(),
         });
 
-        const writeStream = createWriteStream(tmpFile);
-        child.stdout.pipe(writeStream);
-
-        let childExited = false;
-        let fileFinished = false;
-
         const timeout = setTimeout(() => {
           child.kill('SIGTERM');
-          writeStream.destroy();
           reject(new Error(`gemini CLI timed out after ${this.config.timeout_ms}ms`));
         }, this.config.timeout_ms);
 
-        const tryResolve = () => {
-          if (childExited && fileFinished) {
-            clearTimeout(timeout);
-            resolve();
-          }
-        };
-
         child.on('error', (err) => {
           clearTimeout(timeout);
-          writeStream.destroy();
           reject(new Error(`Failed to spawn gemini CLI: ${err.message}`));
         });
 
         child.on('close', () => {
-          childExited = true;
-          tryResolve();
-        });
-
-        // pipe가 끝나면 writeStream이 자동으로 finish됨 — 파일 쓰기 완료 보장
-        writeStream.on('finish', () => {
-          fileFinished = true;
-          tryResolve();
-        });
-
-        writeStream.on('error', (err) => {
           clearTimeout(timeout);
-          reject(new Error(`Failed to write gemini output: ${err.message}`));
+          resolve();
         });
       });
 
       const stdout = await readFile(tmpFile, 'utf-8');
+      console.log(`[Gemini] tmpFile size: ${stdout.length} bytes`);
       return this.parseNonStreamOutput(stdout);
     } catch (err) {
       // 에러 시에도 부분 출력이 파일에 있을 수 있음
@@ -121,8 +100,10 @@ export class GeminiProvider extends BaseProvider {
     }
 
     // JSON 파싱 우선 시도
+    console.log(`[Gemini parseNonStreamOutput] input length: ${trimmed.length}, starts: ${JSON.stringify(trimmed.slice(0, 80))}, ends: ${JSON.stringify(trimmed.slice(-80))}`);
     try {
       const data = JSON.parse(trimmed);
+      console.log(`[Gemini] JSON.parse SUCCESS, keys: ${Object.keys(data).join(',')}`);
 
       let content = data.response ?? data.result ?? data.text ?? data.content ?? '';
       // 리터럴 \n 복원
@@ -141,7 +122,8 @@ export class GeminiProvider extends BaseProvider {
         },
         finishReason: 'stop',
       };
-    } catch {
+    } catch (e) {
+      console.log(`[Gemini] JSON.parse FAILED: ${(e as Error).message}`);
       // JSON 실패 → JSON 객체 추출 시도
       const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
