@@ -48,16 +48,22 @@ export class ModelRouter {
       }));
   }
 
-  // 모델명에서 provider 추론
+  // 모델명에서 provider 추론 (접두사 기반, 오탐 방지)
+  // "my-opus-experiment" 같은 사용자 정의 모델명이 잘못 라우팅되지 않도록
+  // 공식 모델명 접두사 패턴만 매칭
   private inferProvider(model: string): ProviderName | null {
     const lower = model.toLowerCase();
-    if (lower.includes('claude') || lower.includes('sonnet') || lower.includes('opus') || lower.includes('haiku')) {
+
+    // Claude: claude-*, sonnet-*, opus-*, haiku-* 접두사
+    if (/^(claude|claude-|sonnet-|opus-|haiku-)/.test(lower)) {
       return 'claude';
     }
-    if (lower.includes('gpt') || lower.includes('o4') || lower.includes('o3') || lower.includes('codex')) {
+    // Codex/OpenAI: gpt-*, o1-*, o3-*, o4-*, codex-* 접두사
+    if (/^(gpt-|o1-|o3-|o4-|codex-)/.test(lower)) {
       return 'codex';
     }
-    if (lower.includes('gemini')) {
+    // Gemini: gemini-* 접두사
+    if (/^gemini-/.test(lower)) {
       return 'gemini';
     }
     return null;

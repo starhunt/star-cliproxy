@@ -18,6 +18,7 @@ import { registerTestModelRoute } from './routes/admin/test-model.js';
 import { registerRateLimitsRoutes, loadRateLimitsFromDb } from './routes/admin/rate-limits.js';
 import { registerDashboardRoute } from './routes/admin/dashboard.js';
 import { ActiveRequestTracker } from './services/active-requests.js';
+import { ResponseCache } from './services/cache.js';
 import { seedDatabase } from './db/seed.js';
 
 export async function createApp(config: AppConfig) {
@@ -44,6 +45,7 @@ export async function createApp(config: AppConfig) {
   const rateLimiter = new RateLimiter(savedRateLimits);
   const healthChecker = new HealthChecker(registry);
   const activeRequests = new ActiveRequestTracker();
+  const cache = new ResponseCache(config.cache);
 
   // Provider별 큐 설정
   for (const [name, providerConfig] of Object.entries(config.providers)) {
@@ -103,6 +105,7 @@ export async function createApp(config: AppConfig) {
     healthChecker,
     validation: config.validation,
     activeRequests,
+    cache,
   });
   registerModelsRoute(app);
 
@@ -130,10 +133,19 @@ export async function createApp(config: AppConfig) {
   // 건강 체크 시작
   healthChecker.start(60_000);
 
+  // 만료 캐시 정리 주기: 5분 간격
+  const cacheCleanupTimer = setInterval(async () => {
+    const deleted = await cache.cleanup();
+    if (deleted > 0) {
+      app.log.info(`Cache cleanup: ${deleted} expired entries removed`);
+    }
+  }, 5 * 60 * 1000);
+
   // 종료 처리
-  app.addHook('onClose', () => {
+  app.addHook('onClose', async () => {
     healthChecker.stop();
-    rateLimiter.destroy();
+    await rateLimiter.destroy();
+    clearInterval(cacheCleanupTimer);
   });
 
   return app;

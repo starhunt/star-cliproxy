@@ -14,6 +14,7 @@ import type { RateLimiter } from '../../middleware/rate-limiter.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import type { HealthChecker } from '../../services/health-checker.js';
 import type { ActiveRequestTracker } from '../../services/active-requests.js';
+import type { ResponseCache } from '../../services/cache.js';
 
 interface ChatCompletionDeps {
   router: ModelRouter;
@@ -23,6 +24,7 @@ interface ChatCompletionDeps {
   healthChecker: HealthChecker;
   validation: ValidationConfig;
   activeRequests: ActiveRequestTracker;
+  cache: ResponseCache;
 }
 
 // null byte 제거 (CLI 인젝션 방지)
@@ -130,6 +132,40 @@ export function registerChatCompletionsRoute(
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
 
+      // === 캐시 조회 (non-streaming만) ===
+      const requestHash = !body.stream
+        ? deps.cache.generateHash(body.model, body.messages)
+        : undefined;
+
+      if (!body.stream && requestHash) {
+        const cached = await deps.cache.get(requestHash);
+        if (cached) {
+          // 캐시 히트: provider 호출 건너뜀
+          const cachedBody = JSON.parse(cached.responseBody) as ChatCompletionResponse;
+
+          reply.header('X-Cache', 'HIT');
+          reply.header('X-Request-ID', createRequestId());
+
+          logRequest({
+            requestId: createRequestId(),
+            apiKeyId,
+            modelAlias: body.model,
+            provider: cached.provider,
+            actualModel: routes[0].actualModel,
+            status: 'success',
+            statusCode: 200,
+            promptTokens: cachedBody.usage?.prompt_tokens,
+            completionTokens: cachedBody.usage?.completion_tokens,
+            totalTokens: cachedBody.usage?.total_tokens,
+            latencyMs: Date.now() - startTime,
+            isStream: false,
+            requestHash,
+          });
+
+          return reply.status(200).send(cachedBody);
+        }
+      }
+
       // === 폴백 루프 ===
 
       let lastError: Error | null = null;
@@ -205,6 +241,8 @@ export function registerChatCompletionsRoute(
 
             let totalContent = '';
             let ttfbMs: number | undefined;
+            // done 청크에서 실제 토큰 사용량 캡처 (ADD-05)
+            let streamUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
 
             const streamIterator = provider.executeStream({
               messages: body.messages,
@@ -227,6 +265,9 @@ export function registerChatCompletionsRoute(
                 }
                 if (chunk.type === 'delta' && chunk.content) {
                   totalContent += chunk.content;
+                }
+                if (chunk.type === 'done' && chunk.usage) {
+                  streamUsage = chunk.usage;
                 }
 
                 // 응답 크기 제한
@@ -270,7 +311,10 @@ export function registerChatCompletionsRoute(
               actualModel: route.actualModel,
               status: 'success',
               statusCode: 200,
-              completionTokens: Math.ceil(totalContent.length / 4),
+              // ADD-05: 실제 토큰 수 사용 (없으면 추정)
+              promptTokens: streamUsage?.promptTokens,
+              completionTokens: streamUsage?.completionTokens ?? Math.ceil(totalContent.length / 4),
+              totalTokens: streamUsage?.totalTokens,
               latencyMs: Date.now() - startTime,
               ttfbMs,
               isStream: true,
@@ -321,8 +365,20 @@ export function registerChatCompletionsRoute(
             reply.header('X-Fallback-Provider', route.provider);
           }
           reply.header('X-Request-ID', requestId);
+          reply.header('X-Cache', 'MISS');
           if (unsupportedParams.length > 0) {
             reply.header('X-Unsupported-Params', unsupportedParams.join(','));
+          }
+
+          // 캐시에 응답 저장
+          if (requestHash) {
+            await deps.cache.set(
+              requestHash,
+              body.model,
+              route.provider,
+              JSON.stringify(response),
+              result.usage.totalTokens,
+            );
           }
 
           logRequest({
@@ -338,6 +394,7 @@ export function registerChatCompletionsRoute(
             totalTokens: result.usage.totalTokens,
             latencyMs: Date.now() - startTime,
             isStream: false,
+            requestHash,
           });
 
           deps.activeRequests.finish(requestId);
