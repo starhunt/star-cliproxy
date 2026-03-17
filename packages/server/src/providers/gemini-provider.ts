@@ -1,5 +1,5 @@
 import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } from '@star-cliproxy/shared';
-import { BaseProvider } from './base-provider.js';
+import { BaseProvider, gracefulKill } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { readFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -41,12 +41,12 @@ export class GeminiProvider extends BaseProvider {
       await new Promise<void>((resolve, reject) => {
         const child = spawn('sh', ['-c', shellCmd], {
           stdio: 'ignore',
-          env: this._cleanEnv(),
+          env: this.getCleanEnv(),
           cwd: tmpdir(),
         });
 
         const timeout = setTimeout(() => {
-          child.kill('SIGTERM');
+          gracefulKill(child);
           reject(new Error(`gemini CLI timed out after ${this.config.timeout_ms}ms`));
         }, this.config.timeout_ms);
 
@@ -75,18 +75,6 @@ export class GeminiProvider extends BaseProvider {
     } finally {
       try { await unlink(tmpFile); } catch { /* 이미 없으면 무시 */ }
     }
-  }
-
-  // 환경변수 정리 (부모 프로세스의 Claude Code 변수 제거)
-  private _cleanEnv(): Record<string, string | undefined> {
-    const env = { ...process.env };
-    delete env.CLAUDECODE;
-    delete env.CLAUDE_CODE_ENTRYPOINT;
-    delete env.CLAUDE_CODE_SESSION_ACCESS_TOKEN;
-    delete env.CLAUDE_CODE_SSE_PORT;
-    delete env.CLAUDE_CODE_ENABLE_TASKS;
-    delete env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
-    return env;
   }
 
   // Gemini json 출력에서 결과 추출

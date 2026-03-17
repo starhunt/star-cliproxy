@@ -6,6 +6,15 @@ export interface ConvertedPrompt {
   userPrompt: string;
 }
 
+// 프롬프트 인젝션 방지: 사용자 입력에서 구분자 패턴을 이스케이프
+// <|user|>, <|assistant|>, <|system|> 패턴을 유니코드 이스케이프 시퀀스로 치환
+export function sanitizeDelimiters(content: string): string {
+  return content
+    .replace(/<\|user\|>/g, '<\u200Buser\u200B>')
+    .replace(/<\|assistant\|>/g, '<\u200Bassistant\u200B>')
+    .replace(/<\|system\|>/g, '<\u200Bsystem\u200B>');
+}
+
 export function convertMessages(messages: ChatMessage[]): ConvertedPrompt {
   let systemPrompt: string | null = null;
   const conversationParts: string[] = [];
@@ -15,9 +24,9 @@ export function convertMessages(messages: ChatMessage[]): ConvertedPrompt {
       // 마지막 system 메시지를 사용
       systemPrompt = msg.content;
     } else if (msg.role === 'user') {
-      conversationParts.push(`[User] ${msg.content}`);
+      conversationParts.push(`<|user|> ${sanitizeDelimiters(msg.content)}`);
     } else if (msg.role === 'assistant') {
-      conversationParts.push(`[Assistant] ${msg.content}`);
+      conversationParts.push(`<|assistant|> ${sanitizeDelimiters(msg.content)}`);
     }
   }
 
@@ -41,7 +50,7 @@ export function convertMessagesToSinglePrompt(messages: ChatMessage[]): string {
   const { systemPrompt, userPrompt } = convertMessages(messages);
 
   if (systemPrompt) {
-    return `[System] ${systemPrompt}\n\n${userPrompt}`;
+    return `<|system|> ${systemPrompt}\n\n${userPrompt}`;
   }
 
   return userPrompt;

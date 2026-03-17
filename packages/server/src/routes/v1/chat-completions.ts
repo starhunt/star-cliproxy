@@ -105,6 +105,14 @@ export function registerChatCompletionsRoute(
       // model명 sanitize
       body.model = sanitizeString(body.model);
 
+      // ADD-06: CLI에서 지원하지 않는 파라미터 감지
+      const unsupportedParams: string[] = [];
+      if (body.temperature != null) unsupportedParams.push('temperature');
+      if (body.max_tokens != null) unsupportedParams.push('max_tokens');
+      if ((body as unknown as Record<string, unknown>).top_p != null) unsupportedParams.push('top_p');
+      if ((body as unknown as Record<string, unknown>).frequency_penalty != null) unsupportedParams.push('frequency_penalty');
+      if ((body as unknown as Record<string, unknown>).presence_penalty != null) unsupportedParams.push('presence_penalty');
+
       // === 라우팅 ===
 
       const routes = await deps.router.resolve(body.model);
@@ -169,6 +177,15 @@ export function registerChatCompletionsRoute(
 
         try {
           if (body.stream) {
+            // 클라이언트 연결 끊김 감지용 AbortController (큐 외부에서 생성하여 대기 중에도 감지)
+            const abortController = new AbortController();
+            request.raw.on('close', () => abortController.abort());
+
+            // 스트리밍도 큐를 통해 동시성 제한 적용 (BUG-01 수정)
+            await deps.queue.enqueue(route.provider, async () => {
+            // 큐 대기 중 클라이언트가 이미 연결을 끊었으면 조기 종료
+            if (abortController.signal.aborted) return;
+
             // 스트리밍 응답
             reply.raw.writeHead(200, {
               'Content-Type': 'text/event-stream',
@@ -176,6 +193,7 @@ export function registerChatCompletionsRoute(
               'Connection': 'keep-alive',
               'X-Request-ID': requestId,
               ...(routes.indexOf(route) > 0 ? { 'X-Fallback-Provider': route.provider } : {}),
+              ...(unsupportedParams.length > 0 ? { 'X-Unsupported-Params': unsupportedParams.join(',') } : {}),
             });
 
             const roleChunk = formatAsSSE(
@@ -194,6 +212,7 @@ export function registerChatCompletionsRoute(
               stream: true,
               maxTokens: body.max_tokens,
               temperature: body.temperature,
+              signal: abortController.signal,
             });
 
             try {
@@ -258,6 +277,8 @@ export function registerChatCompletionsRoute(
             });
 
             deps.activeRequests.finish(requestId);
+            }); // queue.enqueue 끝
+
             return;
           }
 
@@ -300,6 +321,9 @@ export function registerChatCompletionsRoute(
             reply.header('X-Fallback-Provider', route.provider);
           }
           reply.header('X-Request-ID', requestId);
+          if (unsupportedParams.length > 0) {
+            reply.header('X-Unsupported-Params', unsupportedParams.join(','));
+          }
 
           logRequest({
             requestId,
@@ -320,6 +344,7 @@ export function registerChatCompletionsRoute(
           return reply.status(200).send(response);
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
+          const isTimeout = lastError.message.includes('timed out');
 
           logRequest({
             requestId,
@@ -327,8 +352,8 @@ export function registerChatCompletionsRoute(
             modelAlias: body.model,
             provider: route.provider,
             actualModel: route.actualModel,
-            status: lastError.message.includes('timed out') ? 'timeout' : 'error',
-            statusCode: 502,
+            status: isTimeout ? 'timeout' : 'error',
+            statusCode: isTimeout ? 504 : 502, // ADD-03: 타임아웃은 504 반환
             latencyMs: Date.now() - startTime,
             isStream: body.stream ?? false,
             errorMessage: lastError.message,
@@ -339,12 +364,16 @@ export function registerChatCompletionsRoute(
         }
       }
 
-      return reply.status(502).send({
+      // ADD-03: 타임아웃 여부에 따라 504/502 구분
+      const isTimeout = lastError?.message.includes('timed out') ?? false;
+      const statusCode = isTimeout ? 504 : 502;
+
+      return reply.status(statusCode).send({
         error: {
           message: `All providers failed for model "${body.model}". Last error: ${lastError?.message ?? 'unknown'}`,
-          type: 'provider_error',
+          type: isTimeout ? 'timeout_error' : 'provider_error',
           param: null,
-          code: 'provider_error',
+          code: isTimeout ? 'timeout' : 'provider_error',
         },
       });
     },

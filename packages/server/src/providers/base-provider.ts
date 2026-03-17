@@ -50,12 +50,12 @@ export abstract class BaseProvider {
 
     if (options.signal) {
       options.signal.addEventListener('abort', () => {
-        child.kill('SIGTERM');
+        gracefulKill(child);
       }, { once: true });
     }
 
     const timeout = setTimeout(() => {
-      child.kill('SIGTERM');
+      gracefulKill(child);
     }, this.config.timeout_ms);
 
     try {
@@ -70,9 +70,7 @@ export abstract class BaseProvider {
       }
     } finally {
       clearTimeout(timeout);
-      if (!child.killed) {
-        child.kill('SIGTERM');
-      }
+      gracefulKill(child);
     }
   }
 
@@ -86,19 +84,23 @@ export abstract class BaseProvider {
     }
   }
 
-  protected spawnProcess(args: string[]): ChildProcess {
-    // 부모 프로세스(Claude Code)의 환경변수를 정리하여 중첩 감지 방지
-    const cleanEnv = { ...process.env };
-    delete cleanEnv.CLAUDECODE;
-    delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
-    delete cleanEnv.CLAUDE_CODE_SESSION_ACCESS_TOKEN;
-    delete cleanEnv.CLAUDE_CODE_SSE_PORT;
-    delete cleanEnv.CLAUDE_CODE_ENABLE_TASKS;
-    delete cleanEnv.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+  // 부모 프로세스(Claude Code)의 환경변수를 정리하여 중첩 감지 방지
+  // 서브클래스에서도 재사용할 수 있도록 protected로 공개
+  protected getCleanEnv(): Record<string, string | undefined> {
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    delete env.CLAUDE_CODE_ENTRYPOINT;
+    delete env.CLAUDE_CODE_SESSION_ACCESS_TOKEN;
+    delete env.CLAUDE_CODE_SSE_PORT;
+    delete env.CLAUDE_CODE_ENABLE_TASKS;
+    delete env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+    return env;
+  }
 
+  protected spawnProcess(args: string[]): ChildProcess {
     return spawn(this.config.cli_path, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: cleanEnv,
+      env: this.getCleanEnv(),
       cwd: tmpdir(),
     });
   }
@@ -116,14 +118,14 @@ export abstract class BaseProvider {
       const stderrChunks: Buffer[] = [];
 
       const timeout = setTimeout(() => {
-        child.kill('SIGTERM');
+        gracefulKill(child);
         reject(new Error(`${this.name} CLI timed out after ${timeoutMs ?? this.config.timeout_ms}ms`));
       }, timeoutMs ?? this.config.timeout_ms);
 
       if (signal) {
         signal.addEventListener('abort', () => {
           clearTimeout(timeout);
-          child.kill('SIGTERM');
+          gracefulKill(child);
           reject(new Error('Request cancelled'));
         }, { once: true });
       }
@@ -177,6 +179,20 @@ export abstract class BaseProvider {
       finishReason: 'stop',
     };
   }
+}
+
+// SIGTERM 후 일정 시간이 지나도 종료되지 않으면 SIGKILL로 강제 종료
+// zombie 프로세스 누적 방지용 헬퍼
+export function gracefulKill(child: ChildProcess, timeoutMs = 3000): void {
+  if (child.killed) return;
+  child.kill('SIGTERM');
+  const killTimer = setTimeout(() => {
+    if (!child.killed) {
+      child.kill('SIGKILL');
+    }
+  }, timeoutMs);
+  // 프로세스가 정상 종료되면 타이머 취소
+  child.on('close', () => clearTimeout(killTimer));
 }
 
 // 간이 토큰 추정 (문자수 / 4)
