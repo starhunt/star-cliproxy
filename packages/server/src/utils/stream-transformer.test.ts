@@ -11,16 +11,45 @@ import {
 describe('ClaudeStreamParser', () => {
   const parser = new ClaudeStreamParser();
 
-  it('text_delta를 delta chunk로 변환', () => {
-    const line = JSON.stringify({ type: 'assistant', subtype: 'text_delta', text: 'Hello' });
+  it('assistant 메시지에서 텍스트 추출', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'text', text: 'Hello' }],
+        role: 'assistant',
+      },
+    });
     const result = parser.parse(line);
     expect(result).toEqual({ type: 'delta', content: 'Hello' });
   });
 
-  it('result를 done chunk로 변환', () => {
-    const line = JSON.stringify({ type: 'result', subtype: 'success' });
+  it('assistant 메시지에서 여러 텍스트 블록 결합', () => {
+    const line = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'text', text: 'Hello ' },
+          { type: 'text', text: 'world' },
+        ],
+      },
+    });
+    const result = parser.parse(line);
+    expect(result).toEqual({ type: 'delta', content: 'Hello world' });
+  });
+
+  it('result를 done chunk로 변환 (토큰 사용량 포함)', () => {
+    const line = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    });
     const result = parser.parse(line);
     expect(result?.type).toBe('done');
+    expect(result?.usage).toEqual({
+      promptTokens: 10,
+      completionTokens: 5,
+      totalTokens: 15,
+    });
   });
 
   it('빈 라인은 null 반환', () => {
@@ -28,8 +57,13 @@ describe('ClaudeStreamParser', () => {
     expect(parser.parse('  ')).toBeNull();
   });
 
-  it('알 수 없는 타입은 null 반환', () => {
-    const line = JSON.stringify({ type: 'system', content: 'init' });
+  it('system/init 이벤트는 null 반환', () => {
+    const line = JSON.stringify({ type: 'system', subtype: 'init' });
+    expect(parser.parse(line)).toBeNull();
+  });
+
+  it('rate_limit_event는 null 반환', () => {
+    const line = JSON.stringify({ type: 'rate_limit_event' });
     expect(parser.parse(line)).toBeNull();
   });
 });
@@ -37,29 +71,98 @@ describe('ClaudeStreamParser', () => {
 describe('CodexStreamParser', () => {
   const parser = new CodexStreamParser();
 
-  it('plain text를 delta로 변환', () => {
-    const result = parser.parse('Hello world');
+  it('item.completed에서 텍스트 추출', () => {
+    const line = JSON.stringify({
+      type: 'item.completed',
+      item: { id: 'item_0', type: 'agent_message', text: 'Hello world' },
+    });
+    const result = parser.parse(line);
     expect(result).toEqual({ type: 'delta', content: 'Hello world' });
+  });
+
+  it('turn.completed를 done chunk로 변환 (토큰 사용량 포함)', () => {
+    const line = JSON.stringify({
+      type: 'turn.completed',
+      usage: { input_tokens: 100, output_tokens: 20 },
+    });
+    const result = parser.parse(line);
+    expect(result?.type).toBe('done');
+    expect(result?.usage).toEqual({
+      promptTokens: 100,
+      completionTokens: 20,
+      totalTokens: 120,
+    });
+  });
+
+  it('turn.failed를 error로 변환', () => {
+    const line = JSON.stringify({
+      type: 'turn.failed',
+      error: { message: 'Model not supported' },
+    });
+    const result = parser.parse(line);
+    expect(result?.type).toBe('error');
+  });
+
+  it('thread.started는 null 반환', () => {
+    const line = JSON.stringify({ type: 'thread.started', thread_id: 'abc' });
+    expect(parser.parse(line)).toBeNull();
   });
 
   it('빈 라인은 null 반환', () => {
     expect(parser.parse('')).toBeNull();
+  });
+
+  it('plain text fallback', () => {
+    const result = parser.parse('Hello world');
+    expect(result).toEqual({ type: 'delta', content: 'Hello world' });
   });
 });
 
 describe('GeminiStreamParser', () => {
   const parser = new GeminiStreamParser();
 
-  it('text_delta를 delta chunk로 변환', () => {
-    const line = JSON.stringify({ type: 'text_delta', content: 'Hello' });
+  it('assistant delta 메시지에서 텍스트 추출', () => {
+    const line = JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      delta: true,
+      content: 'Hello',
+    });
     const result = parser.parse(line);
     expect(result).toEqual({ type: 'delta', content: 'Hello' });
   });
 
-  it('turn_complete를 done으로 변환', () => {
-    const line = JSON.stringify({ type: 'turn_complete' });
+  it('user 메시지는 무시', () => {
+    const line = JSON.stringify({
+      type: 'message',
+      role: 'user',
+      content: 'What is 1+1?',
+    });
+    expect(parser.parse(line)).toBeNull();
+  });
+
+  it('result를 done chunk로 변환 (토큰 사용량 포함)', () => {
+    const line = JSON.stringify({
+      type: 'result',
+      status: 'success',
+      stats: { input_tokens: 50, output_tokens: 30, total_tokens: 80 },
+    });
     const result = parser.parse(line);
     expect(result?.type).toBe('done');
+    expect(result?.usage).toEqual({
+      promptTokens: 50,
+      completionTokens: 30,
+      totalTokens: 80,
+    });
+  });
+
+  it('init 이벤트는 무시', () => {
+    const line = JSON.stringify({ type: 'init', session_id: 'abc' });
+    expect(parser.parse(line)).toBeNull();
+  });
+
+  it('빈 라인은 null 반환', () => {
+    expect(parser.parse('')).toBeNull();
   });
 });
 

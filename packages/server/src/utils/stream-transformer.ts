@@ -6,7 +6,8 @@ export interface StreamParser {
   parse(line: string): StreamChunk | null;
 }
 
-// Claude stream-json 파서
+// Claude stream-json 파서 (--output-format stream-json --verbose)
+// 실제 출력: init → assistant(전체 메시지) → rate_limit_event → result
 export class ClaudeStreamParser implements StreamParser {
   parse(line: string): StreamChunk | null {
     const trimmed = line.trim();
@@ -15,52 +16,83 @@ export class ClaudeStreamParser implements StreamParser {
     try {
       const data = JSON.parse(trimmed);
 
-      if (data.type === 'assistant' && data.subtype === 'text_delta') {
-        return { type: 'delta', content: data.text ?? '' };
+      // assistant 이벤트: 전체 응답 텍스트 포함
+      if (data.type === 'assistant' && data.message) {
+        const content = data.message.content;
+        if (Array.isArray(content)) {
+          // content 배열에서 텍스트 추출
+          const text = content
+            .filter((c: { type: string }) => c.type === 'text')
+            .map((c: { text: string }) => c.text)
+            .join('');
+          if (text) return { type: 'delta', content: text };
+        }
+        return null;
       }
 
+      // result 이벤트: 토큰 사용량 포함
       if (data.type === 'result') {
-        const usage = data.total_cost_usd != null ? {
-          promptTokens: data.num_input_tokens ?? 0,
-          completionTokens: data.num_output_tokens ?? 0,
-          totalTokens: (data.num_input_tokens ?? 0) + (data.num_output_tokens ?? 0),
+        const u = data.usage;
+        const usage = u ? {
+          promptTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+          completionTokens: u.output_tokens ?? 0,
+          totalTokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
         } : undefined;
         return { type: 'done', usage };
       }
 
-      // 그 외 이벤트 (system, tool_use 등)는 무시
       return null;
     } catch {
-      // JSON 파싱 실패 시 텍스트로 처리
       return null;
     }
   }
 }
 
-// Codex stdout 파서 (plain text 청크)
+// Codex JSONL 파서 (--json 플래그)
+// 실제 출력: thread.started → turn.started → item.completed(텍스트) → turn.completed(usage)
 export class CodexStreamParser implements StreamParser {
   parse(line: string): StreamChunk | null {
-    if (!line) return null;
+    const trimmed = line.trim();
+    if (!trimmed) return null;
 
     try {
-      const data = JSON.parse(line);
-      // JSONL 형식인 경우
-      if (data.type === 'message' && data.content) {
-        return { type: 'delta', content: data.content };
+      const data = JSON.parse(trimmed);
+
+      // item.completed: 응답 텍스트 포함
+      if (data.type === 'item.completed' && data.item) {
+        const text = data.item.text ?? data.item.message ?? '';
+        if (text) return { type: 'delta', content: text };
+        return null;
       }
-      if (data.type === 'completed') {
-        return { type: 'done' };
+
+      // turn.completed: 토큰 사용량
+      if (data.type === 'turn.completed') {
+        const u = data.usage;
+        const usage = u ? {
+          promptTokens: u.input_tokens ?? 0,
+          completionTokens: u.output_tokens ?? 0,
+          totalTokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0),
+        } : undefined;
+        return { type: 'done', usage };
       }
-      // 일반 텍스트로 fallback
-      return { type: 'delta', content: line };
+
+      // turn.failed: 에러
+      if (data.type === 'turn.failed' || data.type === 'error') {
+        return { type: 'error', error: data.error?.message ?? data.message ?? 'Codex error' };
+      }
+
+      return null;
     } catch {
-      // plain text 출력
-      return { type: 'delta', content: line };
+      // plain text fallback
+      if (trimmed) return { type: 'delta', content: trimmed };
+      return null;
     }
   }
 }
 
-// Gemini stream-json 파서
+// Gemini stream-json 파서 (-o stream-json)
+// 실제 출력: init → message(user) → message(delta=true, assistant) → result
+// Gemini는 진짜 실시간 delta를 지원함
 export class GeminiStreamParser implements StreamParser {
   parse(line: string): StreamChunk | null {
     const trimmed = line.trim();
@@ -69,23 +101,27 @@ export class GeminiStreamParser implements StreamParser {
     try {
       const data = JSON.parse(trimmed);
 
-      if (data.type === 'text_delta') {
-        return { type: 'delta', content: data.content ?? data.text ?? '' };
+      // assistant delta 메시지: 실시간 텍스트 조각
+      if (data.type === 'message' && data.role === 'assistant' && data.delta === true) {
+        const content = data.content ?? '';
+        if (content) return { type: 'delta', content };
+        return null;
       }
 
-      if (data.type === 'turn_complete' || data.type === 'result') {
-        return { type: 'done' };
-      }
-
-      // 텍스트 content 필드가 있으면 delta로 처리
-      if (typeof data.content === 'string') {
-        return { type: 'delta', content: data.content };
+      // result 이벤트: 토큰 사용량
+      if (data.type === 'result') {
+        const stats = data.stats;
+        const usage = stats ? {
+          promptTokens: stats.input_tokens ?? 0,
+          completionTokens: stats.output_tokens ?? 0,
+          totalTokens: stats.total_tokens ?? ((stats.input_tokens ?? 0) + (stats.output_tokens ?? 0)),
+        } : undefined;
+        return { type: 'done', usage };
       }
 
       return null;
     } catch {
-      // plain text
-      return { type: 'delta', content: trimmed };
+      return null;
     }
   }
 }

@@ -16,6 +16,8 @@ export class CodexProvider extends BaseProvider {
 
     const args: string[] = [
       'exec',
+      // streaming: --json으로 JSONL 이벤트 출력
+      ...(options.stream ? ['--json'] : []),
       ...this.config.extra_args,
       '-m', model,
       '--', // 옵션 종료 마커 (prompt가 CLI 플래그로 해석되지 않도록)
@@ -60,17 +62,7 @@ export class CodexProvider extends BaseProvider {
     }
   }
 
-  // 스트리밍: non-streaming 결과를 청크로 분할
-  override async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
-    const result = await this.execute(options);
-    const content = result.content;
-
-    const chunkSize = 20;
-    for (let i = 0; i < content.length; i += chunkSize) {
-      const chunk = content.substring(i, i + chunkSize);
-      yield { type: 'delta', content: chunk };
-    }
-
-    yield { type: 'done', usage: result.usage };
-  }
+  // 스트리밍: --json JSONL을 readline으로 실시간 파싱
+  // BaseProvider.executeStream()이 readline + parser로 처리하므로 오버라이드 불필요
+  // (buildArgs에서 stream=true일 때 --json 플래그 추가)
 }

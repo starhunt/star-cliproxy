@@ -176,17 +176,8 @@ export class GeminiProvider extends BaseProvider {
     return { inputTokens: 0, outputTokens: 0 };
   }
 
-  // 스트리밍: non-streaming 결과를 청크로 분할
-  override async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
-    const result = await this.execute(options);
-    const content = result.content;
-
-    const chunkSize = 20;
-    for (let i = 0; i < content.length; i += chunkSize) {
-      const chunk = content.substring(i, i + chunkSize);
-      yield { type: 'delta', content: chunk };
-    }
-
-    yield { type: 'done', usage: result.usage };
-  }
+  // 스트리밍: -o stream-json을 pipe로 실시간 파싱
+  // Gemini는 delta=true 이벤트로 진짜 실시간 스트리밍 지원
+  // BaseProvider.executeStream()이 readline + parser로 처리하므로 오버라이드 불필요
+  // (buildArgs에서 stream=true일 때 stream-json 포맷 지정)
 }

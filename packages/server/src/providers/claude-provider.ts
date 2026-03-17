@@ -14,13 +14,19 @@ export class ClaudeProvider extends BaseProvider {
     const { systemPrompt, userPrompt } = convertMessages(options.messages);
     const model = options.model || this.config.default_model;
 
-    // json 포맷 사용 (stream-json은 환경에 따라 출력 버퍼링 이슈)
+    // non-streaming: json, streaming: stream-json --verbose
+    // stream-json은 --verbose 필수 (Claude CLI 요구사항)
+    const format = options.stream ? 'stream-json' : 'json';
     const args: string[] = [
       '-p', userPrompt,
-      '--output-format', 'json',
+      '--output-format', format,
       '--model', model,
       '--max-turns', '1',
     ];
+
+    if (options.stream) {
+      args.push('--verbose');
+    }
 
     if (systemPrompt) {
       args.push('--system-prompt', systemPrompt);
@@ -68,19 +74,7 @@ export class ClaudeProvider extends BaseProvider {
     }
   }
 
-  // 스트리밍: json 결과를 받아서 청크로 분할하여 emit
-  override async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
-    // Claude는 json 포맷으로 전체 결과를 받은 후 시뮬레이트 스트리밍
-    const result = await this.execute(options);
-    const content = result.content;
-
-    // 일정 크기로 분할하여 스트리밍 시뮬레이션
-    const chunkSize = 20;
-    for (let i = 0; i < content.length; i += chunkSize) {
-      const chunk = content.substring(i, i + chunkSize);
-      yield { type: 'delta', content: chunk };
-    }
-
-    yield { type: 'done', usage: result.usage };
-  }
+  // 스트리밍: stream-json NDJSON을 readline으로 실시간 파싱
+  // BaseProvider.executeStream()이 readline + parser로 처리하므로 오버라이드 불필요
+  // (buildArgs에서 stream=true일 때 stream-json 포맷 지정)
 }
