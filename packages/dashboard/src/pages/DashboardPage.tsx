@@ -36,12 +36,13 @@ export default function DashboardPage() {
   // 초기 로드 (1회)
   useEffect(() => { load(); }, []);
 
-  // 자동 리프레시: 활성 요청 유무에 따라 간격 조정
+  // 자동 리프레시: 활성 요청 유무에 따라 간격 조정 (기본 10초, 활성 요청 시 2초)
+  const hasActiveRequests = (data?.activeRequests?.count ?? 0) > 0;
   useEffect(() => {
-    const intervalMs = (data?.activeRequests?.count ?? 0) > 0 ? 5_000 : 30_000;
+    const intervalMs = hasActiveRequests ? 2_000 : 10_000;
     const timer = setInterval(load, intervalMs);
     return () => clearInterval(timer);
-  }, [(data?.activeRequests?.count ?? 0) > 0]);
+  }, [hasActiveRequests]);
 
   if (error) {
     return (
