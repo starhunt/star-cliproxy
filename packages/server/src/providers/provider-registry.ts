@@ -24,11 +24,27 @@ export class ProviderRegistry {
   }
 }
 
+// cli_path 검증: 허용된 문자만 (영숫자, -, _, ., /, \, :)
+const SAFE_CLI_PATH = /^[a-zA-Z0-9_\-./\\:]+$/;
+
+function validateCliPath(provider: string, cliPath: string): void {
+  if (!SAFE_CLI_PATH.test(cliPath)) {
+    throw new Error(`Unsafe cli_path for ${provider}: "${cliPath}". Only alphanumeric, -, _, ., /, \\, : allowed.`);
+  }
+}
+
 // 설정 기반으로 활성화된 Provider들을 등록
 export function createProviderRegistry(
   configs: Record<ProviderName, ProviderConfigYaml>,
 ): ProviderRegistry {
   const registry = new ProviderRegistry();
+
+  // cli_path 안전성 검증 (shell injection 방지)
+  for (const [name, config] of Object.entries(configs)) {
+    if (config.enabled) {
+      validateCliPath(name, config.cli_path);
+    }
+  }
 
   if (configs.claude.enabled) {
     registry.register(new ClaudeProvider(configs.claude));

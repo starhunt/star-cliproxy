@@ -2,7 +2,6 @@ import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } f
 import { BaseProvider } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { readFile, unlink } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -30,13 +29,12 @@ export class GeminiProvider extends BaseProvider {
     return args;
   }
 
-  // spawn() + 파일 스트림으로 stdout 캡처 (exec shell injection 방지)
+  // shell 리다이렉트로 stdout 캡처: spawn stdout pipe 잘림 문제 우회
   override async execute(options: ExecuteOptions): Promise<ExecuteResult> {
     const args = this.buildArgs({ ...options, stream: false });
     const tmpFile = join(tmpdir(), `gemini-out-${randomBytes(8).toString('hex')}.json`);
 
     try {
-      // shell 리다이렉트로 실행: spawn의 stdout pipe 잘림 문제 완전 우회
       const escapedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       const shellCmd = `${this.config.cli_path} ${escapedArgs} > '${tmpFile}' 2>/dev/null`;
 
@@ -64,7 +62,6 @@ export class GeminiProvider extends BaseProvider {
       });
 
       const stdout = await readFile(tmpFile, 'utf-8');
-      console.log(`[Gemini] tmpFile size: ${stdout.length} bytes`);
       return this.parseNonStreamOutput(stdout);
     } catch (err) {
       // 에러 시에도 부분 출력이 파일에 있을 수 있음
@@ -100,18 +97,17 @@ export class GeminiProvider extends BaseProvider {
     }
 
     // JSON 파싱 우선 시도
-    console.log(`[Gemini parseNonStreamOutput] input length: ${trimmed.length}, starts: ${JSON.stringify(trimmed.slice(0, 80))}, ends: ${JSON.stringify(trimmed.slice(-80))}`);
     try {
       const data = JSON.parse(trimmed);
-      console.log(`[Gemini] JSON.parse SUCCESS, keys: ${Object.keys(data).join(',')}`);
 
       let content = data.response ?? data.result ?? data.text ?? data.content ?? '';
       // 리터럴 \n 복원
       if (typeof content === 'string' && content.includes('\\n')) {
         content = content.replace(/\\n/g, '\n');
       }
-      const inputTokens = data.usage?.input_tokens ?? data.usage?.prompt_tokens ?? 0;
-      const outputTokens = data.usage?.output_tokens ?? data.usage?.completion_tokens ?? 0;
+
+      // stats에서 토큰 정보 추출 시도
+      const { inputTokens, outputTokens } = this.extractTokenUsage(data);
 
       return {
         content,
@@ -122,8 +118,7 @@ export class GeminiProvider extends BaseProvider {
         },
         finishReason: 'stop',
       };
-    } catch (e) {
-      console.log(`[Gemini] JSON.parse FAILED: ${(e as Error).message}`);
+    } catch {
       // JSON 실패 → JSON 객체 추출 시도
       const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -133,9 +128,10 @@ export class GeminiProvider extends BaseProvider {
           if (typeof content === 'string' && content.includes('\\n')) {
             content = content.replace(/\\n/g, '\n');
           }
+          const { inputTokens, outputTokens } = this.extractTokenUsage(data);
           return {
             content,
-            usage: { promptTokens: 0, completionTokens: Math.ceil(content.length / 4), totalTokens: Math.ceil(content.length / 4) },
+            usage: { promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens },
             finishReason: 'stop',
           };
         } catch { /* fallback */ }
@@ -162,6 +158,34 @@ export class GeminiProvider extends BaseProvider {
       // 최종 fallback
       return super.parseNonStreamOutput(stdout);
     }
+  }
+
+  // Gemini stats 구조에서 토큰 사용량 추출
+  private extractTokenUsage(data: Record<string, unknown>): { inputTokens: number; outputTokens: number } {
+    // 직접 usage 필드
+    const usage = data.usage as Record<string, number> | undefined;
+    if (usage) {
+      return {
+        inputTokens: usage.input_tokens ?? usage.prompt_tokens ?? 0,
+        outputTokens: usage.output_tokens ?? usage.completion_tokens ?? 0,
+      };
+    }
+
+    // Gemini stats 구조: { stats: { models: { "model-name": { tokens: { input, candidates, total } } } } }
+    const stats = data.stats as Record<string, unknown> | undefined;
+    if (stats?.models && typeof stats.models === 'object') {
+      const models = stats.models as Record<string, Record<string, unknown>>;
+      const firstModel = Object.values(models)[0];
+      if (firstModel?.tokens && typeof firstModel.tokens === 'object') {
+        const tokens = firstModel.tokens as Record<string, number>;
+        return {
+          inputTokens: tokens.input ?? 0,
+          outputTokens: tokens.candidates ?? 0,
+        };
+      }
+    }
+
+    return { inputTokens: 0, outputTokens: 0 };
   }
 
   // 스트리밍: non-streaming 결과를 청크로 분할
