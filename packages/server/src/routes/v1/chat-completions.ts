@@ -311,10 +311,10 @@ export function registerChatCompletionsRoute(
               actualModel: route.actualModel,
               status: 'success',
               statusCode: 200,
-              // ADD-05: 실제 토큰 수 사용 (없으면 추정)
-              promptTokens: streamUsage?.promptTokens,
+              // ADD-05: 실제 토큰 수 사용 (없으면 completionTokens만 추정)
+              promptTokens: streamUsage?.promptTokens ?? 0,
               completionTokens: streamUsage?.completionTokens ?? Math.ceil(totalContent.length / 4),
-              totalTokens: streamUsage?.totalTokens,
+              totalTokens: streamUsage?.totalTokens ?? Math.ceil(totalContent.length / 4),
               latencyMs: Date.now() - startTime,
               ttfbMs,
               isStream: true,
