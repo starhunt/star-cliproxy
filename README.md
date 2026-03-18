@@ -1,6 +1,6 @@
 # star-cliproxy
 
-AI CLI Subscription Proxy Service - Claude, Codex, Gemini CLI를 활용한 OpenAI-compatible API 프록시
+An OpenAI-compatible API proxy powered by your AI CLI subscriptions — Claude, Codex, and Gemini
 
 ![Dashboard](docs/images/dashboard.png)
 
@@ -8,9 +8,9 @@ AI CLI Subscription Proxy Service - Claude, Codex, Gemini CLI를 활용한 OpenA
 
 ## What is this?
 
-Claude Max, ChatGPT Pro, Google AI Studio Pro 등의 **AI 구독 플랜에 포함된 CLI 도구**를 서브프로세스로 호출하여, **OpenAI-compatible API 엔드포인트**를 로컬에서 제공하는 프록시 서비스입니다.
+star-cliproxy spawns **AI CLI tools bundled with your existing subscriptions** (Claude Max, ChatGPT Pro, Google AI Studio Pro) as subprocesses and exposes them as a local **OpenAI-compatible API endpoint**.
 
-기존 OpenAI SDK를 사용하는 코드에서 `base_url`만 변경하면 추가 API 비용 없이 구독 내에서 LLM을 호출할 수 있습니다.
+Any code already using the OpenAI SDK can switch to star-cliproxy by changing only `base_url` — no additional API costs, just your subscription.
 
 ```python
 from openai import OpenAI
@@ -28,29 +28,34 @@ response = client.chat.completions.create(
 
 ## Features
 
-- **OpenAI-compatible API** - `/v1/chat/completions`, `/v1/models` 엔드포인트
-- **3개 CLI Provider 지원** - Claude Code, Codex, Gemini CLI
-- **모델 매핑** - alias 기반 라우팅 + priority 폴백 체인
-- **대시보드** - 실시간 모니터링, 모델 관리, API 키 관리
-- **활성 요청 추적** - 처리 중인 요청을 실시간 표시
-- **Test Model** - 매핑 저장 전 실제 CLI 호출로 검증
-- **Rate Limiting** - 3-tier (Global / Provider / API Key), 대시보드에서 즉시 변경
-- **보안** - API 키 인증(SHA256), CLI 인젝션 방지, 입력 검증, 타이밍 공격 방지
-- **SSE 스트리밍** - 실시간 응답 스트리밍 지원
-- **API Guide** - 내장 사용 가이드 페이지
+- **OpenAI-compatible API** — `/v1/chat/completions` and `/v1/models` endpoints
+- **Three CLI providers** — Claude Code, Codex, Gemini CLI
+- **True SSE streaming** — Claude via stream-json NDJSON pipe, Gemini via real-time delta events, Codex via JSONL event stream
+- **Model mapping** — alias-based routing with priority fallback chains
+- **Response cache** — SHA-256 hash keying, TTL expiry, X-Cache header
+- **Rate limiting** — 3-tier (Global / Provider / API Key), counters persisted in SQLite and restored on server restart
+- **Dashboard** — real-time monitoring, model management, API key management
+- **Active request tracking** — live view of in-flight requests
+- **Test Model** — validate a mapping by making a real CLI call before saving
+- **Enhanced health check** — composite judgment using `--version` probe plus recent request history
+- **Security** — SHA-256 API key auth, prompt injection prevention, CLI injection prevention, timing-safe comparisons
+- **Process teardown** — SIGTERM with 3-second grace period, then SIGKILL fallback
+- **Error differentiation** — 504 on timeout, 502 on other errors
+- **X-Unsupported-Params header** — notifies callers of parameters the CLI does not support
+- **API Guide** — built-in usage guide page
 
 ## Prerequisites
 
-- **Node.js** 20 이상
-- 다음 CLI 도구 중 하나 이상 설치:
+- **Node.js** 20 or later
+- At least one of the following CLI tools installed and authenticated:
 
-| CLI | 구독 | 설치 |
-|-----|------|------|
+| CLI | Subscription | Install |
+|-----|-------------|---------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Claude Pro / Max | `npm install -g @anthropic-ai/claude-code` |
 | [Codex](https://github.com/openai/codex) | ChatGPT Plus / Pro | `npm install -g @openai/codex` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
 
-각 CLI 도구를 먼저 단독으로 실행하여 인증(로그인)을 완료해 주세요.
+Run each CLI tool at least once on its own to complete authentication before starting the proxy.
 
 ## Quick Start
 
@@ -69,25 +74,25 @@ cp config.example.yaml config.yaml
 cp .env.example .env
 ```
 
-`.env` 파일을 수정합니다:
+Edit `.env`:
 
 ```env
 ADMIN_TOKEN=your-secure-admin-token
 PROXY_API_KEY=sk-proxy-your-secret-key
 ```
 
-`config.yaml`에서 사용할 provider를 활성화/비활성화합니다:
+Enable or disable providers in `config.yaml`:
 
 ```yaml
 providers:
   claude:
-    enabled: true     # Claude CLI 사용
+    enabled: true     # use Claude CLI
     cli_path: "claude"
   codex:
-    enabled: true     # Codex CLI 사용
+    enabled: true     # use Codex CLI
     cli_path: "codex"
   gemini:
-    enabled: false    # 설치 안 된 경우 비활성화
+    enabled: false    # disable if not installed
     cli_path: "gemini"
 ```
 
@@ -97,7 +102,7 @@ providers:
 # Backend API (:8300)
 npm run dev
 
-# Dashboard (:5300) - 별도 터미널
+# Dashboard (:5300) — separate terminal
 npm run dev:dashboard
 ```
 
@@ -107,7 +112,7 @@ npm run dev:dashboard
 # Health check
 curl http://localhost:8300/health
 
-# Model list
+# List models
 curl http://localhost:8300/v1/models \
   -H "Authorization: Bearer sk-proxy-your-secret-key"
 
@@ -123,14 +128,14 @@ curl http://localhost:8300/v1/chat/completions \
 
 ### 5. Dashboard
 
-브라우저에서 `http://localhost:5300` 접속:
+Open `http://localhost:5300` in your browser:
 
-- **Dashboard** - 요청 통계, 시간대별 사용량, 활성 요청 실시간 표시
-- **Models** - 모델 매핑 관리 (추가/수정/삭제/테스트)
-- **API Keys** - API 키 생성/폐기
-- **Rate Limits** - 레이트 리밋 설정 (즉시 반영)
-- **Logs** - 요청 로그 조회
-- **API Guide** - 사용 가이드 + 코드 샘플
+- **Dashboard** — request statistics, hourly usage, live active request view
+- **Models** — manage model mappings (create / edit / delete / test)
+- **API Keys** — issue and revoke API keys
+- **Rate Limits** — adjust rate limit settings (takes effect immediately)
+- **Logs** — browse request logs
+- **API Guide** — usage guide with code samples
 
 ## Usage Examples
 
@@ -194,19 +199,19 @@ curl http://localhost:8300/v1/chat/completions \
 
 ## Model Mapping
 
-기본 매핑 (대시보드에서 추가/수정 가능):
+Default mappings (add or modify from the dashboard):
 
-| Alias (client sends) | Provider | Actual Model |
-|----------------------|----------|-------------|
+| Alias (sent by client) | Provider | Actual Model |
+|------------------------|----------|-------------|
 | `claude-opus` | Claude | `claude-opus-4-6` |
 | `claude-sonnet` | Claude | `claude-sonnet-4-6` |
 | `claude-haiku` | Claude | `claude-haiku-4-5-20251001` |
-| `gpt-4` | Codex | `gpt-5.4` |
-| `gpt-4o` | Codex | `gpt-5.4` |
+| `gpt-4` | Codex | (CLI default model) |
+| `gpt-4o` | Codex | (CLI default model) |
 | `gemini-pro` | Gemini | `gemini-2.5-pro` |
 | `gemini-flash` | Gemini | `gemini-2.5-flash` |
 
-같은 alias에 여러 provider를 매핑하면 priority 순으로 **자동 폴백**됩니다.
+Mapping the same alias to multiple providers enables **automatic fallback** in priority order.
 
 ## Configuration
 
@@ -222,8 +227,8 @@ providers:
     enabled: true
     cli_path: "claude"
     default_model: "claude-sonnet-4-6"
-    max_concurrent: 2          # 동시 CLI 프로세스 제한
-    timeout_ms: 300000         # 5분 타임아웃
+    max_concurrent: 2          # max simultaneous CLI processes
+    timeout_ms: 300000         # 5-minute timeout
     extra_args:
       - "--no-session-persistence"
   codex:
@@ -243,27 +248,27 @@ providers:
 
 rate_limits:
   global:
-    rpm: 60                    # 분당 요청 제한
-    rpd: 1000                  # 일당 요청 제한
+    rpm: 60                    # requests per minute
+    rpd: 1000                  # requests per day
   per_provider:
     claude: { rpm: 20 }
     codex: { rpm: 20 }
     gemini: { rpm: 20 }
 
 validation:
-  max_message_count: 200       # 메시지 배열 최대 수
-  max_message_length: 100000   # 개별 메시지 최대 길이
-  max_prompt_length: 500000    # 전체 프롬프트 총 길이
-  max_response_length: 500000  # 응답 최대 길이
-  body_limit_bytes: 10485760   # HTTP 요청 본문 (10MB)
+  max_message_count: 200       # maximum messages in array
+  max_message_length: 100000   # maximum length per message
+  max_prompt_length: 500000    # maximum total prompt length
+  max_response_length: 500000  # maximum response length
+  body_limit_bytes: 10485760   # HTTP request body limit (10 MB)
 ```
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `ADMIN_TOKEN` | 대시보드 Admin API 인증 토큰 (필수) |
-| `PROXY_API_KEY` | 초기 API 키 (첫 실행 시 자동 생성) |
+| `ADMIN_TOKEN` | Admin API authentication token for the dashboard (required) |
+| `PROXY_API_KEY` | Initial API key (auto-generated on first run if omitted) |
 
 ## API Endpoints
 
@@ -271,52 +276,53 @@ validation:
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/v1/chat/completions` | Bearer | Chat completion (streaming/non-streaming) |
-| `GET` | `/v1/models` | Bearer | Available models |
-| `GET` | `/health` | - | Health check |
+| `POST` | `/v1/chat/completions` | Bearer | Chat completion (streaming / non-streaming) |
+| `GET` | `/v1/models` | Bearer | List available models |
+| `GET` | `/health` | — | Health check |
 
 ### Admin API (:8300/admin)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET/POST/PUT/DELETE` | `/admin/model-mappings` | 모델 매핑 CRUD |
-| `GET/POST/PUT/DELETE` | `/admin/api-keys` | API 키 관리 |
-| `GET/PUT` | `/admin/rate-limits` | Rate Limit 설정 |
-| `GET` | `/admin/providers` | Provider 상태 |
-| `POST` | `/admin/test-model` | 모델 테스트 |
-| `GET` | `/admin/dashboard` | 대시보드 통합 데이터 |
-| `GET` | `/admin/active-requests` | 활성 요청 |
-| `GET` | `/admin/stats` | 사용 통계 |
-| `GET` | `/admin/logs` | 요청 로그 |
+| `GET/POST/PUT/DELETE` | `/admin/model-mappings` | Model mapping CRUD |
+| `GET/POST/PUT/DELETE` | `/admin/api-keys` | API key management |
+| `GET/PUT` | `/admin/rate-limits` | Rate limit configuration |
+| `GET` | `/admin/providers` | Provider status |
+| `POST` | `/admin/test-model` | Test a model mapping |
+| `GET` | `/admin/dashboard` | Aggregated dashboard data |
+| `GET` | `/admin/active-requests` | In-flight requests |
+| `GET` | `/admin/stats` | Usage statistics |
+| `GET` | `/admin/logs` | Request logs |
 
 ## Architecture
 
 ```
 Client (OpenAI SDK)
-    │
+    |
     POST /v1/chat/completions
-    │
-┌───▼─────────────────────────┐
-│  Fastify Server (:8300)     │
-│                             │
-│  Auth → RateLimit → Router  │
-│           │                 │
-│  ┌────────▼────────┐       │
-│  │ Provider Engine  │       │
-│  │ (fallback chain) │       │
-│  └──┬─────┬─────┬──┘       │
-│     │     │     │           │
-│  Claude Codex Gemini        │
-│  (spawn) (spawn) (spawn)   │
-│                             │
-│  SQLite (logs, config)      │
-└─────────────────────────────┘
+    |
++---+-----------------------------+
+|  Fastify Server (:8300)        |
+|                                |
+|  Auth -> RateLimit -> Cache    |
+|              |                 |
+|     +--------+--------+        |
+|     | Provider Engine  |       |
+|     | (fallback chain) |       |
+|     +--+------+-----+--+       |
+|        |      |     |          |
+|     Claude  Codex  Gemini      |
+|     (spawn) (spawn) (spawn)    |
+|                                |
+|  SQLite (logs, config, cache,  |
+|          rate limit counters)  |
++--------------------------------+
 
-┌─────────────────────────────┐
-│  Dashboard (:5300)          │
-│  React + Vite               │
-│  → Admin API (:8300/admin)  │
-└─────────────────────────────┘
++--------------------------------+
+|  Dashboard (:5300)             |
+|  React + Vite                  |
+|  -> Admin API (:8300/admin)    |
++--------------------------------+
 ```
 
 ## Project Structure
@@ -324,13 +330,13 @@ Client (OpenAI SDK)
 ```
 star-cliproxy/
 ├── packages/
-│   ├── shared/          # Shared types, constants
+│   ├── shared/          # Shared types and constants
 │   ├── server/          # Backend API (Fastify)
 │   │   └── src/
 │   │       ├── providers/    # CLI provider implementations
 │   │       ├── routes/       # API endpoints
 │   │       ├── middleware/   # Auth, rate-limit, logging
-│   │       ├── services/     # Router, queue, health-check
+│   │       ├── services/     # Router, queue, cache, health-check
 │   │       └── db/           # SQLite + Drizzle ORM
 │   └── dashboard/       # Dashboard UI (React + Vite)
 │       └── src/
@@ -350,20 +356,21 @@ star-cliproxy/
 
 ## Security
 
-- API 키는 SHA-256 해시로 저장 (평문 비저장)
-- Admin 토큰은 `crypto.timingSafeEqual`로 비교 (타이밍 공격 방지)
-- CLI 인젝션 방지 (`spawn` 사용, `--` 옵션 종료 마커)
-- 입력 null byte 제거
-- 메시지 수/길이/총 크기 제한 (설정 가능)
-- HTTP 요청 본문 크기 제한
-- Admin API는 localhost 접근 허용, 외부 접근 시 토큰 필수
+- API keys stored as SHA-256 hashes (plaintext never persisted)
+- Admin token compared with `crypto.timingSafeEqual` (timing attack prevention)
+- Prompt injection prevention — `<|user|>` / `<|assistant|>` delimiters sanitized
+- CLI injection prevention via `spawn` with `--` option terminator
+- Null byte stripping on all inputs
+- Configurable limits on message count, message length, total prompt size, and response size
+- HTTP request body size cap
+- Admin API restricted to localhost by default; external access requires the admin token
 
 ## Known Limitations
 
-- **스트리밍**: CLI가 전체 응답을 반환한 후 청크로 분할하는 시뮬레이트 스트리밍 (TTFB는 CLI 응답 완료 후)
-- **토큰 카운팅**: CLI 제공 시 사용, 미제공 시 추정 (문자수/4)
-- **구독 한도**: 각 구독 플랜의 Rate Limit이 적용됨
-- **멀티턴**: 대화 히스토리를 텍스트로 직렬화하여 CLI에 전달
+- **Token counting** — uses CLI-reported counts when available; falls back to an estimate (characters / 4)
+- **Subscription rate limits** — each underlying subscription plan enforces its own limits
+- **Multi-turn context** — conversation history is serialized as text and passed to the CLI
+- **Unsupported parameters** — some OpenAI parameters (e.g., `temperature`, `top_p`) are not supported by the CLI tools and are surfaced via the `X-Unsupported-Params` response header
 
 ## License
 
