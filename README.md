@@ -1,3 +1,5 @@
+[English](./README.md) | [한국어](./README.ko.md)
+
 # star-cliproxy
 
 An OpenAI-compatible API proxy powered by your AI CLI subscriptions — Claude, Codex, and Gemini

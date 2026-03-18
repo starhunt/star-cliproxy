@@ -1,3 +1,5 @@
+[English](./README.md) | [한국어](./README.ko.md)
+
 # star-cliproxy
 
 AI CLI 구독 플랜을 활용한 OpenAI 호환 API 프록시 — Claude, Codex, Gemini CLI 지원
