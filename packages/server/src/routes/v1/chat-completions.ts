@@ -83,9 +83,19 @@ export function registerChatCompletionsRoute(
           return reply.status(400).send(makeValidationError(`Invalid role "${msg.role}" at messages[${i}]. Allowed: ${ALLOWED_ROLES.join(', ')}`, 'messages'));
         }
 
-        // content 타입 검증
-        if (typeof msg.content !== 'string') {
-          return reply.status(400).send(makeValidationError(`messages[${i}].content must be a string.`, 'messages'));
+        // content parts 배열 → string으로 정규화
+        if (Array.isArray(msg.content)) {
+          const textParts: string[] = [];
+          for (const part of msg.content) {
+            if (typeof part === 'string') {
+              textParts.push(part);
+            } else if (part && typeof part === 'object' && typeof part.text === 'string') {
+              textParts.push(part.text);
+            }
+          }
+          msg.content = textParts.join('\n');
+        } else if (typeof msg.content !== 'string') {
+          return reply.status(400).send(makeValidationError(`messages[${i}].content must be a string or content parts array.`, 'messages'));
         }
 
         // null byte 제거

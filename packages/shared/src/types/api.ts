@@ -1,8 +1,17 @@
 // OpenAI-compatible API 타입 정의
 
+// OpenAI content parts 형식 (multimodal / LangChain / LiteLLM 등에서 사용)
+export interface ChatMessageContentPart {
+  type: string;
+  text?: string;
+  [key: string]: unknown;
+}
+
+export type ChatMessageContent = string | ChatMessageContentPart[];
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: ChatMessageContent;
 }
 
 export interface ChatCompletionRequest {
