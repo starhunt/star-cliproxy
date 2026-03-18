@@ -35,14 +35,22 @@ export default function ApiKeysPage() {
   };
 
   const handleToggle = async (key: ApiKey) => {
-    await updateApiKey(key.id, { enabled: !key.enabled });
-    load();
+    try {
+      await updateApiKey(key.id, { enabled: !key.enabled });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Toggle failed');
+    }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Revoke this API key? This cannot be undone.')) return;
-    await deleteApiKey(id);
-    load();
+    if (!confirm('Delete this API key? This cannot be undone.')) return;
+    try {
+      await deleteApiKey(id);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
   };
 
   return (
@@ -57,7 +65,12 @@ export default function ApiKeysPage() {
         </button>
       </div>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && (
+        <div className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2">
+          <p className="text-red-400 text-sm">{error}</p>
+          <button onClick={() => setError(null)} className="text-red-400/60 hover:text-red-400 text-xs">dismiss</button>
+        </div>
+      )}
 
       {/* Created Key Display */}
       {createdKey && (
@@ -98,18 +111,14 @@ export default function ApiKeysPage() {
               <th className="text-left px-4 py-3">Key Prefix</th>
               <th className="text-left px-4 py-3">Rate Limit</th>
               <th className="text-left px-4 py-3">Last Used</th>
-              <th className="text-right px-4 py-3">Actions</th>
+              <th className="text-center px-4 py-3">Enabled</th>
+              <th className="text-right px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {keys.map((k) => (
               <tr key={k.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                <td className="px-4 py-3 font-medium">
-                  <span className="inline-flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${k.enabled ? 'bg-green-400' : 'bg-gray-600'}`} />
-                    {k.name}
-                  </span>
-                </td>
+                <td className="px-4 py-3 font-medium">{k.name}</td>
                 <td className="px-4 py-3 font-mono text-gray-400">
                   <span className="inline-flex items-center gap-1.5">
                     {k.keyPrefix}...
@@ -136,29 +145,43 @@ export default function ApiKeysPage() {
                 <td className="px-4 py-3 text-gray-500 text-xs">
                   {k.lastUsedAt ? formatKeyDate(k.lastUsedAt) : 'Never'}
                 </td>
-                <td className="px-4 py-3 text-right space-x-2">
-                  {k.enabled ? (
-                    <button onClick={() => handleToggle(k)} className="px-2 py-0.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded text-xs transition-colors">
-                      Disable
-                    </button>
-                  ) : (
-                    <button onClick={() => handleToggle(k)} className="px-2 py-0.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 rounded text-xs transition-colors">
-                      Enable
-                    </button>
-                  )}
-                  <button onClick={() => handleDelete(k.id)} className="px-2 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded text-xs transition-colors">
-                    Delete
+                <td className="px-4 py-3 text-center">
+                  <ToggleSwitch enabled={k.enabled} onToggle={() => handleToggle(k)} />
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => handleDelete(k.id)}
+                    className="text-gray-600 hover:text-red-400 transition-colors"
+                    title="Delete key"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
                   </button>
                 </td>
               </tr>
             ))}
             {keys.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-600">No API keys</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-600">No API keys</td></tr>
             )}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-green-500' : 'bg-gray-600'}`}
+      title={enabled ? 'Click to disable' : 'Click to enable'}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+      />
+    </button>
   );
 }
 
