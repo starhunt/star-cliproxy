@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { getDatabase } from '../../db/client.js';
-import { apiKeys } from '../../db/schema.js';
+import { apiKeys, requestLogs } from '../../db/schema.js';
 import { hashApiKey, getKeyPrefix } from '../../middleware/auth.js';
 import { API_KEY_PREFIX } from '@star-cliproxy/shared';
 
@@ -106,11 +106,13 @@ export function registerApiKeysRoutes(app: FastifyInstance): void {
     return reply.send(updated[0]);
   });
 
-  // 삭제
+  // 삭제 (관련 로그의 api_key_id를 null로 설정 후 삭제)
   app.delete<{ Params: { id: string } }>('/admin/api-keys/:id', async (request, reply) => {
     const { id } = request.params;
     const db = getDatabase();
 
+    // 외래 키 제약 해소: 관련 request_logs의 api_key_id를 null로 변경
+    await db.update(requestLogs).set({ apiKeyId: null }).where(eq(requestLogs.apiKeyId, id));
     await db.delete(apiKeys).where(eq(apiKeys.id, id));
     return reply.status(204).send();
   });
