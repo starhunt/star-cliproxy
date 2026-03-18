@@ -98,14 +98,18 @@ export default function ApiKeysPage() {
               <th className="text-left px-4 py-3">Key Prefix</th>
               <th className="text-left px-4 py-3">Rate Limit</th>
               <th className="text-left px-4 py-3">Last Used</th>
-              <th className="text-left px-4 py-3">Status</th>
               <th className="text-right px-4 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {keys.map((k) => (
               <tr key={k.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                <td className="px-4 py-3 font-medium">{k.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  <span className="inline-flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${k.enabled ? 'bg-green-400' : 'bg-gray-600'}`} />
+                    {k.name}
+                  </span>
+                </td>
                 <td className="px-4 py-3 font-mono text-gray-400">
                   <span className="inline-flex items-center gap-1.5">
                     {k.keyPrefix}...
@@ -132,15 +136,16 @@ export default function ApiKeysPage() {
                 <td className="px-4 py-3 text-gray-500 text-xs">
                   {k.lastUsedAt ? formatKeyDate(k.lastUsedAt) : 'Never'}
                 </td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded text-xs ${k.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-700 text-gray-500'}`}>
-                    {k.enabled ? 'Active' : 'Disabled'}
-                  </span>
-                </td>
                 <td className="px-4 py-3 text-right space-x-2">
-                  <button onClick={() => handleToggle(k)} className="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs transition-colors">
-                    {k.enabled ? 'Disable' : 'Enable'}
-                  </button>
+                  {k.enabled ? (
+                    <button onClick={() => handleToggle(k)} className="px-2 py-0.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 rounded text-xs transition-colors">
+                      Disable
+                    </button>
+                  ) : (
+                    <button onClick={() => handleToggle(k)} className="px-2 py-0.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 rounded text-xs transition-colors">
+                      Enable
+                    </button>
+                  )}
                   <button onClick={() => handleDelete(k.id)} className="px-2 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded text-xs transition-colors">
                     Delete
                   </button>
@@ -148,7 +153,7 @@ export default function ApiKeysPage() {
               </tr>
             ))}
             {keys.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-600">No API keys</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-600">No API keys</td></tr>
             )}
           </tbody>
         </table>
