@@ -7,6 +7,14 @@ export default function ApiKeysPage() {
   const [newKeyName, setNewKeyName] = useState('');
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyPrefix = (id: string, prefix: string) => {
+    navigator.clipboard.writeText(prefix).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    });
+  };
 
   const load = () => {
     fetchApiKeys().then(setKeys).catch((e) => setError(e.message));
@@ -98,7 +106,26 @@ export default function ApiKeysPage() {
             {keys.map((k) => (
               <tr key={k.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                 <td className="px-4 py-3 font-medium">{k.name}</td>
-                <td className="px-4 py-3 font-mono text-gray-400">{k.keyPrefix}...</td>
+                <td className="px-4 py-3 font-mono text-gray-400">
+                  <span className="inline-flex items-center gap-1.5">
+                    {k.keyPrefix}...
+                    <button
+                      onClick={() => handleCopyPrefix(k.id, k.keyPrefix)}
+                      className="text-gray-600 hover:text-gray-300 transition-colors"
+                      title="Copy prefix"
+                    >
+                      {copiedId === k.id ? (
+                        <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">
                   {k.rateLimitRpm ? `${k.rateLimitRpm} RPM` : 'Global'}
                 </td>
@@ -106,16 +133,16 @@ export default function ApiKeysPage() {
                   {k.lastUsedAt ? formatKeyDate(k.lastUsedAt) : 'Never'}
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    onClick={() => handleToggle(k)}
-                    className={`px-2 py-0.5 rounded text-xs ${k.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-700 text-gray-500'}`}
-                  >
+                  <span className={`px-2 py-0.5 rounded text-xs ${k.enabled ? 'bg-green-500/20 text-green-400' : 'bg-gray-700 text-gray-500'}`}>
                     {k.enabled ? 'Active' : 'Disabled'}
-                  </button>
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-right space-x-2">
+                  <button onClick={() => handleToggle(k)} className="px-2 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-xs transition-colors">
+                    {k.enabled ? 'Disable' : 'Enable'}
+                  </button>
                   <button onClick={() => handleDelete(k.id)} className="px-2 py-0.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded text-xs transition-colors">
-                    Revoke
+                    Delete
                   </button>
                 </td>
               </tr>
