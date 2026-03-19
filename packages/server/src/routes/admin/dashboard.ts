@@ -108,7 +108,7 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       .limit(5)
       .all();
 
-    // 10. 24시간 시간대별 요청 추이
+    // 10. 24시간 시간대별 요청 추이 (모델별 breakdown 포함)
     const hourlyTrend = db.select({
       hour: sql<number>`cast(strftime('%H', created_at) as integer)`,
       count: sql<number>`count(*)`,
@@ -117,6 +117,17 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
     }).from(requestLogs)
       .where(sql`created_at >= datetime('now', '-24 hours')`)
       .groupBy(sql`strftime('%H', created_at)`)
+      .orderBy(sql`strftime('%H', created_at) ASC`)
+      .all();
+
+    // 10-1. 모델별 시간대 breakdown
+    const hourlyByModel = db.select({
+      hour: sql<number>`cast(strftime('%H', created_at) as integer)`,
+      modelAlias: requestLogs.modelAlias,
+      count: sql<number>`count(*)`,
+    }).from(requestLogs)
+      .where(sql`created_at >= datetime('now', '-24 hours')`)
+      .groupBy(sql`strftime('%H', created_at)`, requestLogs.modelAlias)
       .orderBy(sql`strftime('%H', created_at) ASC`)
       .all();
 
@@ -187,6 +198,7 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       providerStats,
       popularModels,
       hourlyTrend,
+      hourlyByModel,
       recentRequests,
       recentErrors,
       activeRequests: {

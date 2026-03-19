@@ -58,7 +58,7 @@ export default function DashboardPage() {
     return <div className="text-gray-500 text-center py-20">Loading...</div>;
   }
 
-  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, hourlyTrend, recentRequests, recentErrors, activeRequests } = data;
+  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, hourlyTrend, hourlyByModel, recentRequests, recentErrors, activeRequests } = data;
 
   return (
     <div className="space-y-6">
@@ -147,12 +147,9 @@ export default function DashboardPage() {
         <div className="col-span-3 bg-gray-900 border border-gray-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-gray-400">Hourly Requests (24h)</h3>
-            <div className="flex items-center gap-3 text-xs text-gray-600">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-green-500/60 rounded-sm inline-block" /> success</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 bg-red-500/60 rounded-sm inline-block" /> failed</span>
-            </div>
+            <span className="text-xs text-gray-600">by model</span>
           </div>
-          <HourlyChart data={hourlyTrend} />
+          <HourlyChart data={hourlyTrend} byModel={hourlyByModel} />
         </div>
 
         {/* System Status */}
@@ -208,12 +205,32 @@ export default function DashboardPage() {
               View All
             </button>
           </div>
-          {recentRequests.length === 0 ? (
+          {recentRequests.length === 0 && activeRequests.count === 0 ? (
             <div className="h-32 flex items-center justify-center text-gray-600 text-sm">
               No requests yet
             </div>
           ) : (
             <div className="space-y-1">
+              {/* 진행 중인 요청 */}
+              {activeRequests.requests.map((req) => (
+                <div key={req.requestId} className="py-1.5 px-3 rounded text-xs bg-blue-500/5 border border-blue-500/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-blue-300 font-mono">{req.modelAlias}</span>
+                      <span className="text-gray-600">{req.provider}</span>
+                      {req.isStream && <span className="px-1 py-0.5 bg-purple-500/20 text-purple-400 rounded text-[10px]">SSE</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-400 animate-pulse">processing</span>
+                      <span className={`text-gray-600 w-16 text-right font-mono ${req.elapsedMs > 30000 ? 'text-red-400' : ''}`}>
+                        {req.elapsedMs >= 1000 ? `${(req.elapsedMs / 1000).toFixed(1)}s` : `${req.elapsedMs}ms`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {/* 완료된 요청 */}
               {recentRequests.map((req) => (
                 <div key={req.id} className={`py-1.5 px-3 rounded text-xs ${req.status !== 'success' ? 'bg-red-500/5 border border-red-500/20' : 'bg-gray-800/30'}`}>
                   <div className="flex items-center justify-between">
@@ -370,18 +387,62 @@ function formatTime(dateStr: string): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-// 24시간 시간대별 바 차트
-function HourlyChart({ data }: { data: Array<{ hour: number; count: number; successCount: number; errorCount: number }> }) {
-  const BAR_MAX_HEIGHT = 120; // px
+// 모델별 색상 팔레트
+const MODEL_COLORS = [
+  'bg-blue-500/70',
+  'bg-emerald-500/70',
+  'bg-purple-500/70',
+  'bg-amber-500/70',
+  'bg-pink-500/70',
+  'bg-cyan-500/70',
+  'bg-orange-500/70',
+  'bg-indigo-500/70',
+];
+
+const MODEL_DOT_COLORS = [
+  'bg-blue-400',
+  'bg-emerald-400',
+  'bg-purple-400',
+  'bg-amber-400',
+  'bg-pink-400',
+  'bg-cyan-400',
+  'bg-orange-400',
+  'bg-indigo-400',
+];
+
+// 24시간 시간대별 바 차트 (모델별 색상 구분)
+function HourlyChart({
+  data,
+  byModel,
+}: {
+  data: Array<{ hour: number; count: number; successCount: number; errorCount: number }>;
+  byModel?: Array<{ hour: number; modelAlias: string; count: number }>;
+}) {
+  const BAR_MAX_HEIGHT = 120;
+
+  // 모델 목록 추출 (요청 수 내림차순)
+  const modelCounts = new Map<string, number>();
+  byModel?.forEach((d) => modelCounts.set(d.modelAlias, (modelCounts.get(d.modelAlias) ?? 0) + d.count));
+  const models = [...modelCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name]) => name);
+
+  const colorMap = new Map(models.map((m, i) => [m, i % MODEL_COLORS.length]));
 
   // 0~23시 전체 슬롯 생성
   const slots = Array.from({ length: 24 }, (_, i) => {
     const match = data.find((d) => d.hour === i);
+    const modelBreakdown = models.map((model) => {
+      const entry = byModel?.find((d) => d.hour === i && d.modelAlias === model);
+      return { model, count: entry?.count ?? 0 };
+    }).filter((m) => m.count > 0);
+
     return {
       hour: i,
       count: match?.count ?? 0,
       successCount: match?.successCount ?? 0,
       errorCount: match?.errorCount ?? 0,
+      models: modelBreakdown,
     };
   });
 
@@ -404,8 +465,6 @@ function HourlyChart({ data }: { data: Array<{ hour: number; count: number; succ
       <div className="flex items-end gap-1" style={{ height: `${BAR_MAX_HEIGHT}px` }}>
         {slots.map((slot) => {
           const totalPx = Math.round((slot.count / maxCount) * BAR_MAX_HEIGHT);
-          const successPx = Math.round((slot.successCount / Math.max(slot.count, 1)) * totalPx);
-          const errorPx = totalPx - successPx;
 
           return (
             <div
@@ -413,25 +472,42 @@ function HourlyChart({ data }: { data: Array<{ hour: number; count: number; succ
               className="flex-1 flex flex-col justify-end relative group cursor-default"
             >
               {slot.count > 0 ? (
-                <>
-                  <div
-                    className="w-full bg-blue-500/60 rounded-t-sm"
-                    style={{ height: `${successPx}px` }}
-                  />
-                  {errorPx > 0 && (
-                    <div
-                      className="w-full bg-red-500/60 rounded-b-sm"
-                      style={{ height: `${errorPx}px` }}
-                    />
+                <div className="w-full flex flex-col justify-end" style={{ height: `${totalPx}px` }}>
+                  {slot.models.length > 0 ? (
+                    // 모델별 색상 스택
+                    slot.models.map((m, idx) => {
+                      const segPx = Math.max(Math.round((m.count / slot.count) * totalPx), 1);
+                      const ci = colorMap.get(m.model) ?? 0;
+                      const isFirst = idx === 0;
+                      const isLast = idx === slot.models.length - 1;
+                      return (
+                        <div
+                          key={m.model}
+                          className={`w-full ${MODEL_COLORS[ci]} ${isFirst ? 'rounded-t-sm' : ''} ${isLast ? 'rounded-b-sm' : ''}`}
+                          style={{ height: `${segPx}px` }}
+                        />
+                      );
+                    })
+                  ) : (
+                    <div className="w-full bg-blue-500/60 rounded-sm" style={{ height: `${totalPx}px` }} />
                   )}
-                </>
+                </div>
               ) : (
                 <div className="w-full bg-gray-800/30 rounded-sm" style={{ height: '2px' }} />
               )}
               {/* Tooltip */}
-              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 text-gray-300 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                <div>{slot.hour}:00</div>
-                <div>{slot.count} req ({slot.errorCount > 0 ? `${slot.errorCount} err` : 'all ok'})</div>
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 text-gray-300 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                <div className="font-semibold">{slot.hour}:00 — {slot.count} req</div>
+                {slot.models.map((m) => {
+                  const ci = colorMap.get(m.model) ?? 0;
+                  return (
+                    <div key={m.model} className="flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${MODEL_DOT_COLORS[ci]}`} />
+                      <span>{m.model}: {m.count}</span>
+                    </div>
+                  );
+                })}
+                {slot.errorCount > 0 && <div className="text-red-400">{slot.errorCount} errors</div>}
               </div>
             </div>
           );
@@ -445,6 +521,20 @@ function HourlyChart({ data }: { data: Array<{ hour: number; count: number; succ
           </div>
         ))}
       </div>
+      {/* Legend */}
+      {models.length > 1 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+          {models.map((model) => {
+            const ci = colorMap.get(model) ?? 0;
+            return (
+              <span key={model} className="flex items-center gap-1 text-xs text-gray-500">
+                <span className={`w-2 h-2 rounded-sm ${MODEL_DOT_COLORS[ci]}`} />
+                {model}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

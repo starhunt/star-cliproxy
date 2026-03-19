@@ -52,6 +52,7 @@ export interface DashboardData {
   providerStats: Array<{ provider: string; count: number; successCount: number; avgLatencyMs: number; totalTokens: number }>;
   popularModels: Array<{ modelAlias: string; provider: string; count: number; avgLatencyMs: number }>;
   hourlyTrend: Array<{ hour: number; count: number; successCount: number; errorCount: number }>;
+  hourlyByModel: Array<{ hour: number; modelAlias: string; count: number }>;
   recentRequests: Array<{
     id: string;
     modelAlias: string;
