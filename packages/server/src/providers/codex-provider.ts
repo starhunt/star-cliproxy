@@ -16,8 +16,8 @@ export class CodexProvider extends BaseProvider {
 
     const args: string[] = [
       'exec',
-      // streaming: --json으로 JSONL 이벤트 출력
-      ...(options.stream ? ['--json'] : []),
+      // --json 필수: 없으면 TUI 출력이 되어 stdout 캡처 불가
+      '--json',
       ...this.config.extra_args,
       // 모델 지정 (빈 값이면 Codex 기본 모델 사용)
       ...(model ? ['-m', model] : []),
@@ -28,39 +28,33 @@ export class CodexProvider extends BaseProvider {
     return args;
   }
 
-  // Codex 출력: NDJSON 스트림 → 각 라인의 content를 추출하되 줄바꿈을 보존
+  // Codex --json 출력: NDJSON 이벤트 스트림에서 텍스트 추출
   protected override parseNonStreamOutput(stdout: string): ExecuteResult {
     const trimmed = stdout.trim();
     if (!trimmed) {
       return { content: '', usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, finishReason: 'error' };
     }
 
-    // 전체 JSON 파싱 시도
+    // 단일 JSON 객체인 경우 (구형 포맷)
     try {
       const data = JSON.parse(trimmed);
-      const content = data.result ?? data.content ?? data.message ?? '';
-      return {
-        content,
-        usage: {
-          promptTokens: data.usage?.input_tokens ?? 0,
-          completionTokens: data.usage?.output_tokens ?? Math.ceil(content.length / 4),
-          totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? Math.ceil(content.length / 4)),
-        },
-        finishReason: 'stop',
-      };
-    } catch {
-      // JSON 실패 → NDJSON 라인 파싱 시도, 실패하면 stdout 자체를 content로 사용
-      const baseResult = super.parseNonStreamOutput(stdout);
-      // base 파싱 결과에 줄바꿈이 거의 없으면 stdout 원본 사용 (줄바꿈 보존)
-      if (baseResult.content.length > 100 && baseResult.content.split('\n').length < 3) {
+      // 배열이나 NDJSON이 아닌 단일 객체
+      if (typeof data === 'object' && !Array.isArray(data) && data.type === undefined) {
+        const content = data.result ?? data.content ?? data.message ?? '';
         return {
-          content: trimmed,
-          usage: baseResult.usage,
+          content,
+          usage: {
+            promptTokens: data.usage?.input_tokens ?? 0,
+            completionTokens: data.usage?.output_tokens ?? Math.ceil(content.length / 4),
+            totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? Math.ceil(content.length / 4)),
+          },
           finishReason: 'stop',
         };
       }
-      return baseResult;
-    }
+    } catch { /* NDJSON → 라인별 파싱으로 폴백 */ }
+
+    // NDJSON 라인별 파싱 (item.completed → text 추출)
+    return super.parseNonStreamOutput(stdout);
   }
 
   // 스트리밍: --json JSONL을 readline으로 실시간 파싱
