@@ -1,17 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from '../i18n/context';
 import { fetchDashboard, fetchTrend, type DashboardData, type TrendData } from '../api/client';
 
 const statusDot: Record<string, string> = {
   healthy: 'bg-green-400',
   unhealthy: 'bg-red-400',
   unknown: 'bg-yellow-400',
-};
-
-const statusLabel: Record<string, string> = {
-  healthy: 'Online',
-  unhealthy: 'Offline',
-  unknown: 'Unknown',
 };
 
 const reqStatusStyle: Record<string, string> = {
@@ -22,6 +17,7 @@ const reqStatusStyle: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -47,91 +43,97 @@ export default function DashboardPage() {
   if (error) {
     return (
       <div className="text-center py-20">
-        <p className="text-red-400 text-lg">Connection Failed</p>
-        <p className="text-gray-500 mt-2">Backend server (port 8300) is running?</p>
-        <button onClick={load} className="mt-4 px-4 py-2 bg-gray-800 rounded text-sm hover:bg-gray-700">Retry</button>
+        <p className="text-red-400 text-lg">{t('dashboard.connectionFailed')}</p>
+        <p className="text-gray-400 dark:text-gray-500 mt-2">{t('dashboard.backendRunning')}</p>
+        <button onClick={load} className="mt-4 px-4 py-2 bg-gray-200 dark:bg-gray-800 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-700">{t('common.retry')}</button>
       </div>
     );
   }
 
   if (!data) {
-    return <div className="text-gray-500 text-center py-20">Loading...</div>;
+    return <div className="text-gray-400 dark:text-gray-500 text-center py-20">{t('common.loading')}</div>;
   }
 
   const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, recentRequests, recentErrors, activeRequests } = data;
 
+  const statusLabel = (status: string) => {
+    if (status === 'healthy') return t('common.online');
+    if (status === 'unhealthy') return t('common.offline');
+    return t('common.unknown');
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Dashboard</h2>
-          <p className="text-sm text-gray-500 mt-0.5">AI CLI Proxy Service</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('dashboard.title')}</h2>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{t('dashboard.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
           {lastUpdated && (
-            <span className="text-xs text-gray-600">
-              Updated {lastUpdated.toLocaleTimeString()}
+            <span className="text-xs text-gray-500 dark:text-gray-600">
+              {t('dashboard.updated')} {lastUpdated.toLocaleTimeString()}
             </span>
           )}
-          <button onClick={load} className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs text-gray-400">
-            Refresh
+          <button onClick={load} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-xs text-gray-500 dark:text-gray-400">
+            {t('common.refresh')}
           </button>
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* 요약 카드 */}
       <div className="grid grid-cols-4 gap-4">
         <SummaryCard
-          label="Total Requests"
+          label={t('dashboard.totalRequests')}
           value={overview.totalRequests.toLocaleString()}
-          sub={`Today: ${today.count}`}
+          sub={`${t('dashboard.today')}: ${today.count}`}
           accent="blue"
         />
         <SummaryCard
-          label="Success Rate"
+          label={t('dashboard.successRate')}
           value={`${overview.successRate.toFixed(1)}%`}
-          sub={`${overview.successCount} success / ${overview.errorCount + overview.timeoutCount} failed`}
+          sub={`${overview.successCount} ${t('dashboard.success')} / ${overview.errorCount + overview.timeoutCount} ${t('dashboard.failed')}`}
           accent={overview.successRate >= 90 ? 'green' : overview.successRate >= 50 ? 'yellow' : 'red'}
         />
         <SummaryCard
-          label="Avg Latency"
+          label={t('dashboard.avgLatency')}
           value={`${overview.avgLatencyMs.toLocaleString()}ms`}
-          sub={`Today: ${today.avgLatencyMs}ms`}
+          sub={`${t('dashboard.today')}: ${today.avgLatencyMs}ms`}
           accent="purple"
         />
         <SummaryCard
-          label="Active API Keys"
+          label={t('dashboard.activeApiKeys')}
           value={String(keys.active)}
-          sub={`${mappings.active} model mappings`}
+          sub={`${mappings.active} ${t('dashboard.modelMappings')}`}
           accent="amber"
         />
       </div>
 
-      {/* Active Requests */}
+      {/* 활성 요청 */}
       {activeRequests.count > 0 && (
-        <div className="bg-gray-900 border border-blue-500/30 rounded-xl p-4">
+        <div className="bg-white dark:bg-gray-900 border border-blue-200 dark:border-blue-500/30 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
             </span>
-            <h3 className="text-sm font-semibold text-blue-400">
-              Processing {activeRequests.count} request{activeRequests.count > 1 ? 's' : ''}
+            <h3 className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+              {t(activeRequests.count > 1 ? 'dashboard.processingRequestsPlural' : 'dashboard.processingRequests', { count: activeRequests.count })}
             </h3>
           </div>
           <div className="space-y-1.5">
             {activeRequests.requests.map((req) => (
-              <div key={req.requestId} className="flex items-center justify-between py-2 px-3 bg-blue-500/5 border border-blue-500/10 rounded-lg text-xs">
+              <div key={req.requestId} className="flex items-center justify-between py-2 px-3 bg-blue-50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/10 rounded-lg text-xs">
                 <div className="flex items-center gap-3">
                   <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-gray-300 font-mono">{req.modelAlias}</span>
-                  <span className="text-gray-500">{req.provider}</span>
-                  <span className="text-gray-600 font-mono">{req.actualModel}</span>
-                  {req.isStream && <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs">SSE</span>}
+                  <span className="text-gray-700 dark:text-gray-300 font-mono">{req.modelAlias}</span>
+                  <span className="text-gray-400 dark:text-gray-500">{req.provider}</span>
+                  <span className="text-gray-500 dark:text-gray-600 font-mono">{req.actualModel}</span>
+                  {req.isStream && <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded text-xs">SSE</span>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`font-mono ${req.elapsedMs > 30000 ? 'text-red-400' : req.elapsedMs > 10000 ? 'text-yellow-400' : 'text-blue-400'}`}>
+                  <span className={`font-mono ${req.elapsedMs > 30000 ? 'text-red-400' : req.elapsedMs > 10000 ? 'text-yellow-400' : 'text-blue-500 dark:text-blue-400'}`}>
                     {req.elapsedMs >= 1000 ? `${(req.elapsedMs / 1000).toFixed(1)}s` : `${req.elapsedMs}ms`}
                   </span>
                 </div>
@@ -141,85 +143,85 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Middle Row: Trend Chart + System Status */}
+      {/* 중간 행: 트렌드 차트 + 시스템 상태 */}
       <div className="grid grid-cols-5 gap-4">
-        {/* Request Trend */}
-        <div className="col-span-3 bg-gray-900 border border-gray-800 rounded-xl p-5">
+        {/* 요청 트렌드 */}
+        <div className="col-span-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
           <TrendChart />
         </div>
 
-        {/* System Status */}
-        <div className="col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-gray-400 mb-4">System Status</h3>
+        {/* 시스템 상태 */}
+        <div className="col-span-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">{t('dashboard.systemStatus')}</h3>
           <div className="space-y-3">
-            {/* Providers */}
+            {/* 프로바이더 */}
             {providers.map((p) => (
               <div key={p.name} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className={`w-2 h-2 rounded-full ${statusDot[p.status] ?? statusDot.unknown}`} />
-                  <span className="text-sm text-gray-300 capitalize">{p.name}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300 capitalize">{p.name}</span>
                 </div>
-                <span className={`text-xs ${p.status === 'healthy' ? 'text-green-400' : p.status === 'unhealthy' ? 'text-red-400' : 'text-yellow-400'}`}>
-                  {statusLabel[p.status] ?? 'Unknown'}
+                <span className={`text-xs ${p.status === 'healthy' ? 'text-green-500 dark:text-green-400' : p.status === 'unhealthy' ? 'text-red-500 dark:text-red-400' : 'text-yellow-500 dark:text-yellow-400'}`}>
+                  {statusLabel(p.status)}
                 </span>
               </div>
             ))}
 
-            <div className="border-t border-gray-800 my-2" />
+            <div className="border-t border-gray-200 dark:border-gray-800 my-2" />
 
-            {/* Cache */}
+            {/* 캐시 */}
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-400">Cache</span>
-              <span className="text-xs text-gray-500">{cache.activeEntries} entries</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.cache')}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">{cache.activeEntries} {t('dashboard.entries')}</span>
             </div>
 
-            {/* Rate Limit */}
+            {/* 레이트 리밋 */}
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-400">Rate Limit</span>
-              <span className="text-xs text-gray-500">{rateLimits.global.rpm} RPM / {rateLimits.global.rpd} RPD</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.rateLimit')}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">{rateLimits.global.rpm} RPM / {rateLimits.global.rpd} RPD</span>
             </div>
 
-            {/* Total Tokens */}
+            {/* 총 토큰 */}
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-400">Total Tokens</span>
-              <span className="text-xs text-gray-500">{overview.totalTokens.toLocaleString()}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">{t('dashboard.totalTokens')}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">{overview.totalTokens.toLocaleString()}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Bottom Row: Recent Requests + Popular Models */}
+      {/* 하단 행: 최근 요청 + 인기 모델 */}
       <div className="grid grid-cols-2 gap-4">
-        {/* Recent Requests */}
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        {/* 최근 요청 */}
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-400">Recent Requests</h3>
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400">{t('dashboard.recentRequests')}</h3>
             <button
               onClick={() => navigate('/logs')}
-              className="text-xs text-gray-500 hover:text-blue-400 transition-colors"
+              className="text-xs text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
             >
-              View All
+              {t('common.viewAll')}
             </button>
           </div>
           {recentRequests.length === 0 && activeRequests.count === 0 ? (
-            <div className="h-32 flex items-center justify-center text-gray-600 text-sm">
-              No requests yet
+            <div className="h-32 flex items-center justify-center text-gray-400 dark:text-gray-600 text-sm">
+              {t('dashboard.noRequests')}
             </div>
           ) : (
             <div className="space-y-1">
               {/* 진행 중인 요청 */}
               {activeRequests.requests.map((req) => (
-                <div key={req.requestId} className="py-1.5 px-3 rounded text-xs bg-blue-500/5 border border-blue-500/20">
+                <div key={req.requestId} className="py-1.5 px-3 rounded text-xs bg-blue-50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/20">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                      <span className="text-blue-300 font-mono">{req.modelAlias}</span>
-                      <span className="text-gray-600">{req.provider}</span>
-                      {req.isStream && <span className="px-1 py-0.5 bg-purple-500/20 text-purple-400 rounded text-[10px]">SSE</span>}
+                      <span className="text-blue-600 dark:text-blue-300 font-mono">{req.modelAlias}</span>
+                      <span className="text-gray-500 dark:text-gray-600">{req.provider}</span>
+                      {req.isStream && <span className="px-1 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded text-[10px]">SSE</span>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-blue-400 animate-pulse">processing</span>
-                      <span className={`text-gray-600 w-16 text-right font-mono ${req.elapsedMs > 30000 ? 'text-red-400' : ''}`}>
+                      <span className="text-blue-500 dark:text-blue-400 animate-pulse">{t('common.processing')}</span>
+                      <span className={`text-gray-500 dark:text-gray-600 w-16 text-right font-mono ${req.elapsedMs > 30000 ? 'text-red-400' : ''}`}>
                         {req.elapsedMs >= 1000 ? `${(req.elapsedMs / 1000).toFixed(1)}s` : `${req.elapsedMs}ms`}
                       </span>
                     </div>
@@ -228,20 +230,20 @@ export default function DashboardPage() {
               ))}
               {/* 완료된 요청 */}
               {recentRequests.map((req) => (
-                <div key={req.id} className={`py-1.5 px-3 rounded text-xs ${req.status !== 'success' ? 'bg-red-500/5 border border-red-500/20' : 'bg-gray-800/30'}`}>
+                <div key={req.id} className={`py-1.5 px-3 rounded text-xs ${req.status !== 'success' ? 'bg-red-50 dark:bg-red-500/5 border border-red-200 dark:border-red-500/20' : 'bg-gray-50 dark:bg-gray-800/30'}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-600 font-mono w-14">
+                      <span className="text-gray-500 dark:text-gray-600 font-mono w-14">
                         {formatTime(req.createdAt)}
                       </span>
-                      <span className="text-gray-300 font-mono">{req.modelAlias}</span>
-                      <span className="text-gray-600">{req.provider}</span>
+                      <span className="text-gray-700 dark:text-gray-300 font-mono">{req.modelAlias}</span>
+                      <span className="text-gray-500 dark:text-gray-600">{req.provider}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={reqStatusStyle[req.status] ?? 'text-gray-400'}>
                         {req.status}
                       </span>
-                      <span className="text-gray-600 w-16 text-right">{req.latencyMs?.toLocaleString()}ms</span>
+                      <span className="text-gray-500 dark:text-gray-600 w-16 text-right">{req.latencyMs?.toLocaleString()}ms</span>
                     </div>
                   </div>
                   {req.status !== 'success' && req.errorMessage && (
@@ -255,34 +257,34 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Provider Usage + Popular Models */}
+        {/* 프로바이더 사용량 + 인기 모델 */}
         <div className="space-y-4">
-          {/* Provider Usage */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-400 mb-3">Provider Usage</h3>
+          {/* 프로바이더 사용량 */}
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">{t('dashboard.providerUsage')}</h3>
             {providerStats.length === 0 ? (
-              <div className="h-16 flex items-center justify-center text-gray-600 text-sm">
-                No data yet
+              <div className="h-16 flex items-center justify-center text-gray-400 dark:text-gray-600 text-sm">
+                {t('common.noDataYet')}
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 {providerStats.map((p) => (
-                  <div key={p.provider} className="bg-gray-800/50 rounded-lg p-3 text-center">
-                    <div className="text-xs text-gray-500 capitalize mb-1">{p.provider}</div>
-                    <div className="text-xl font-bold">{p.count}</div>
-                    <div className="text-xs text-gray-600">{Math.round(p.avgLatencyMs)}ms avg</div>
+                  <div key={p.provider} className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3 text-center">
+                    <div className="text-xs text-gray-400 dark:text-gray-500 capitalize mb-1">{p.provider}</div>
+                    <div className="text-xl font-bold text-gray-800 dark:text-gray-100">{p.count}</div>
+                    <div className="text-xs text-gray-400 dark:text-gray-600">{Math.round(p.avgLatencyMs)}ms {t('dashboard.avg')}</div>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Popular Models */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-400 mb-3">Popular Models</h3>
+          {/* 인기 모델 */}
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+            <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">{t('dashboard.popularModels')}</h3>
             {popularModels.length === 0 ? (
-              <div className="h-16 flex items-center justify-center text-gray-600 text-sm">
-                No data yet
+              <div className="h-16 flex items-center justify-center text-gray-400 dark:text-gray-600 text-sm">
+                {t('common.noDataYet')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -290,12 +292,12 @@ export default function DashboardPage() {
                   const maxCount = Math.max(...popularModels.map((mm) => mm.count), 1);
                   return (
                     <div key={`${m.modelAlias}-${m.provider}`} className="flex items-center gap-3 text-sm">
-                      <span className="text-gray-600 w-4 text-right">{i + 1}</span>
-                      <span className="text-gray-300 font-mono flex-1">{m.modelAlias}</span>
-                      <div className="w-24 h-2 bg-gray-800 rounded overflow-hidden">
+                      <span className="text-gray-400 dark:text-gray-600 w-4 text-right">{i + 1}</span>
+                      <span className="text-gray-700 dark:text-gray-300 font-mono flex-1">{m.modelAlias}</span>
+                      <div className="w-24 h-2 bg-gray-200 dark:bg-gray-800 rounded overflow-hidden">
                         <div className="h-full bg-blue-500/50 rounded" style={{ width: `${(m.count / maxCount) * 100}%` }} />
                       </div>
-                      <span className="text-gray-500 text-xs w-8 text-right">{m.count}</span>
+                      <span className="text-gray-400 dark:text-gray-500 text-xs w-8 text-right">{m.count}</span>
                     </div>
                   );
                 })}
@@ -305,26 +307,26 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Recent Errors */}
+      {/* 최근 에러 */}
       {recentErrors.length > 0 && (
-        <div className="bg-gray-900 border border-red-500/20 rounded-xl p-5">
-          <h3 className="text-sm font-semibold text-red-400 mb-3">Recent Errors</h3>
+        <div className="bg-white dark:bg-gray-900 border border-red-200 dark:border-red-500/20 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-red-500 dark:text-red-400 mb-3">{t('dashboard.recentErrors')}</h3>
           <div className="space-y-2">
             {recentErrors.map((err) => (
-              <div key={err.id} className="bg-red-500/5 border border-red-500/10 rounded-lg px-4 py-2.5">
+              <div key={err.id} className="bg-red-50 dark:bg-red-500/5 border border-red-100 dark:border-red-500/10 rounded-lg px-4 py-2.5">
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-600 font-mono">{formatTime(err.createdAt)}</span>
-                    <span className="text-gray-300 font-mono">{err.modelAlias}</span>
-                    <span className="text-gray-600">{err.provider}</span>
-                    <span className={`px-1.5 py-0.5 rounded ${err.status === 'timeout' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}`}>
+                    <span className="text-gray-500 dark:text-gray-600 font-mono">{formatTime(err.createdAt)}</span>
+                    <span className="text-gray-700 dark:text-gray-300 font-mono">{err.modelAlias}</span>
+                    <span className="text-gray-500 dark:text-gray-600">{err.provider}</span>
+                    <span className={`px-1.5 py-0.5 rounded ${err.status === 'timeout' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400' : 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400'}`}>
                       {err.status}
                     </span>
                   </div>
-                  <span className="text-gray-600">{err.latencyMs?.toLocaleString()}ms</span>
+                  <span className="text-gray-500 dark:text-gray-600">{err.latencyMs?.toLocaleString()}ms</span>
                 </div>
                 {err.errorMessage && (
-                  <p className="text-xs text-red-300/70 mt-1.5 break-all">{err.errorMessage}</p>
+                  <p className="text-xs text-red-400 dark:text-red-300/70 mt-1.5 break-all">{err.errorMessage}</p>
                 )}
               </div>
             ))}
@@ -347,33 +349,33 @@ function SummaryCard({
   accent: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'amber';
 }) {
   const accentColors: Record<string, string> = {
-    blue: 'border-blue-500/30',
-    green: 'border-green-500/30',
-    yellow: 'border-yellow-500/30',
-    red: 'border-red-500/30',
-    purple: 'border-purple-500/30',
-    amber: 'border-amber-500/30',
+    blue: 'border-blue-200 dark:border-blue-500/30',
+    green: 'border-green-200 dark:border-green-500/30',
+    yellow: 'border-yellow-200 dark:border-yellow-500/30',
+    red: 'border-red-200 dark:border-red-500/30',
+    purple: 'border-purple-200 dark:border-purple-500/30',
+    amber: 'border-amber-200 dark:border-amber-500/30',
   };
 
   const valueColors: Record<string, string> = {
-    blue: 'text-blue-400',
-    green: 'text-green-400',
-    yellow: 'text-yellow-400',
-    red: 'text-red-400',
-    purple: 'text-purple-400',
-    amber: 'text-amber-400',
+    blue: 'text-blue-600 dark:text-blue-400',
+    green: 'text-green-600 dark:text-green-400',
+    yellow: 'text-yellow-600 dark:text-yellow-400',
+    red: 'text-red-600 dark:text-red-400',
+    purple: 'text-purple-600 dark:text-purple-400',
+    amber: 'text-amber-600 dark:text-amber-400',
   };
 
   return (
-    <div className={`bg-gray-900 border ${accentColors[accent]} rounded-xl p-4`}>
-      <div className="text-xs text-gray-500 uppercase tracking-wider">{label}</div>
+    <div className={`bg-white dark:bg-gray-900 border ${accentColors[accent]} rounded-xl p-4`}>
+      <div className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wider">{label}</div>
       <div className={`text-2xl font-bold mt-2 ${valueColors[accent]}`}>{value}</div>
-      <div className="text-xs text-gray-600 mt-1">{sub}</div>
+      <div className="text-xs text-gray-400 dark:text-gray-600 mt-1">{sub}</div>
     </div>
   );
 }
 
-// UTC 문자열 → 로컬 시간 표시 (Invalid Date 방지)
+// UTC 문자열 -> 로컬 시간 표시 (Invalid Date 방지)
 function formatTime(dateStr: string): string {
   if (!dateStr || dateStr.includes('datetime')) return '--:--';
   // SQLite의 "YYYY-MM-DD HH:MM:SS" 형식에 T와 Z 추가
@@ -403,6 +405,7 @@ const RANGE_OPTIONS = [
 
 // 독립 Trend 차트 컴포넌트 (자체 데이터 fetch + 필터 상태)
 function TrendChart() {
+  const { t } = useTranslation();
   const [hours, setHours] = useState(24);
   const [data, setData] = useState<TrendData | null>(null);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
@@ -414,11 +417,11 @@ function TrendChart() {
   useEffect(() => { load(); }, [load]);
   // 자동 리프레시 30초
   useEffect(() => {
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
   }, [load]);
 
-  if (!data) return <div className="h-40 flex items-center justify-center text-gray-600 text-sm">Loading...</div>;
+  if (!data) return <div className="h-40 flex items-center justify-center text-gray-400 dark:text-gray-600 text-sm">{t('common.loading')}</div>;
 
   // 모델 목록 (요청 수 내림차순)
   const modelCounts = new Map<string, number>();
@@ -433,7 +436,7 @@ function TrendChart() {
     const d = new Date(now.getTime() - (hours - 1 - i) * 3600_000);
     const slotKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}`;
 
-    const match = data.trend.find((t) => t.slot === slotKey);
+    const match = data.trend.find((item) => item.slot === slotKey);
     const modelBreakdown = visibleModels.map((model) => {
       const entry = data.byModel.find((b) => b.slot === slotKey && b.modelAlias === model);
       return { model, count: entry?.count ?? 0 };
@@ -475,9 +478,9 @@ function TrendChart() {
 
   return (
     <div>
-      {/* Header */}
+      {/* 헤더 */}
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-400">Request Trend</h3>
+        <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400">{t('dashboard.requestTrend')}</h3>
         <div className="flex items-center gap-1">
           {RANGE_OPTIONS.map((opt) => (
             <button
@@ -485,8 +488,8 @@ function TrendChart() {
               onClick={() => setHours(opt.hours)}
               className={`px-2 py-0.5 rounded text-xs transition-colors ${
                 hours === opt.hours
-                  ? 'bg-blue-500/20 text-blue-400'
-                  : 'text-gray-600 hover:text-gray-400'
+                  ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400'
+                  : 'text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400'
               }`}
             >
               {opt.label}
@@ -495,13 +498,13 @@ function TrendChart() {
         </div>
       </div>
 
-      {/* Stats line */}
-      <div className="text-xs text-gray-600 mb-2 text-right">
-        {totalVisible} requests
-        {hiddenModels.size > 0 && <span className="text-gray-700"> (filtered)</span>}
+      {/* 통계 */}
+      <div className="text-xs text-gray-400 dark:text-gray-600 mb-2 text-right">
+        {totalVisible} {t('common.requests')}
+        {hiddenModels.size > 0 && <span className="text-gray-300 dark:text-gray-700"> {t('common.filtered')}</span>}
       </div>
 
-      {/* Bars */}
+      {/* 바 차트 */}
       <div className="flex items-end gap-px" style={{ height: `${BAR_MAX_HEIGHT}px` }}>
         {slots.map((slot, idx) => {
           const totalPx = Math.round((slot.visibleCount / maxCount) * BAR_MAX_HEIGHT);
@@ -522,10 +525,10 @@ function TrendChart() {
                   })}
                 </div>
               ) : (
-                <div className="w-full bg-gray-800/20 rounded-sm" style={{ height: '1px' }} />
+                <div className="w-full bg-gray-200 dark:bg-gray-800/20 rounded-sm" style={{ height: '1px' }} />
               )}
-              {/* Tooltip */}
-              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 text-gray-300 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+              {/* 툴팁 */}
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
                 <div className="font-semibold">
                   {showDateLabels
                     ? `${slot.localDate.getMonth() + 1}/${slot.localDate.getDate()} ${String(slot.localHour).padStart(2, '0')}:00`
@@ -539,26 +542,26 @@ function TrendChart() {
                     <span>{m.model}: {m.count}</span>
                   </div>
                 ))}
-                {slot.errorCount > 0 && <div className="text-red-400">{slot.errorCount} errors</div>}
+                {slot.errorCount > 0 && <div className="text-red-400">{slot.errorCount} {t('common.errors')}</div>}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Time labels */}
-      <div className="flex gap-px mt-1 border-t border-gray-800 pt-1">
+      {/* 시간 라벨 */}
+      <div className="flex gap-px mt-1 border-t border-gray-200 dark:border-gray-800 pt-1">
         {slots.map((slot, idx) => {
           const showLabel = idx % labelInterval === 0;
           const isNewDay = idx > 0 && slot.localDate.getDate() !== slots[idx - 1].localDate.getDate();
           return (
             <div key={idx} className="flex-1 text-center min-w-0 overflow-hidden">
               {isNewDay && showDateLabels ? (
-                <span className="text-[9px] text-gray-500">
+                <span className="text-[9px] text-gray-400 dark:text-gray-500">
                   {slot.localDate.getMonth() + 1}/{slot.localDate.getDate()}
                 </span>
               ) : showLabel ? (
-                <span className="text-[10px] text-gray-600">
+                <span className="text-[10px] text-gray-400 dark:text-gray-600">
                   {String(slot.localHour).padStart(2, '0')}
                 </span>
               ) : null}
@@ -567,17 +570,17 @@ function TrendChart() {
         })}
       </div>
 
-      {/* Model filter legend */}
+      {/* 모델 필터 레전드 */}
       {allModels.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2 border-t border-gray-800/50">
+        <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2 border-t border-gray-200 dark:border-gray-800/50">
           {allModels.length > 1 && (
             <button
               onClick={showAll}
               className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
-                allVisible ? 'text-gray-600' : 'text-blue-400 hover:text-blue-300'
+                allVisible ? 'text-gray-400 dark:text-gray-600' : 'text-blue-500 dark:text-blue-400 hover:text-blue-400 dark:hover:text-blue-300'
               }`}
             >
-              ALL
+              {t('common.all')}
             </button>
           )}
           {allModels.map((model) => {
@@ -589,13 +592,13 @@ function TrendChart() {
                 onClick={() => toggleModel(model)}
                 className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors ${
                   visible
-                    ? 'text-gray-400 hover:text-gray-300'
-                    : 'text-gray-700 line-through hover:text-gray-500'
+                    ? 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                    : 'text-gray-300 dark:text-gray-700 line-through hover:text-gray-400 dark:hover:text-gray-500'
                 }`}
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${visible ? MODEL_DOT_COLORS[ci] : 'bg-gray-700'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${visible ? MODEL_DOT_COLORS[ci] : 'bg-gray-300 dark:bg-gray-700'}`} />
                 {model}
-                <span className="text-gray-600">{modelCounts.get(model)}</span>
+                <span className="text-gray-400 dark:text-gray-600">{modelCounts.get(model)}</span>
               </button>
             );
           })}

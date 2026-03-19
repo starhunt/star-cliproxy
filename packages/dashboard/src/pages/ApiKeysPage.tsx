@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from '../i18n/context';
 import { fetchApiKeys, createApiKey, updateApiKey, deleteApiKey, regenerateApiKey, type ApiKey } from '../api/client';
 
 export default function ApiKeysPage() {
+  const { t } = useTranslation();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
@@ -37,7 +39,7 @@ export default function ApiKeysPage() {
   };
 
   const handleRegenerate = async (key: ApiKey) => {
-    if (!confirm(`Regenerate key "${key.name}"? The old key will stop working immediately.`)) return;
+    if (!confirm(t('apiKeys.regenerateConfirm', { name: key.name }))) return;
     try {
       const result = await regenerateApiKey(key.id);
       setCreatedKey(result.key);
@@ -58,7 +60,7 @@ export default function ApiKeysPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this API key? This cannot be undone.')) return;
+    if (!confirm(t('apiKeys.deleteConfirm'))) return;
     try {
       await deleteApiKey(id);
       load();
@@ -70,89 +72,89 @@ export default function ApiKeysPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">API Keys</h2>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('apiKeys.title')}</h2>
         <button
           onClick={() => { setShowForm(!showForm); setCreatedKey(null); }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition-colors"
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm text-white transition-colors"
         >
-          + Generate Key
+          {t('apiKeys.generateButton')}
         </button>
       </div>
 
       {error && (
-        <div className="flex items-center justify-between bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2">
-          <p className="text-red-400 text-sm">{error}</p>
-          <button onClick={() => setError(null)} className="text-red-400/60 hover:text-red-400 text-xs">dismiss</button>
+        <div className="flex items-center justify-between bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-lg px-4 py-2">
+          <p className="text-red-500 dark:text-red-400 text-sm">{error}</p>
+          <button onClick={() => setError(null)} className="text-red-400/60 hover:text-red-400 text-xs">{t('common.dismiss')}</button>
         </div>
       )}
 
-      {/* Created Key Display */}
+      {/* 생성된 키 표시 */}
       {createdKey && (
-        <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
+        <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
-            <svg className="w-5 h-5 text-yellow-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-5 h-5 text-yellow-500 dark:text-yellow-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
             </svg>
-            <p className="text-yellow-300 text-sm font-semibold">Copy and save this key now. It cannot be viewed again after closing.</p>
+            <p className="text-yellow-600 dark:text-yellow-300 text-sm font-semibold">{t('apiKeys.copyWarning')}</p>
           </div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 bg-gray-900 px-4 py-2 rounded font-mono text-sm text-green-300 select-all overflow-x-auto">
+            <code className="flex-1 bg-gray-100 dark:bg-gray-900 px-4 py-2 rounded font-mono text-sm text-green-600 dark:text-green-300 select-all overflow-x-auto">
               {createdKey}
             </code>
             <button
               onClick={handleCopyFullKey}
-              className="flex-shrink-0 px-3 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium transition-colors"
+              className="flex-shrink-0 px-3 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium text-white transition-colors"
             >
-              {keyCopied ? 'Copied!' : 'Copy Key'}
+              {keyCopied ? t('common.copied') : t('apiKeys.copyKey')}
             </button>
           </div>
         </div>
       )}
 
-      {/* Create Form */}
+      {/* 생성 폼 */}
       {showForm && !createdKey && (
-        <form onSubmit={handleCreate} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex gap-3 items-end">
+        <form onSubmit={handleCreate} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 flex gap-3 items-end">
           <div className="flex-1">
-            <label className="text-xs text-gray-400 block mb-1">Key Name</label>
+            <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">{t('apiKeys.keyNameLabel')}</label>
             <input
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm"
-              placeholder="my-app"
+              className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
+              placeholder={t('apiKeys.keyNamePlaceholder')}
               required
             />
           </div>
-          <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm">
-            Generate
+          <button type="submit" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm text-white">
+            {t('common.generate')}
           </button>
         </form>
       )}
 
-      {/* Keys Table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      {/* 키 테이블 */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase tracking-wider">
-              <th className="text-left px-4 py-3">Name</th>
-              <th className="text-left px-4 py-3">Key Prefix</th>
-              <th className="text-left px-4 py-3">Rate Limit</th>
-              <th className="text-left px-4 py-3">Last Used</th>
-              <th className="text-center px-4 py-3">Enabled</th>
+            <tr className="border-b border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider">
+              <th className="text-left px-4 py-3">{t('apiKeys.name')}</th>
+              <th className="text-left px-4 py-3">{t('apiKeys.keyPrefix')}</th>
+              <th className="text-left px-4 py-3">{t('apiKeys.rateLimit')}</th>
+              <th className="text-left px-4 py-3">{t('apiKeys.lastUsed')}</th>
+              <th className="text-center px-4 py-3">{t('apiKeys.enabled')}</th>
               <th className="text-right px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {keys.map((k) => (
-              <tr key={k.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                <td className="px-4 py-3 font-medium">{k.name}</td>
-                <td className="px-4 py-3 font-mono text-gray-400">
+              <tr key={k.id} className="border-b border-gray-100 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+                <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">{k.name}</td>
+                <td className="px-4 py-3 font-mono text-gray-500 dark:text-gray-400">
                   {k.keyPrefix}...
                 </td>
-                <td className="px-4 py-3 text-gray-500 text-xs">
-                  {k.rateLimitRpm ? `${k.rateLimitRpm} RPM` : 'Global'}
+                <td className="px-4 py-3 text-gray-400 dark:text-gray-500 text-xs">
+                  {k.rateLimitRpm ? `${k.rateLimitRpm} RPM` : t('common.global')}
                 </td>
-                <td className="px-4 py-3 text-gray-500 text-xs">
-                  {k.lastUsedAt ? formatKeyDate(k.lastUsedAt) : 'Never'}
+                <td className="px-4 py-3 text-gray-400 dark:text-gray-500 text-xs">
+                  {k.lastUsedAt ? formatKeyDate(k.lastUsedAt) : t('common.never')}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <ToggleSwitch enabled={k.enabled} onToggle={() => handleToggle(k)} />
@@ -161,8 +163,8 @@ export default function ApiKeysPage() {
                   <span className="inline-flex items-center gap-1">
                     <button
                       onClick={() => handleRegenerate(k)}
-                      className="text-gray-600 hover:text-yellow-400 transition-colors"
-                      title="Regenerate key"
+                      className="text-gray-400 dark:text-gray-600 hover:text-yellow-500 dark:hover:text-yellow-400 transition-colors"
+                      title={t('apiKeys.regenerateTitle')}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -170,8 +172,8 @@ export default function ApiKeysPage() {
                     </button>
                     <button
                       onClick={() => handleDelete(k.id)}
-                      className="text-gray-600 hover:text-red-400 transition-colors"
-                      title="Delete key"
+                      className="text-gray-400 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                      title={t('apiKeys.deleteTitle')}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -182,7 +184,7 @@ export default function ApiKeysPage() {
               </tr>
             ))}
             {keys.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-600">No API keys</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 dark:text-gray-600">{t('apiKeys.noKeys')}</td></tr>
             )}
           </tbody>
         </table>
@@ -195,7 +197,7 @@ function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
   return (
     <button
       onClick={onToggle}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-green-500' : 'bg-gray-600'}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}
       title={enabled ? 'Click to disable' : 'Click to enable'}
     >
       <span
