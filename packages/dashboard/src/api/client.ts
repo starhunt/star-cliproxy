@@ -92,6 +92,17 @@ export function fetchDashboard() {
   return request<DashboardData>('/dashboard');
 }
 
+// Trend (시간대별 요청 추이)
+export interface TrendData {
+  hours: number;
+  trend: Array<{ slot: string; count: number; successCount: number; errorCount: number }>;
+  byModel: Array<{ slot: string; modelAlias: string; count: number }>;
+}
+
+export function fetchTrend(hours = 24) {
+  return request<TrendData>(`/trend?hours=${hours}`);
+}
+
 // Stats
 export function fetchStats() {
   return request<{

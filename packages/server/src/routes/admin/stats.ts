@@ -59,6 +59,40 @@ export function registerStatsRoutes(app: FastifyInstance): void {
     });
   });
 
+  // 시간대별 요청 추이 (기간 및 모델별 breakdown 지원)
+  app.get<{ Querystring: { hours?: string } }>(
+    '/admin/trend',
+    async (request, reply) => {
+      const db = getDatabase();
+      const hours = Math.min(parseInt(request.query.hours ?? '24', 10), 168); // 최대 7일
+
+      // 날짜+시간 키로 그룹핑 (YYYY-MM-DD HH 형식)
+      const trend = db.select({
+        slot: sql<string>`strftime('%Y-%m-%d %H', created_at)`,
+        count: sql<number>`count(*)`,
+        successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
+        errorCount: sql<number>`coalesce(sum(case when status != 'success' then 1 else 0 end), 0)`,
+      }).from(requestLogs)
+        .where(sql`created_at >= datetime('now', ${`-${hours} hours`})`)
+        .groupBy(sql`strftime('%Y-%m-%d %H', created_at)`)
+        .orderBy(sql`strftime('%Y-%m-%d %H', created_at) ASC`)
+        .all();
+
+      // 모델별 breakdown
+      const byModel = db.select({
+        slot: sql<string>`strftime('%Y-%m-%d %H', created_at)`,
+        modelAlias: requestLogs.modelAlias,
+        count: sql<number>`count(*)`,
+      }).from(requestLogs)
+        .where(sql`created_at >= datetime('now', ${`-${hours} hours`})`)
+        .groupBy(sql`strftime('%Y-%m-%d %H', created_at)`, requestLogs.modelAlias)
+        .orderBy(sql`strftime('%Y-%m-%d %H', created_at) ASC`)
+        .all();
+
+      return reply.send({ hours, trend, byModel });
+    },
+  );
+
   // 최근 요청 로그
   app.get<{ Querystring: { limit?: string; offset?: string; provider?: string; status?: string } }>(
     '/admin/logs',

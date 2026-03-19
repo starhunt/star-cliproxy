@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchDashboard, type DashboardData } from '../api/client';
+import { fetchDashboard, fetchTrend, type DashboardData, type TrendData } from '../api/client';
 
 const statusDot: Record<string, string> = {
   healthy: 'bg-green-400',
@@ -58,7 +58,7 @@ export default function DashboardPage() {
     return <div className="text-gray-500 text-center py-20">Loading...</div>;
   }
 
-  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, hourlyTrend, hourlyByModel, recentRequests, recentErrors, activeRequests } = data;
+  const { overview, today, apiKeys: keys, modelMappings: mappings, providers, cache, rateLimits, providerStats, popularModels, recentRequests, recentErrors, activeRequests } = data;
 
   return (
     <div className="space-y-6">
@@ -141,15 +141,11 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Middle Row: Hourly Trend + System Status */}
+      {/* Middle Row: Trend Chart + System Status */}
       <div className="grid grid-cols-5 gap-4">
-        {/* Hourly Request Trend (24h) */}
+        {/* Request Trend */}
         <div className="col-span-3 bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-400">Hourly Requests (24h)</h3>
-            <span className="text-xs text-gray-600">by model</span>
-          </div>
-          <HourlyChart data={hourlyTrend} byModel={hourlyByModel} />
+          <TrendChart />
         </div>
 
         {/* System Status */}
@@ -389,148 +385,218 @@ function formatTime(dateStr: string): string {
 
 // 모델별 색상 팔레트
 const MODEL_COLORS = [
-  'bg-blue-500/70',
-  'bg-emerald-500/70',
-  'bg-purple-500/70',
-  'bg-amber-500/70',
-  'bg-pink-500/70',
-  'bg-cyan-500/70',
-  'bg-orange-500/70',
-  'bg-indigo-500/70',
+  'bg-blue-500/70', 'bg-emerald-500/70', 'bg-purple-500/70', 'bg-amber-500/70',
+  'bg-pink-500/70', 'bg-cyan-500/70', 'bg-orange-500/70', 'bg-indigo-500/70',
 ];
-
 const MODEL_DOT_COLORS = [
-  'bg-blue-400',
-  'bg-emerald-400',
-  'bg-purple-400',
-  'bg-amber-400',
-  'bg-pink-400',
-  'bg-cyan-400',
-  'bg-orange-400',
-  'bg-indigo-400',
+  'bg-blue-400', 'bg-emerald-400', 'bg-purple-400', 'bg-amber-400',
+  'bg-pink-400', 'bg-cyan-400', 'bg-orange-400', 'bg-indigo-400',
 ];
 
-// 24시간 시간대별 바 차트 (모델별 색상 구분)
-function HourlyChart({
-  data,
-  byModel,
-}: {
-  data: Array<{ hour: number; count: number; successCount: number; errorCount: number }>;
-  byModel?: Array<{ hour: number; modelAlias: string; count: number }>;
-}) {
-  const BAR_MAX_HEIGHT = 120;
+const RANGE_OPTIONS = [
+  { label: '6h', hours: 6 },
+  { label: '12h', hours: 12 },
+  { label: '24h', hours: 24 },
+  { label: '3d', hours: 72 },
+  { label: '7d', hours: 168 },
+];
 
-  // 모델 목록 추출 (요청 수 내림차순)
+// 독립 Trend 차트 컴포넌트 (자체 데이터 fetch + 필터 상태)
+function TrendChart() {
+  const [hours, setHours] = useState(24);
+  const [data, setData] = useState<TrendData | null>(null);
+  const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
+
+  const load = useCallback(() => {
+    fetchTrend(hours).then(setData).catch(() => {});
+  }, [hours]);
+
+  useEffect(() => { load(); }, [load]);
+  // 자동 리프레시 30초
+  useEffect(() => {
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  if (!data) return <div className="h-40 flex items-center justify-center text-gray-600 text-sm">Loading...</div>;
+
+  // 모델 목록 (요청 수 내림차순)
   const modelCounts = new Map<string, number>();
-  byModel?.forEach((d) => modelCounts.set(d.modelAlias, (modelCounts.get(d.modelAlias) ?? 0) + d.count));
-  const models = [...modelCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([name]) => name);
+  data.byModel.forEach((d) => modelCounts.set(d.modelAlias, (modelCounts.get(d.modelAlias) ?? 0) + d.count));
+  const allModels = [...modelCounts.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+  const colorMap = new Map(allModels.map((m, i) => [m, i % MODEL_COLORS.length]));
+  const visibleModels = allModels.filter((m) => !hiddenModels.has(m));
 
-  const colorMap = new Map(models.map((m, i) => [m, i % MODEL_COLORS.length]));
+  // 시간 슬롯 생성 (현재 시각 기준 역산)
+  const now = new Date();
+  const slots = Array.from({ length: hours }, (_, i) => {
+    const d = new Date(now.getTime() - (hours - 1 - i) * 3600_000);
+    const slotKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}`;
 
-  // 0~23시 전체 슬롯 생성
-  const slots = Array.from({ length: 24 }, (_, i) => {
-    const match = data.find((d) => d.hour === i);
-    const modelBreakdown = models.map((model) => {
-      const entry = byModel?.find((d) => d.hour === i && d.modelAlias === model);
+    const match = data.trend.find((t) => t.slot === slotKey);
+    const modelBreakdown = visibleModels.map((model) => {
+      const entry = data.byModel.find((b) => b.slot === slotKey && b.modelAlias === model);
       return { model, count: entry?.count ?? 0 };
     }).filter((m) => m.count > 0);
 
+    const visibleCount = modelBreakdown.reduce((sum, m) => sum + m.count, 0);
+
     return {
-      hour: i,
-      count: match?.count ?? 0,
-      successCount: match?.successCount ?? 0,
+      key: slotKey,
+      localHour: d.getHours(),
+      localDate: d,
+      totalCount: match?.count ?? 0,
+      visibleCount,
       errorCount: match?.errorCount ?? 0,
       models: modelBreakdown,
     };
   });
 
-  const maxCount = Math.max(...slots.map((s) => s.count), 1);
-  const hasData = slots.some((s) => s.count > 0);
-  const totalRequests = slots.reduce((sum, s) => sum + s.count, 0);
+  const maxCount = Math.max(...slots.map((s) => s.visibleCount), 1);
+  const totalVisible = slots.reduce((sum, s) => sum + s.visibleCount, 0);
+  const BAR_MAX_HEIGHT = 120;
 
-  if (!hasData) {
-    return (
-      <div className="h-36 flex items-center justify-center text-gray-600 text-sm">
-        No requests in the last 24 hours
-      </div>
-    );
-  }
+  // 시간 라벨 간격 (기간에 따라 적응적)
+  const labelInterval = hours <= 12 ? 1 : hours <= 24 ? 2 : hours <= 72 ? 6 : 12;
+  // 날짜 경계 표시 여부
+  const showDateLabels = hours > 24;
+
+  const toggleModel = (model: string) => {
+    setHiddenModels((prev) => {
+      const next = new Set(prev);
+      if (next.has(model)) next.delete(model);
+      else next.add(model);
+      return next;
+    });
+  };
+
+  const showAll = () => setHiddenModels(new Set());
+  const allVisible = hiddenModels.size === 0;
 
   return (
     <div>
-      <div className="text-xs text-gray-600 mb-2 text-right">Total: {totalRequests} requests</div>
-      {/* Bars */}
-      <div className="flex items-end gap-1" style={{ height: `${BAR_MAX_HEIGHT}px` }}>
-        {slots.map((slot) => {
-          const totalPx = Math.round((slot.count / maxCount) * BAR_MAX_HEIGHT);
-
-          return (
-            <div
-              key={slot.hour}
-              className="flex-1 flex flex-col justify-end relative group cursor-default"
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-400">Request Trend</h3>
+        <div className="flex items-center gap-1">
+          {RANGE_OPTIONS.map((opt) => (
+            <button
+              key={opt.hours}
+              onClick={() => setHours(opt.hours)}
+              className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                hours === opt.hours
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'text-gray-600 hover:text-gray-400'
+              }`}
             >
-              {slot.count > 0 ? (
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Stats line */}
+      <div className="text-xs text-gray-600 mb-2 text-right">
+        {totalVisible} requests
+        {hiddenModels.size > 0 && <span className="text-gray-700"> (filtered)</span>}
+      </div>
+
+      {/* Bars */}
+      <div className="flex items-end gap-px" style={{ height: `${BAR_MAX_HEIGHT}px` }}>
+        {slots.map((slot, idx) => {
+          const totalPx = Math.round((slot.visibleCount / maxCount) * BAR_MAX_HEIGHT);
+          return (
+            <div key={idx} className="flex-1 flex flex-col justify-end relative group cursor-default min-w-0">
+              {slot.visibleCount > 0 ? (
                 <div className="w-full flex flex-col justify-end" style={{ height: `${totalPx}px` }}>
-                  {slot.models.length > 0 ? (
-                    // 모델별 색상 스택
-                    slot.models.map((m, idx) => {
-                      const segPx = Math.max(Math.round((m.count / slot.count) * totalPx), 1);
-                      const ci = colorMap.get(m.model) ?? 0;
-                      const isFirst = idx === 0;
-                      const isLast = idx === slot.models.length - 1;
-                      return (
-                        <div
-                          key={m.model}
-                          className={`w-full ${MODEL_COLORS[ci]} ${isFirst ? 'rounded-t-sm' : ''} ${isLast ? 'rounded-b-sm' : ''}`}
-                          style={{ height: `${segPx}px` }}
-                        />
-                      );
-                    })
-                  ) : (
-                    <div className="w-full bg-blue-500/60 rounded-sm" style={{ height: `${totalPx}px` }} />
-                  )}
+                  {slot.models.map((m, mi) => {
+                    const segPx = Math.max(Math.round((m.count / slot.visibleCount) * totalPx), 1);
+                    const ci = colorMap.get(m.model) ?? 0;
+                    return (
+                      <div
+                        key={m.model}
+                        className={`w-full ${MODEL_COLORS[ci]} ${mi === 0 ? 'rounded-t-sm' : ''} ${mi === slot.models.length - 1 ? 'rounded-b-sm' : ''}`}
+                        style={{ height: `${segPx}px` }}
+                      />
+                    );
+                  })}
                 </div>
               ) : (
-                <div className="w-full bg-gray-800/30 rounded-sm" style={{ height: '2px' }} />
+                <div className="w-full bg-gray-800/20 rounded-sm" style={{ height: '1px' }} />
               )}
               {/* Tooltip */}
               <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 border border-gray-700 text-gray-300 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
-                <div className="font-semibold">{slot.hour}:00 — {slot.count} req</div>
-                {slot.models.map((m) => {
-                  const ci = colorMap.get(m.model) ?? 0;
-                  return (
-                    <div key={m.model} className="flex items-center gap-1">
-                      <span className={`w-1.5 h-1.5 rounded-full ${MODEL_DOT_COLORS[ci]}`} />
-                      <span>{m.model}: {m.count}</span>
-                    </div>
-                  );
-                })}
+                <div className="font-semibold">
+                  {showDateLabels
+                    ? `${slot.localDate.getMonth() + 1}/${slot.localDate.getDate()} ${String(slot.localHour).padStart(2, '0')}:00`
+                    : `${String(slot.localHour).padStart(2, '0')}:00`
+                  }
+                  {' — '}{slot.visibleCount} req
+                </div>
+                {slot.models.map((m) => (
+                  <div key={m.model} className="flex items-center gap-1">
+                    <span className={`w-1.5 h-1.5 rounded-full ${MODEL_DOT_COLORS[colorMap.get(m.model) ?? 0]}`} />
+                    <span>{m.model}: {m.count}</span>
+                  </div>
+                ))}
                 {slot.errorCount > 0 && <div className="text-red-400">{slot.errorCount} errors</div>}
               </div>
             </div>
           );
         })}
       </div>
-      {/* Hour labels */}
-      <div className="flex gap-1 mt-1.5 border-t border-gray-800 pt-1">
-        {slots.map((slot) => (
-          <div key={slot.hour} className="flex-1 text-center text-xs text-gray-600">
-            {slot.hour % 3 === 0 ? `${String(slot.hour).padStart(2, '0')}` : ''}
-          </div>
-        ))}
+
+      {/* Time labels */}
+      <div className="flex gap-px mt-1 border-t border-gray-800 pt-1">
+        {slots.map((slot, idx) => {
+          const showLabel = idx % labelInterval === 0;
+          const isNewDay = idx > 0 && slot.localDate.getDate() !== slots[idx - 1].localDate.getDate();
+          return (
+            <div key={idx} className="flex-1 text-center min-w-0 overflow-hidden">
+              {isNewDay && showDateLabels ? (
+                <span className="text-[9px] text-gray-500">
+                  {slot.localDate.getMonth() + 1}/{slot.localDate.getDate()}
+                </span>
+              ) : showLabel ? (
+                <span className="text-[10px] text-gray-600">
+                  {String(slot.localHour).padStart(2, '0')}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
-      {/* Legend */}
-      {models.length > 1 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
-          {models.map((model) => {
+
+      {/* Model filter legend */}
+      {allModels.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-3 pt-2 border-t border-gray-800/50">
+          {allModels.length > 1 && (
+            <button
+              onClick={showAll}
+              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                allVisible ? 'text-gray-600' : 'text-blue-400 hover:text-blue-300'
+              }`}
+            >
+              ALL
+            </button>
+          )}
+          {allModels.map((model) => {
             const ci = colorMap.get(model) ?? 0;
+            const visible = !hiddenModels.has(model);
             return (
-              <span key={model} className="flex items-center gap-1 text-xs text-gray-500">
-                <span className={`w-2 h-2 rounded-sm ${MODEL_DOT_COLORS[ci]}`} />
+              <button
+                key={model}
+                onClick={() => toggleModel(model)}
+                className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+                  visible
+                    ? 'text-gray-400 hover:text-gray-300'
+                    : 'text-gray-700 line-through hover:text-gray-500'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${visible ? MODEL_DOT_COLORS[ci] : 'bg-gray-700'}`} />
                 {model}
-              </span>
+                <span className="text-gray-600">{modelCounts.get(model)}</span>
+              </button>
             );
           })}
         </div>
