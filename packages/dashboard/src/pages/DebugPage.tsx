@@ -191,11 +191,13 @@ function DebugLogEntry({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const statusColor = log.status === 'success'
-    ? 'text-green-400'
-    : log.status === 'timeout'
-      ? 'text-yellow-400'
-      : 'text-red-400';
+  const statusColor = log.status === 'pending'
+    ? 'text-blue-400 animate-pulse'
+    : log.status === 'success'
+      ? 'text-green-400'
+      : log.status === 'timeout'
+        ? 'text-yellow-400'
+        : 'text-red-400';
 
   const time = formatTime(log.createdAt);
 

@@ -227,9 +227,22 @@ export function registerChatCompletionsRoute(
         // 디버그 캡처
         const debugEnabled = deps.debug.isEnabled(body.model);
         let debugCapture: DebugCaptureInfo | undefined;
+        let debugLogId: string | undefined;
         const onDebug = debugEnabled
           ? (info: DebugCaptureInfo) => { debugCapture = info; }
           : undefined;
+
+        // 요청 시작 시 즉시 디버그 로그 INSERT
+        if (debugEnabled) {
+          debugLogId = await deps.debug.logStart({
+            requestId,
+            modelAlias: body.model,
+            provider: route.provider,
+            actualModel: route.actualModel,
+            isStream: body.stream ?? false,
+            requestMessages: body.messages,
+          });
+        }
 
         try {
           if (body.stream) {
@@ -342,15 +355,10 @@ export function registerChatCompletionsRoute(
               isStream: true,
             });
 
-            if (debugEnabled && debugCapture) {
-              deps.debug.log({
+            if (debugLogId && debugCapture) {
+              deps.debug.logComplete(debugLogId, {
                 requestId,
-                modelAlias: body.model,
-                provider: route.provider,
-                actualModel: route.actualModel,
-                isStream: true,
                 cliArgs: debugCapture.cliArgs,
-                requestMessages: body.messages,
                 streamLines: debugCapture.streamLines,
                 parsedContent: totalContent,
                 tokenUsage: streamUsage,
@@ -438,15 +446,10 @@ export function registerChatCompletionsRoute(
             requestHash,
           });
 
-          if (debugEnabled && debugCapture) {
-            deps.debug.log({
+          if (debugLogId && debugCapture) {
+            deps.debug.logComplete(debugLogId, {
               requestId,
-              modelAlias: body.model,
-              provider: route.provider,
-              actualModel: route.actualModel,
-              isStream: false,
               cliArgs: debugCapture.cliArgs,
-              requestMessages: body.messages,
               rawStdout: debugCapture.stdout,
               rawStderr: debugCapture.stderr,
               parsedContent: content,
@@ -476,15 +479,10 @@ export function registerChatCompletionsRoute(
             errorMessage: lastError.message,
           });
 
-          if (debugEnabled) {
-            deps.debug.log({
+          if (debugLogId) {
+            deps.debug.logComplete(debugLogId, {
               requestId,
-              modelAlias: body.model,
-              provider: route.provider,
-              actualModel: route.actualModel,
-              isStream: body.stream ?? false,
               cliArgs: debugCapture?.cliArgs,
-              requestMessages: body.messages,
               rawStdout: debugCapture?.stdout,
               rawStderr: debugCapture?.stderr,
               streamLines: debugCapture?.streamLines,

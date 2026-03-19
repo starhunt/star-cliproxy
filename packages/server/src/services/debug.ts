@@ -17,14 +17,18 @@ export interface DebugConfig {
   models: Record<string, boolean>;
 }
 
-export interface DebugLogEntry {
+export interface DebugLogStartEntry {
   requestId: string;
   modelAlias: string;
   provider: string;
   actualModel: string;
   isStream: boolean;
-  cliArgs?: string[];
   requestMessages?: unknown;
+}
+
+export interface DebugLogCompleteEntry {
+  requestId: string;
+  cliArgs?: string[];
   rawStdout?: string;
   rawStderr?: string;
   streamLines?: string[];
@@ -60,25 +64,40 @@ export class DebugService {
     return false;
   }
 
-  async log(entry: DebugLogEntry): Promise<void> {
+  // 요청 시작 시 즉시 INSERT (status: pending)
+  async logStart(entry: DebugLogStartEntry): Promise<string> {
+    const id = nanoid();
     try {
       const db = getDatabase();
-
-      // streaming의 경우 streamLines를 stdout으로 합쳐서 저장
-      const rawStdout = entry.rawStdout
-        ?? (entry.streamLines ? entry.streamLines.join('\n') : undefined);
-
       await db.insert(debugLogs).values({
-        id: nanoid(),
+        id,
         requestId: entry.requestId,
         modelAlias: entry.modelAlias,
         provider: entry.provider,
         actualModel: entry.actualModel,
         isStream: entry.isStream,
-        cliArgs: entry.cliArgs ? JSON.stringify(entry.cliArgs) : undefined,
         requestMessages: entry.requestMessages
           ? truncate(JSON.stringify(entry.requestMessages))
           : undefined,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error('Failed to save debug log start:', err);
+    }
+    return id;
+  }
+
+  // 응답 완료 시 UPDATE
+  async logComplete(id: string, entry: DebugLogCompleteEntry): Promise<void> {
+    try {
+      const db = getDatabase();
+
+      const rawStdout = entry.rawStdout
+        ?? (entry.streamLines ? entry.streamLines.join('\n') : undefined);
+
+      await db.update(debugLogs).set({
+        cliArgs: entry.cliArgs ? JSON.stringify(entry.cliArgs) : undefined,
         rawStdout: truncate(rawStdout),
         rawStderr: truncate(entry.rawStderr),
         parsedContent: truncate(entry.parsedContent),
@@ -86,11 +105,9 @@ export class DebugService {
         status: entry.status,
         latencyMs: entry.latencyMs,
         errorMessage: entry.errorMessage,
-        createdAt: new Date().toISOString(),
-      });
+      }).where(eq(debugLogs.id, id));
     } catch (err) {
-      // 디버그 로깅 실패가 요청을 중단시키지 않도록
-      console.error('Failed to save debug log:', err);
+      console.error('Failed to update debug log:', err);
     }
   }
 
