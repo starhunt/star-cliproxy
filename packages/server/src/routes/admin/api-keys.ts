@@ -106,6 +106,32 @@ export function registerApiKeysRoutes(app: FastifyInstance): void {
     return reply.send(updated[0]);
   });
 
+  // 키 재생성 (이름 유지, key만 새로 발급)
+  app.post<{ Params: { id: string } }>('/admin/api-keys/:id/regenerate', async (request, reply) => {
+    const { id } = request.params;
+    const db = getDatabase();
+
+    const existing = await db.select().from(apiKeys).where(eq(apiKeys.id, id)).limit(1);
+    if (existing.length === 0) {
+      return reply.status(404).send({ error: { message: 'API key not found.' } });
+    }
+
+    const rawKey = `${API_KEY_PREFIX}${randomBytes(24).toString('hex')}`;
+
+    await db.update(apiKeys).set({
+      keyHash: hashApiKey(rawKey),
+      keyPrefix: getKeyPrefix(rawKey),
+    }).where(eq(apiKeys.id, id));
+
+    return reply.send({
+      id,
+      key: rawKey,
+      key_prefix: getKeyPrefix(rawKey),
+      name: existing[0].name,
+      message: 'Key regenerated. Save this key securely. It will not be shown again.',
+    });
+  });
+
   // 삭제 (관련 로그의 api_key_id를 null로 설정 후 삭제)
   app.delete<{ Params: { id: string } }>('/admin/api-keys/:id', async (request, reply) => {
     const { id } = request.params;

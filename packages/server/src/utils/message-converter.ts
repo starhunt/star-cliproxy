@@ -15,18 +15,20 @@ export function sanitizeDelimiters(content: string): string {
     .replace(/<\|system\|>/g, '<\u200Bsystem\u200B>');
 }
 
+// chat-completions 라우트에서 content parts 배열은 string으로 정규화된 후 호출됨
 export function convertMessages(messages: ChatMessage[]): ConvertedPrompt {
   let systemPrompt: string | null = null;
   const conversationParts: string[] = [];
 
   for (const msg of messages) {
+    const content = msg.content as string;
     if (msg.role === 'system') {
       // 마지막 system 메시지를 사용
-      systemPrompt = msg.content;
+      systemPrompt = content;
     } else if (msg.role === 'user') {
-      conversationParts.push(`<|user|> ${sanitizeDelimiters(msg.content)}`);
+      conversationParts.push(`<|user|> ${sanitizeDelimiters(content)}`);
     } else if (msg.role === 'assistant') {
-      conversationParts.push(`<|assistant|> ${sanitizeDelimiters(msg.content)}`);
+      conversationParts.push(`<|assistant|> ${sanitizeDelimiters(content)}`);
     }
   }
 
@@ -35,7 +37,7 @@ export function convertMessages(messages: ChatMessage[]): ConvertedPrompt {
   if (nonSystemMessages.length === 1 && nonSystemMessages[0].role === 'user') {
     return {
       systemPrompt,
-      userPrompt: nonSystemMessages[0].content,
+      userPrompt: nonSystemMessages[0].content as string,
     };
   }
 

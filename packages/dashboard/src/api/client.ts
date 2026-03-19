@@ -209,6 +209,12 @@ export function updateApiKey(id: string, data: Partial<{ name: string; enabled: 
   });
 }
 
+export function regenerateApiKey(id: string) {
+  return request<{ id: string; key: string; key_prefix: string; name: string; message: string }>(`/api-keys/${id}/regenerate`, {
+    method: 'POST',
+  });
+}
+
 export function deleteApiKey(id: string) {
   return request<void>(`/api-keys/${id}`, { method: 'DELETE' });
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchApiKeys, createApiKey, updateApiKey, deleteApiKey, type ApiKey } from '../api/client';
+import { fetchApiKeys, createApiKey, updateApiKey, deleteApiKey, regenerateApiKey, type ApiKey } from '../api/client';
 
 export default function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -7,12 +7,13 @@ export default function ApiKeysPage() {
   const [newKeyName, setNewKeyName] = useState('');
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [keyCopied, setKeyCopied] = useState(false);
 
-  const handleCopyPrefix = (id: string, prefix: string) => {
-    navigator.clipboard.writeText(prefix).then(() => {
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
+  const handleCopyFullKey = () => {
+    if (!createdKey) return;
+    navigator.clipboard.writeText(createdKey).then(() => {
+      setKeyCopied(true);
+      setTimeout(() => setKeyCopied(false), 1500);
     });
   };
 
@@ -27,10 +28,23 @@ export default function ApiKeysPage() {
     try {
       const result = await createApiKey({ name: newKeyName });
       setCreatedKey(result.key);
+      setKeyCopied(false);
       setNewKeyName('');
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
+    }
+  };
+
+  const handleRegenerate = async (key: ApiKey) => {
+    if (!confirm(`Regenerate key "${key.name}"? The old key will stop working immediately.`)) return;
+    try {
+      const result = await regenerateApiKey(key.id);
+      setCreatedKey(result.key);
+      setKeyCopied(false);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Regenerate failed');
     }
   };
 
@@ -75,11 +89,23 @@ export default function ApiKeysPage() {
       {/* Created Key Display */}
       {createdKey && (
         <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
-          <p className="text-green-400 text-sm font-semibold mb-2">API Key Created - Save it now!</p>
-          <code className="block bg-gray-900 px-4 py-2 rounded font-mono text-sm text-green-300 select-all">
-            {createdKey}
-          </code>
-          <p className="text-xs text-gray-500 mt-2">This key will not be shown again.</p>
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-5 h-5 text-yellow-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <p className="text-yellow-300 text-sm font-semibold">Copy and save this key now. It cannot be viewed again after closing.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-gray-900 px-4 py-2 rounded font-mono text-sm text-green-300 select-all overflow-x-auto">
+              {createdKey}
+            </code>
+            <button
+              onClick={handleCopyFullKey}
+              className="flex-shrink-0 px-3 py-2 bg-green-600 hover:bg-green-700 rounded text-sm font-medium transition-colors"
+            >
+              {keyCopied ? 'Copied!' : 'Copy Key'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -120,24 +146,7 @@ export default function ApiKeysPage() {
               <tr key={k.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                 <td className="px-4 py-3 font-medium">{k.name}</td>
                 <td className="px-4 py-3 font-mono text-gray-400">
-                  <span className="inline-flex items-center gap-1.5">
-                    {k.keyPrefix}...
-                    <button
-                      onClick={() => handleCopyPrefix(k.id, k.keyPrefix)}
-                      className="text-gray-600 hover:text-gray-300 transition-colors"
-                      title="Copy prefix"
-                    >
-                      {copiedId === k.id ? (
-                        <svg className="w-3.5 h-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
-                  </span>
+                  {k.keyPrefix}...
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">
                   {k.rateLimitRpm ? `${k.rateLimitRpm} RPM` : 'Global'}
@@ -149,15 +158,26 @@ export default function ApiKeysPage() {
                   <ToggleSwitch enabled={k.enabled} onToggle={() => handleToggle(k)} />
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => handleDelete(k.id)}
-                    className="text-gray-600 hover:text-red-400 transition-colors"
-                    title="Delete key"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                  <span className="inline-flex items-center gap-1">
+                    <button
+                      onClick={() => handleRegenerate(k)}
+                      className="text-gray-600 hover:text-yellow-400 transition-colors"
+                      title="Regenerate key"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(k.id)}
+                      className="text-gray-600 hover:text-red-400 transition-colors"
+                      title="Delete key"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </span>
                 </td>
               </tr>
             ))}
