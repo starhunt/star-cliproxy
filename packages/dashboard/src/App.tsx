@@ -96,7 +96,41 @@ export default function App() {
       </nav>
 
       {/* 메인 콘텐츠 */}
-      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 p-6">
+      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 flex flex-col">
+        {/* 상단 바 */}
+        <div className="flex items-center justify-end gap-2 px-6 pt-4 pb-2">
+          <button
+            onClick={() => setLang(lang === 'ko' ? 'en' : 'ko')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+              bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800
+              text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800
+              hover:text-gray-800 dark:hover:text-gray-200"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+            </svg>
+            {lang === 'ko' ? 'English' : '한국어'}
+          </button>
+          <button
+            onClick={toggleTheme}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+              bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800
+              text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800
+              hover:text-gray-800 dark:hover:text-gray-200"
+          >
+            {theme === 'dark' ? (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+            {theme === 'dark' ? 'Light' : 'Dark'}
+          </button>
+        </div>
+        <div className="flex-1 px-6 pb-6">
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/models" element={<ModelMappingsPage />} />
@@ -107,6 +141,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/guide" element={<ApiGuidePage />} />
         </Routes>
+        </div>
       </main>
     </div>
   );
