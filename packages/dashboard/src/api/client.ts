@@ -341,3 +341,23 @@ export function fetchDebugLogs(params?: { limit?: number; offset?: number; model
 export function clearDebugLogs() {
   return request<{ deleted: number }>('/debug-logs', { method: 'DELETE' });
 }
+
+// Settings
+export interface ValidationSettings {
+  maxMessageCount: number;
+  maxMessageLength: number;
+  maxPromptLength: number;
+  maxResponseLength: number;
+  bodyLimitBytes: number;
+}
+
+export function fetchValidationSettings() {
+  return request<ValidationSettings>('/settings/validation');
+}
+
+export function updateValidationSettings(data: Partial<ValidationSettings>) {
+  return request<ValidationSettings>('/settings/validation', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}

@@ -16,10 +16,10 @@ export const DEFAULT_RATE_LIMIT_RPD = 1000;
 
 export const PROVIDER_NAMES = ['claude', 'codex', 'gemini'] as const;
 
-// 입력 검증 기본값
+// 입력 검증 기본값 (1M token context 지원)
 export const DEFAULT_MAX_MESSAGE_COUNT = 200;
-export const DEFAULT_MAX_MESSAGE_LENGTH = 100_000;  // 100KB
-export const DEFAULT_MAX_PROMPT_LENGTH = 500_000;   // 500KB
-export const DEFAULT_MAX_RESPONSE_LENGTH = 500_000; // 500KB
-export const DEFAULT_BODY_LIMIT_BYTES = 10 * 1024 * 1024; // 10MB
+export const DEFAULT_MAX_MESSAGE_LENGTH = 1_000_000;   // 1M chars (~250K tokens)
+export const DEFAULT_MAX_PROMPT_LENGTH = 4_000_000;    // 4M chars (~1M tokens)
+export const DEFAULT_MAX_RESPONSE_LENGTH = 1_000_000;  // 1M chars
+export const DEFAULT_BODY_LIMIT_BYTES = 50 * 1024 * 1024; // 50MB
 export const ALLOWED_ROLES = ['system', 'user', 'assistant'] as const;

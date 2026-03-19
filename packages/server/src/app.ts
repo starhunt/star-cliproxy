@@ -21,7 +21,9 @@ import { ActiveRequestTracker } from './services/active-requests.js';
 import { ResponseCache } from './services/cache.js';
 import { DebugService } from './services/debug.js';
 import { registerDebugRoutes } from './routes/admin/debug.js';
+import { registerSettingsRoutes, loadValidationFromDb } from './routes/admin/settings.js';
 import { seedDatabase } from './db/seed.js';
+import type { ValidationConfig } from '@star-cliproxy/shared';
 
 export async function createApp(config: AppConfig) {
   // admin token 검증 (빈 토큰으로 시작 방지)
@@ -40,6 +42,10 @@ export async function createApp(config: AppConfig) {
 
   // DB에서 저장된 Rate Limits 로드 (없으면 config.yaml 기본값 사용)
   const savedRateLimits = await loadRateLimitsFromDb(config.rateLimits);
+
+  // DB에서 저장된 Validation 설정 로드 (없으면 config.yaml 기본값 사용)
+  const savedValidation = await loadValidationFromDb();
+  let currentValidation: ValidationConfig = savedValidation ?? { ...config.validation };
 
   // 서비스
   const router = new ModelRouter(registry);
@@ -106,7 +112,7 @@ export async function createApp(config: AppConfig) {
     rateLimiter,
     registry,
     healthChecker,
-    validation: config.validation,
+    validation: currentValidation,
     activeRequests,
     cache,
     debug,
@@ -125,6 +131,13 @@ export async function createApp(config: AppConfig) {
   registerTestModelRoute(app, registry);
   registerRateLimitsRoutes(app, rateLimiter, config.rateLimits);
   registerDebugRoutes(app, debug);
+  registerSettingsRoutes(app, {
+    getValidation: () => currentValidation,
+    setValidation: (v) => {
+      // 기존 객체의 프로퍼티를 덮어쓰기 (chat-completions가 참조 유지)
+      Object.assign(currentValidation, v);
+    },
+  });
   registerDashboardRoute(app, { registry, queueManager, activeRequests });
 
   // 활성 요청 API

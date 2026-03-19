@@ -63,11 +63,11 @@ cache:
   max_entries: 1000
 
 validation:
-  max_message_count: 200        # 메시지 배열 최대 수
-  max_message_length: 100000    # 개별 메시지 최대 길이 (chars)
-  max_prompt_length: 500000     # 전체 프롬프트 총 길이 (chars)
-  max_response_length: 500000   # CLI 응답 최대 길이 (chars)
-  body_limit_bytes: 10485760    # HTTP 요청 본문 최대 크기 (10MB)
+  max_message_count: 200         # 메시지 배열 최대 수
+  max_message_length: 1000000    # 개별 메시지 최대 길이 (1M chars, ~250K tokens)
+  max_prompt_length: 4000000     # 전체 프롬프트 총 길이 (4M chars, ~1M tokens)
+  max_response_length: 1000000   # CLI 응답 최대 길이 (1M chars)
+  body_limit_bytes: 52428800     # HTTP 요청 본문 최대 크기 (50MB)
 
 model_mappings:
   # Claude models

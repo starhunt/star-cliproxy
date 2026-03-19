@@ -6,6 +6,7 @@ import LogsPage from './pages/LogsPage';
 import ApiGuidePage from './pages/ApiGuidePage';
 import RateLimitsPage from './pages/RateLimitsPage';
 import DebugPage from './pages/DebugPage';
+import SettingsPage from './pages/SettingsPage';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: '~' },
@@ -14,6 +15,7 @@ const navItems = [
   { to: '/rate-limits', label: 'Rate Limits', icon: '%' },
   { to: '/logs', label: 'Logs', icon: '>' },
   { to: '/debug', label: 'Debug', icon: '!' },
+  { to: '/settings', label: 'Settings', icon: '@' },
   { to: '/guide', label: 'API Guide', icon: '?' },
 ];
 
@@ -59,6 +61,7 @@ export default function App() {
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/rate-limits" element={<RateLimitsPage />} />
           <Route path="/debug" element={<DebugPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/guide" element={<ApiGuidePage />} />
         </Routes>
       </main>
