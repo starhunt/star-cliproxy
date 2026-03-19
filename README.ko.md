@@ -44,6 +44,13 @@ response = client.chat.completions.create(
 - **프로세스 종료** — SIGTERM 후 3초 대기, 미종료 시 SIGKILL fallback
 - **오류 구분** — 타임아웃 504, 기타 에러 502
 - **X-Unsupported-Params 헤더** — CLI 미지원 파라미터 고지
+- **Content parts 지원** — OpenAI content parts 배열 형식 지원 (OpenClaw, LangChain, LiteLLM 호환)
+- **Debug 캡처** — 요청/응답 페이로드 캡처 (전체 또는 모델별 on/off, CLI args + raw stdout 확인)
+- **Settings 페이지** — 런타임 validation 설정 변경 (재시작 없이 즉시 반영)
+- **i18n** — 영어/한국어 대시보드 다국어 지원
+- **Dark/Light 모드** — 다크/라이트 테마 전환
+- **API 키 재생성** — 이름 유지하고 키만 재생성
+- **요청 트렌드 차트** — 모델별 색상 구분, 기간 선택 (6h~7d), 실시간 필터
 - **API Guide** — 내장 사용 가이드 페이지
 
 ## Prerequisites
@@ -137,6 +144,8 @@ curl http://localhost:8300/v1/chat/completions \
 - **API Keys** — API 키 생성/폐기
 - **Rate Limits** — Rate Limit 설정 (즉시 반영)
 - **Logs** — 요청 로그 조회
+- **Debug** — API 요청/응답 페이로드 캡처 및 검사 (전체/모델별 토글)
+- **Settings** — validation 제한값 런타임 변경
 - **API Guide** — 사용 가이드 + 코드 샘플
 
 ## Usage Examples
@@ -208,8 +217,8 @@ curl http://localhost:8300/v1/chat/completions \
 | `claude-opus` | Claude | `claude-opus-4-6` |
 | `claude-sonnet` | Claude | `claude-sonnet-4-6` |
 | `claude-haiku` | Claude | `claude-haiku-4-5-20251001` |
-| `gpt-4` | Codex | (CLI 기본 모델) |
-| `gpt-4o` | Codex | (CLI 기본 모델) |
+| `gpt-4` | Codex | `gpt-5.4` |
+| `gpt-4o` | Codex | `gpt-5.4` |
 | `gemini-pro` | Gemini | `gemini-2.5-pro` |
 | `gemini-flash` | Gemini | `gemini-2.5-flash` |
 
@@ -259,10 +268,10 @@ rate_limits:
 
 validation:
   max_message_count: 200       # 메시지 배열 최대 수
-  max_message_length: 100000   # 개별 메시지 최대 길이
-  max_prompt_length: 500000    # 전체 프롬프트 총 길이
-  max_response_length: 500000  # 응답 최대 길이
-  body_limit_bytes: 10485760   # HTTP 요청 본문 (10MB)
+  max_message_length: 1000000  # 1M 글자 (~250K 토큰)
+  max_prompt_length: 4000000   # 4M 글자 (~1M 토큰)
+  max_response_length: 1000000 # 1M 글자
+  body_limit_bytes: 52428800   # 50MB
 ```
 
 ### Environment Variables
@@ -295,6 +304,11 @@ validation:
 | `GET` | `/admin/active-requests` | 활성 요청 |
 | `GET` | `/admin/stats` | 사용 통계 |
 | `GET` | `/admin/logs` | 요청 로그 |
+| `GET/PUT` | `/admin/debug` | Debug 캡처 설정 |
+| `GET/DELETE` | `/admin/debug-logs` | Debug 로그 관리 |
+| `GET/PUT` | `/admin/settings/validation` | Validation 설정 |
+| `GET` | `/admin/trend` | 모델별 시간대 트렌드 |
+| `POST` | `/admin/api-keys/:id/regenerate` | API 키 재생성 |
 
 ## Architecture
 
@@ -342,7 +356,9 @@ star-cliproxy/
 │   │       └── db/           # SQLite + Drizzle ORM
 │   └── dashboard/       # Dashboard UI (React + Vite)
 │       └── src/
-│           └── pages/        # Dashboard, Models, Keys, Logs, Guide
+│           ├── pages/        # Dashboard, Models, Keys, Logs, Debug, Settings, Guide
+│           ├── i18n/         # 다국어 번역 (EN/KO)
+│           └── theme/        # Dark/Light 테마 프로바이더
 ├── config.example.yaml
 ├── docs/PRD.md
 └── tests/
@@ -367,12 +383,20 @@ star-cliproxy/
 - HTTP 요청 본문 크기 제한
 - Admin API는 localhost 접근 허용, 외부 접근 시 토큰 필수
 
+## Upgrading
+
+- **데이터베이스** — 새 테이블은 자동 생성되므로 기존 DB와 호환됩니다
+- **스키마** — 기존 테이블에 컬럼 변경이 없으므로 마이그레이션이 필요 없습니다
+- **초기화** — `data/cliproxy.db`를 삭제 후 재시작하면 깨끗하게 시작할 수 있습니다
+- **설정** — `config.yaml`은 `.gitignore`에 포함되어 `git pull` 시 덮어쓰지 않습니다. 새 설정 필드는 기본값으로 폴백됩니다
+
 ## Known Limitations
 
 - **토큰 카운팅** — CLI 제공 시 사용, 미제공 시 추정 (문자수/4)
 - **구독 한도** — 각 구독 플랜의 Rate Limit이 적용됨
 - **멀티턴** — 대화 히스토리를 텍스트로 직렬화하여 CLI에 전달
 - **지원 안 되는 파라미터** — `temperature`, `top_p` 등 OpenAI 파라미터 일부는 CLI에서 미지원 (X-Unsupported-Params 헤더로 고지)
+- **Content parts** — `text` 타입만 추출하며, `image_url` 등 비텍스트 파트는 무시됩니다
 
 ## License
 

@@ -44,6 +44,13 @@ response = client.chat.completions.create(
 - **Process teardown** — SIGTERM with 3-second grace period, then SIGKILL fallback
 - **Error differentiation** — 504 on timeout, 502 on other errors
 - **X-Unsupported-Params header** — notifies callers of parameters the CLI does not support
+- **Content parts support** — OpenAI content parts array format (compatible with OpenClaw, LangChain, LiteLLM)
+- **Debug capture** — request/response payload capture (global or per-model toggle, view CLI args + raw stdout)
+- **Settings page** — change validation settings at runtime (takes effect immediately without restart)
+- **i18n** — English / Korean dashboard localization
+- **Dark/Light mode** — theme switching
+- **API key regeneration** — regenerate key while keeping the name
+- **Request trend chart** — per-model color coding, time range selection (6h–7d), real-time filter
 - **API Guide** — built-in usage guide page
 
 ## Prerequisites
@@ -137,6 +144,8 @@ Open `http://localhost:5300` in your browser:
 - **API Keys** — issue and revoke API keys
 - **Rate Limits** — adjust rate limit settings (takes effect immediately)
 - **Logs** — browse request logs
+- **Debug** — capture and inspect API request/response payloads (global or per-model toggle)
+- **Settings** — change validation limits at runtime
 - **API Guide** — usage guide with code samples
 
 ## Usage Examples
@@ -208,8 +217,8 @@ Default mappings (add or modify from the dashboard):
 | `claude-opus` | Claude | `claude-opus-4-6` |
 | `claude-sonnet` | Claude | `claude-sonnet-4-6` |
 | `claude-haiku` | Claude | `claude-haiku-4-5-20251001` |
-| `gpt-4` | Codex | (CLI default model) |
-| `gpt-4o` | Codex | (CLI default model) |
+| `gpt-4` | Codex | `gpt-5.4` |
+| `gpt-4o` | Codex | `gpt-5.4` |
 | `gemini-pro` | Gemini | `gemini-2.5-pro` |
 | `gemini-flash` | Gemini | `gemini-2.5-flash` |
 
@@ -259,10 +268,10 @@ rate_limits:
 
 validation:
   max_message_count: 200       # maximum messages in array
-  max_message_length: 100000   # maximum length per message
-  max_prompt_length: 500000    # maximum total prompt length
-  max_response_length: 500000  # maximum response length
-  body_limit_bytes: 10485760   # HTTP request body limit (10 MB)
+  max_message_length: 1000000  # 1M chars (~250K tokens)
+  max_prompt_length: 4000000   # 4M chars (~1M tokens)
+  max_response_length: 1000000 # 1M chars
+  body_limit_bytes: 52428800   # 50MB
 ```
 
 ### Environment Variables
@@ -295,6 +304,11 @@ validation:
 | `GET` | `/admin/active-requests` | In-flight requests |
 | `GET` | `/admin/stats` | Usage statistics |
 | `GET` | `/admin/logs` | Request logs |
+| `GET/PUT` | `/admin/debug` | Debug capture configuration |
+| `GET/DELETE` | `/admin/debug-logs` | Debug log management |
+| `GET/PUT` | `/admin/settings/validation` | Validation settings |
+| `GET` | `/admin/trend` | Hourly trend with model breakdown |
+| `POST` | `/admin/api-keys/:id/regenerate` | Regenerate API key |
 
 ## Architecture
 
@@ -342,7 +356,9 @@ star-cliproxy/
 │   │       └── db/           # SQLite + Drizzle ORM
 │   └── dashboard/       # Dashboard UI (React + Vite)
 │       └── src/
-│           └── pages/        # Dashboard, Models, Keys, Logs, Guide
+│           ├── pages/        # Dashboard, Models, Keys, Logs, Debug, Settings, Guide
+│           ├── i18n/         # Translations (EN/KO)
+│           └── theme/        # Dark/Light theme provider
 ├── config.example.yaml
 ├── docs/PRD.md
 └── tests/
@@ -367,12 +383,20 @@ star-cliproxy/
 - HTTP request body size cap
 - Admin API restricted to localhost by default; external access requires the admin token
 
+## Upgrading
+
+- **Database** — new tables are created automatically; existing databases are fully compatible
+- **Schema** — no column changes to existing tables, so no migration is needed
+- **Clean start** — delete `data/cliproxy.db` and restart to start fresh
+- **Config** — `config.yaml` is in `.gitignore`, so `git pull` will never overwrite it; new config fields fall back to defaults
+
 ## Known Limitations
 
 - **Token counting** — uses CLI-reported counts when available; falls back to an estimate (characters / 4)
 - **Subscription rate limits** — each underlying subscription plan enforces its own limits
 - **Multi-turn context** — conversation history is serialized as text and passed to the CLI
 - **Unsupported parameters** — some OpenAI parameters (e.g., `temperature`, `top_p`) are not supported by the CLI tools and are surfaced via the `X-Unsupported-Params` response header
+- **Content parts** — only `text` type parts are extracted; non-text parts such as `image_url` are ignored
 
 ## License
 
