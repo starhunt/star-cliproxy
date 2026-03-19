@@ -30,8 +30,11 @@ response = client.chat.completions.create(
 
 ## Features
 
-- **OpenAI-compatible API** — `/v1/chat/completions` and `/v1/models` endpoints
+- **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/images/generations`, and `/v1/models` endpoints
 - **Three CLI providers** — Claude Code, Codex, Gemini CLI
+- **Plugin system** — extend with custom providers without modifying the main codebase (see [Plugin Guide](./plugins/README.md))
+- **Image generation API** — `/v1/images/generations` endpoint (OpenAI Images API compatible)
+- **Endpoint types** — providers declare supported types (`chat`, `images`, `tts`, `embeddings`)
 - **True SSE streaming** — Claude via stream-json NDJSON pipe, Gemini via real-time delta events, Codex via JSONL event stream
 - **Model mapping** — alias-based routing with priority fallback chains
 - **Response cache** — SHA-256 hash keying, TTL expiry, X-Cache header
@@ -46,11 +49,13 @@ response = client.chat.completions.create(
 - **X-Unsupported-Params header** — notifies callers of parameters the CLI does not support
 - **Content parts support** — OpenAI content parts array format (compatible with OpenClaw, LangChain, LiteLLM)
 - **Debug capture** — request/response payload capture (global or per-model toggle, view CLI args + raw stdout)
+- **Debug log deletion** — delete individual debug log entries
 - **Settings page** — change validation settings at runtime (takes effect immediately without restart)
 - **i18n** — English / Korean dashboard localization
 - **Dark/Light mode** — theme switching
 - **API key regeneration** — regenerate key while keeping the name
 - **Request trend chart** — per-model color coding, time range selection (6h–7d), real-time filter
+- **Image preview** — automatic image URL detection in debug logs and test results
 - **API Guide** — built-in usage guide page
 
 ## Prerequisites
@@ -266,6 +271,14 @@ rate_limits:
     codex: { rpm: 20 }
     gemini: { rpm: 20 }
 
+# Custom providers (loaded from plugins/ directory)
+plugins: []
+  # - path: "./plugins/my-image-provider"
+  #   config:
+  #     cli_path: "my-cli"
+  #     default_model: "my-model"
+  #     timeout_ms: 120000
+
 validation:
   max_message_count: 200       # maximum messages in array
   max_message_length: 1000000  # 1M chars (~250K tokens)
@@ -288,6 +301,7 @@ validation:
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `POST` | `/v1/chat/completions` | Bearer | Chat completion (streaming / non-streaming) |
+| `POST` | `/v1/images/generations` | Bearer | Image generation (OpenAI Images API compatible) |
 | `GET` | `/v1/models` | Bearer | List available models |
 | `GET` | `/health` | — | Health check |
 
@@ -316,6 +330,7 @@ validation:
 Client (OpenAI SDK)
     |
     POST /v1/chat/completions
+    POST /v1/images/generations
     |
 +---+-----------------------------+
 |  Fastify Server (:8300)        |
@@ -329,6 +344,9 @@ Client (OpenAI SDK)
 |        |      |     |          |
 |     Claude  Codex  Gemini      |
 |     (spawn) (spawn) (spawn)    |
+|        |                       |
+|     Plugins (dynamic load)     |
+|     (custom providers)         |
 |                                |
 |  SQLite (logs, config, cache,  |
 |          rate limit counters)  |
@@ -359,10 +377,21 @@ star-cliproxy/
 │           ├── pages/        # Dashboard, Models, Keys, Logs, Debug, Settings, Guide
 │           ├── i18n/         # Translations (EN/KO)
 │           └── theme/        # Dark/Light theme provider
+├── plugins/              # Custom provider plugins
+│   ├── README.md             # Plugin development guide
+│   └── example-plugin/       # Working example
 ├── config.example.yaml
 ├── docs/PRD.md
 └── tests/
 ```
+
+## Plugin System
+
+Extend star-cliproxy with custom providers — image generators, custom LLM APIs, or any HTTP-based service — without modifying the main codebase.
+
+Plugins live in the `plugins/` directory (gitignored by default) and are loaded dynamically at startup.
+
+See [plugins/README.md](./plugins/README.md) for the full plugin development guide.
 
 ## Platform Support
 

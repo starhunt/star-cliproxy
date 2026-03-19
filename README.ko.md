@@ -30,8 +30,11 @@ response = client.chat.completions.create(
 
 ## Features
 
-- **OpenAI 호환 API** — `/v1/chat/completions`, `/v1/models` 엔드포인트
+- **OpenAI 호환 API** — `/v1/chat/completions`, `/v1/images/generations`, `/v1/models` 엔드포인트
 - **3개 CLI Provider 지원** — Claude Code, Codex, Gemini CLI
+- **플러그인 시스템** — 메인 코드 수정 없이 커스텀 프로바이더 추가 가능 ([플러그인 가이드](./plugins/README.md))
+- **이미지 생성 API** — `/v1/images/generations` 엔드포인트 (OpenAI Images API 호환)
+- **엔드포인트 타입** — 프로바이더가 지원 타입 선언 (`chat`, `images`, `tts`, `embeddings`)
 - **실제 SSE 스트리밍** — Claude: stream-json NDJSON 파이프, Gemini: 실시간 delta 이벤트, Codex: JSONL 이벤트 스트림
 - **모델 매핑** — alias 기반 라우팅 + priority 폴백 체인
 - **응답 캐시** — SHA-256 해시 기반, TTL 만료, X-Cache 헤더 노출
@@ -46,11 +49,13 @@ response = client.chat.completions.create(
 - **X-Unsupported-Params 헤더** — CLI 미지원 파라미터 고지
 - **Content parts 지원** — OpenAI content parts 배열 형식 지원 (OpenClaw, LangChain, LiteLLM 호환)
 - **Debug 캡처** — 요청/응답 페이로드 캡처 (전체 또는 모델별 on/off, CLI args + raw stdout 확인)
+- **Debug 로그 개별 삭제** — 각 로그 항목별 개별 삭제
 - **Settings 페이지** — 런타임 validation 설정 변경 (재시작 없이 즉시 반영)
 - **i18n** — 영어/한국어 대시보드 다국어 지원
 - **Dark/Light 모드** — 다크/라이트 테마 전환
 - **API 키 재생성** — 이름 유지하고 키만 재생성
 - **요청 트렌드 차트** — 모델별 색상 구분, 기간 선택 (6h~7d), 실시간 필터
+- **이미지 미리보기** — 디버그 로그 및 테스트 결과에서 이미지 URL 자동 감지 후 미리보기 표시
 - **API Guide** — 내장 사용 가이드 페이지
 
 ## Prerequisites
@@ -266,6 +271,14 @@ rate_limits:
     codex: { rpm: 20 }
     gemini: { rpm: 20 }
 
+# 커스텀 프로바이더 (plugins/ 디렉토리에서 동적 로드)
+plugins: []
+  # - path: "./plugins/my-image-provider"
+  #   config:
+  #     cli_path: "my-cli"
+  #     default_model: "my-model"
+  #     timeout_ms: 120000
+
 validation:
   max_message_count: 200       # 메시지 배열 최대 수
   max_message_length: 1000000  # 1M 글자 (~250K 토큰)
@@ -288,6 +301,7 @@ validation:
 | Method | Endpoint | Auth | 설명 |
 |--------|----------|------|------|
 | `POST` | `/v1/chat/completions` | Bearer | Chat completion (스트리밍/일반) |
+| `POST` | `/v1/images/generations` | Bearer | 이미지 생성 (OpenAI Images API 호환) |
 | `GET` | `/v1/models` | Bearer | 사용 가능한 모델 목록 |
 | `GET` | `/health` | - | Health check |
 
@@ -316,6 +330,7 @@ validation:
 Client (OpenAI SDK)
     |
     POST /v1/chat/completions
+    POST /v1/images/generations
     |
 +---+-----------------------------+
 |  Fastify Server (:8300)        |
@@ -329,6 +344,9 @@ Client (OpenAI SDK)
 |        |      |     |          |
 |     Claude  Codex  Gemini      |
 |     (spawn) (spawn) (spawn)    |
+|        |                       |
+|     Plugins (dynamic load)     |
+|     (custom providers)         |
 |                                |
 |  SQLite (logs, config, cache,  |
 |          rate limit counters)  |
@@ -359,10 +377,21 @@ star-cliproxy/
 │           ├── pages/        # Dashboard, Models, Keys, Logs, Debug, Settings, Guide
 │           ├── i18n/         # 다국어 번역 (EN/KO)
 │           └── theme/        # Dark/Light 테마 프로바이더
+├── plugins/              # 커스텀 프로바이더 플러그인
+│   ├── README.md             # 플러그인 개발 가이드
+│   └── example-plugin/       # 동작하는 예제
 ├── config.example.yaml
 ├── docs/PRD.md
 └── tests/
 ```
+
+## 플러그인 시스템
+
+메인 코드 수정 없이 커스텀 프로바이더를 추가할 수 있습니다. 이미지 생성기, 커스텀 LLM API, HTTP 기반 서비스 등을 플러그인으로 연동하세요.
+
+플러그인은 `plugins/` 디렉토리에 위치하며 (기본적으로 gitignore 처리), 서버 시작 시 동적으로 로드됩니다.
+
+전체 플러그인 개발 가이드는 [plugins/README.md](./plugins/README.md)를 참고하세요.
 
 ## Platform Support
 

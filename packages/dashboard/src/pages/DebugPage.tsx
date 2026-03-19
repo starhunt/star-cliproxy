@@ -4,6 +4,7 @@ import {
   fetchDebugConfig,
   updateDebugConfig,
   fetchDebugLogs,
+  deleteDebugLog,
   clearDebugLogs,
   fetchModelMappings,
   type DebugConfig,
@@ -55,6 +56,16 @@ export default function DebugPage() {
     try {
       const updated = await updateDebugConfig({ model: alias, enabled: !config.models[alias] });
       setConfig(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDebugLog(id);
+      setLogs((prev) => prev.filter((l) => l.id !== id));
+      if (expandedId === id) setExpandedId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
     }
@@ -170,6 +181,7 @@ export default function DebugPage() {
             log={log}
             expanded={expandedId === log.id}
             onToggle={() => setExpandedId(expandedId === log.id ? null : log.id)}
+            onDelete={() => handleDelete(log.id)}
           />
         ))}
         {logs.length === 0 && (
@@ -188,10 +200,12 @@ function DebugLogEntry({
   log,
   expanded,
   onToggle,
+  onDelete,
 }: {
   log: DebugLog;
   expanded: boolean;
   onToggle: () => void;
+  onDelete: () => void;
 }) {
   const { t } = useTranslation();
   const statusColor = log.status === 'pending'
@@ -222,6 +236,15 @@ function DebugLogEntry({
         </span>
         <span className="text-xs text-gray-400 dark:text-gray-500">{log.latencyMs}ms</span>
         <span className="text-xs text-gray-400 dark:text-gray-600">{time}</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="text-gray-300 dark:text-gray-700 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+          title="Delete"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
         <svg
           className={`w-4 h-4 text-gray-400 dark:text-gray-600 transition-transform ${expanded ? 'rotate-180' : ''}`}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
@@ -273,6 +296,16 @@ function DebugLogEntry({
           {log.parsedContent && (
             <DetailSection title={t('debug.parsedResponse')}>
               <pre className="text-blue-600 dark:text-blue-200 whitespace-pre-wrap break-words">{log.parsedContent}</pre>
+              {isImageUrl(log.parsedContent) && (
+                <div className="mt-2">
+                  <img
+                    src={log.parsedContent.trim()}
+                    alt="Generated image"
+                    className="max-w-md rounded-lg border border-gray-200 dark:border-gray-700"
+                    loading="lazy"
+                  />
+                </div>
+              )}
             </DetailSection>
           )}
 
@@ -342,6 +375,17 @@ function formatTime(dateStr: string): string {
   const d = new Date(normalized);
   if (isNaN(d.getTime())) return dateStr;
   return d.toLocaleTimeString();
+}
+
+function isImageUrl(text: string): boolean {
+  const trimmed = text.trim();
+  try {
+    const url = new URL(trimmed);
+    return /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(url.pathname)
+      || url.hostname.includes('blob.core.windows.net');
+  } catch {
+    return false;
+  }
 }
 
 function formatJson(str: string): string {

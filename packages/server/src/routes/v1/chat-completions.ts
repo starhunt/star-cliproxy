@@ -2,7 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
-  ProviderName,
   ValidationConfig,
 } from '@star-cliproxy/shared';
 import { ALLOWED_ROLES } from '@star-cliproxy/shared';

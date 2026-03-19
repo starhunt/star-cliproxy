@@ -1,10 +1,8 @@
-import type { ChatCompletionChunk, StreamChunk } from '@star-cliproxy/shared';
+import type { ChatCompletionChunk, StreamChunk, StreamParser } from '@star-cliproxy/shared';
 import { nanoid } from 'nanoid';
 
-// CLI stdout 라인을 StreamChunk로 파싱하는 인터페이스
-export interface StreamParser {
-  parse(line: string): StreamChunk | null;
-}
+// StreamParser는 @star-cliproxy/shared에서 re-export
+export type { StreamParser } from '@star-cliproxy/shared';
 
 // Claude stream-json 파서 (--output-format stream-json --verbose)
 // 실제 출력: init → assistant(전체 메시지) → rate_limit_event → result
@@ -176,11 +174,31 @@ export function createRequestId(): string {
   return `chatcmpl-proxy-${nanoid(24)}`;
 }
 
-export function getParserForProvider(provider: string): StreamParser {
-  switch (provider) {
-    case 'claude': return new ClaudeStreamParser();
-    case 'codex': return new CodexStreamParser();
-    case 'gemini': return new GeminiStreamParser();
-    default: throw new Error(`Unknown provider: ${provider}`);
+// 플러그인용 기본 파서: 각 라인을 그대로 텍스트 delta로 변환
+export class PlainTextParser implements StreamParser {
+  parse(line: string): StreamChunk | null {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    return { type: 'delta', content: trimmed };
   }
+}
+
+// 파서 레지스트리: 프로바이더 이름 → 파서 팩토리
+const parserRegistry = new Map<string, () => StreamParser>();
+
+// 빌트인 파서 등록
+parserRegistry.set('claude', () => new ClaudeStreamParser());
+parserRegistry.set('codex', () => new CodexStreamParser());
+parserRegistry.set('gemini', () => new GeminiStreamParser());
+
+// 플러그인에서 커스텀 파서를 등록할 때 사용
+export function registerParser(provider: string, factory: () => StreamParser): void {
+  parserRegistry.set(provider, factory);
+}
+
+export function getParserForProvider(provider: string): StreamParser {
+  const factory = parserRegistry.get(provider);
+  if (factory) return factory();
+  // 등록되지 않은 프로바이더는 PlainText 파서로 폴백
+  return new PlainTextParser();
 }

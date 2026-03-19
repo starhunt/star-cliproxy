@@ -3,6 +3,7 @@ import {
   ClaudeStreamParser,
   CodexStreamParser,
   GeminiStreamParser,
+  PlainTextParser,
   formatAsSSE,
   createRequestId,
   getParserForProvider,
@@ -203,7 +204,8 @@ describe('getParserForProvider', () => {
     expect(getParserForProvider('gemini')).toBeInstanceOf(GeminiStreamParser);
   });
 
-  it('알 수 없는 provider는 에러', () => {
-    expect(() => getParserForProvider('unknown')).toThrow();
+  it('알 수 없는 provider는 PlainTextParser로 폴백', () => {
+    const parser = getParserForProvider('unknown');
+    expect(parser).toBeInstanceOf(PlainTextParser);
   });
 });

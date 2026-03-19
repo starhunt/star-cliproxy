@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { ProviderName } from '@star-cliproxy/shared';
+// ProviderName은 string 타입
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
 
 interface TestModelBody {
@@ -21,7 +21,7 @@ export function registerTestModelRoute(
       });
     }
 
-    const provider = registry.get(providerName as ProviderName);
+    const provider = registry.get(providerName);
     if (!provider) {
       return reply.status(400).send({
         success: false,
@@ -31,9 +31,18 @@ export function registerTestModelRoute(
 
     const startTime = Date.now();
 
+    // chat이 아닌 프로바이더(images, tts 등)는 health check로 대체
+    const endpointTypes = (provider as unknown as { endpointTypes?: string[] }).endpointTypes;
+    const isNonChat = endpointTypes && !endpointTypes.includes('chat');
+
+    // 이미지 프로바이더용 테스트 프롬프트
+    const testPrompt = isNonChat && endpointTypes.includes('images')
+      ? 'A simple test image: blue circle on white background'
+      : 'Say "OK" and nothing else.';
+
     try {
       const result = await provider.execute({
-        messages: [{ role: 'user', content: 'Say "OK" and nothing else.' }],
+        messages: [{ role: 'user', content: testPrompt }],
         model: actual_model,
         stream: false,
       });

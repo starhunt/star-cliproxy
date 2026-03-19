@@ -1,5 +1,5 @@
 import { eq, desc } from 'drizzle-orm';
-import type { ProviderName, HealthStatus } from '@star-cliproxy/shared';
+import type { HealthStatus } from '@star-cliproxy/shared';
 import { getDatabase } from '../db/client.js';
 import { providerHealth, requestLogs } from '../db/schema.js';
 import type { ProviderRegistry } from '../providers/provider-registry.js';
@@ -39,7 +39,7 @@ export class HealthChecker {
     );
   }
 
-  async checkProvider(name: ProviderName): Promise<HealthStatus> {
+  async checkProvider(name: string): Promise<HealthStatus> {
     const provider = this.registry.get(name);
     if (!provider) return 'unknown';
 
@@ -63,7 +63,7 @@ export class HealthChecker {
   // 최근 요청 기반 건강 판정
   // 마지막 성공 요청이 30분 이상 경과 + 최근 3건 중 에러 2건 이상 → unhealthy
   // 요청 이력이 없으면 (서버 시작 직후) → healthy (CLI 결과만 사용)
-  private async checkRecentRequests(provider: ProviderName): Promise<boolean> {
+  private async checkRecentRequests(provider: string): Promise<boolean> {
     try {
       const db = getDatabase();
 
@@ -110,7 +110,7 @@ export class HealthChecker {
     }
   }
 
-  async getHealth(name: ProviderName): Promise<HealthStatus> {
+  async getHealth(name: string): Promise<HealthStatus> {
     const db = getDatabase();
     const results = await db
       .select()
@@ -121,13 +121,13 @@ export class HealthChecker {
     return (results[0]?.status as HealthStatus) ?? 'unknown';
   }
 
-  async isHealthy(name: ProviderName): Promise<boolean> {
+  async isHealthy(name: string): Promise<boolean> {
     const status = await this.getHealth(name);
     // unknown도 시도 허용 (첫 실행 시)
     return status !== 'unhealthy';
   }
 
-  private async updateHealth(name: ProviderName, status: HealthStatus): Promise<void> {
+  private async updateHealth(name: string, status: HealthStatus): Promise<void> {
     const db = getDatabase();
     const now = new Date().toISOString();
 

@@ -6,13 +6,17 @@ import type {
   ExecuteResult,
   StreamChunk,
   HealthStatus,
-  ProviderName,
   ProviderConfigYaml,
+  EndpointType,
+  StreamParser,
 } from '@star-cliproxy/shared';
-import { getParserForProvider, type StreamParser } from '../utils/stream-transformer.js';
+import { getParserForProvider } from '../utils/stream-transformer.js';
 
 export abstract class BaseProvider {
-  abstract readonly name: ProviderName;
+  abstract readonly name: string;
+
+  // 빌트인 프로바이더는 기본 chat, 서브클래스에서 오버라이드 가능
+  readonly endpointTypes: EndpointType[] = ['chat'];
 
   protected config: ProviderConfigYaml;
   protected parser: StreamParser;

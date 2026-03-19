@@ -16,7 +16,7 @@ async function main() {
   const configPath = process.env.CONFIG_PATH ?? resolve(PROJECT_ROOT, 'config.yaml');
   const config = loadConfig(configPath);
 
-  const app = await createApp(config);
+  const app = await createApp(config, dirname(configPath));
 
   try {
     await app.listen({

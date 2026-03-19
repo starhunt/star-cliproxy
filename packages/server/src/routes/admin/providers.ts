@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getDatabase } from '../../db/client.js';
 import { providerHealth } from '../../db/schema.js';
-import type { ProviderName } from '@star-cliproxy/shared';
+// ProviderName은 string 타입
 import type { HealthChecker } from '../../services/health-checker.js';
 import type { QueueManager } from '../../services/queue.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
@@ -39,13 +39,11 @@ export function registerProvidersRoutes(app: FastifyInstance, deps: ProviderDeps
   // 수동 건강 체크
   app.post<{ Params: { name: string } }>('/admin/providers/:name/health-check', async (request, reply) => {
     const { name } = request.params;
-    const providerName = name as ProviderName;
-
-    if (!deps.registry.has(providerName)) {
+    if (!deps.registry.has(name)) {
       return reply.status(404).send({ error: { message: `Provider "${name}" not found.` } });
     }
 
-    const status = await deps.healthChecker.checkProvider(providerName);
+    const status = await deps.healthChecker.checkProvider(name);
     return reply.send({ provider: name, status });
   });
 }

@@ -273,11 +273,7 @@ export function testModel(provider: string, actual_model: string, signal?: Abort
 // Rate Limits
 export interface RateLimitsConfig {
   global: { rpm: number; rpd: number };
-  perProvider: {
-    claude?: { rpm: number };
-    codex?: { rpm: number };
-    gemini?: { rpm: number };
-  };
+  perProvider: Record<string, { rpm: number }>;
 }
 
 export function fetchRateLimits() {
@@ -336,6 +332,10 @@ export function fetchDebugLogs(params?: { limit?: number; offset?: number; model
   return request<{ data: DebugLog[]; pagination: { limit: number; offset: number } }>(
     `/debug-logs${qs ? `?${qs}` : ''}`,
   );
+}
+
+export function deleteDebugLog(id: string) {
+  return request<{ success: boolean }>(`/debug-logs/${id}`, { method: 'DELETE' });
 }
 
 export function clearDebugLogs() {

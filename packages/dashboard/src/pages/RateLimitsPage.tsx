@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from '../i18n/context';
-import { fetchRateLimits, updateRateLimits, type RateLimitsConfig } from '../api/client';
-
-const PROVIDERS = ['claude', 'codex', 'gemini'] as const;
+import { fetchRateLimits, updateRateLimits, fetchProviders, type RateLimitsConfig } from '../api/client';
 
 export default function RateLimitsPage() {
   const { t } = useTranslation();
   const [config, setConfig] = useState<RateLimitsConfig | null>(null);
+  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'gemini']);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -17,6 +16,13 @@ export default function RateLimitsPage() {
   };
 
   useEffect(load, []);
+
+  // 프로바이더 목록 동적 로드 (플러그인 포함)
+  useEffect(() => {
+    fetchProviders()
+      .then((providers) => setProviderNames(providers.map((p) => p.name)))
+      .catch(() => { /* 실패 시 기본값 유지 */ });
+  }, []);
 
   const handleSave = async () => {
     if (!config) return;
@@ -106,7 +112,7 @@ export default function RateLimitsPage() {
         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">{t('rateLimits.perProvider')}</h3>
         <p className="text-xs text-gray-400 dark:text-gray-500">{t('rateLimits.perProviderDescription')}</p>
         <div className="space-y-3">
-          {PROVIDERS.map((provider) => (
+          {providerNames.map((provider) => (
             <div key={provider} className="flex items-center gap-4">
               <span className="w-20 text-sm text-gray-500 dark:text-gray-400 capitalize">{provider}</span>
               <div className="flex-1">

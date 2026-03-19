@@ -1,0 +1,7 @@
+{
+  "name": "cliproxy-plugin-echo",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "description": "Example plugin: echo provider for star-cliproxy"
+}

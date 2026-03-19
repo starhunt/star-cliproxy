@@ -1,11 +1,11 @@
 import { eq, and, asc } from 'drizzle-orm';
-import type { ProviderName } from '@star-cliproxy/shared';
+import { BUILTIN_PROVIDERS } from '@star-cliproxy/shared';
 import { getDatabase } from '../db/client.js';
 import { modelMappings } from '../db/schema.js';
 import type { ProviderRegistry } from '../providers/provider-registry.js';
 
 export interface ResolvedRoute {
-  provider: ProviderName;
+  provider: string;
   actualModel: string;
 }
 
@@ -41,9 +41,9 @@ export class ModelRouter {
 
     // 활성화된 provider만 필터링
     return mappings
-      .filter((m) => this.registry.has(m.provider as ProviderName))
+      .filter((m) => this.registry.has(m.provider))
       .map((m) => ({
-        provider: m.provider as ProviderName,
+        provider: m.provider,
         actualModel: m.actualModel,
       }));
   }
@@ -51,7 +51,7 @@ export class ModelRouter {
   // 모델명에서 provider 추론 (접두사 기반, 오탐 방지)
   // "my-opus-experiment" 같은 사용자 정의 모델명이 잘못 라우팅되지 않도록
   // 공식 모델명 접두사 패턴만 매칭
-  private inferProvider(model: string): ProviderName | null {
+  private inferProvider(model: string): string | null {
     const lower = model.toLowerCase();
 
     // Claude: claude-*, sonnet-*, opus-*, haiku-* 접두사

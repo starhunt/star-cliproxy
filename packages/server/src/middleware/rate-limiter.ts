@@ -1,5 +1,5 @@
 import { eq, like } from 'drizzle-orm';
-import type { RateLimitConfig, ProviderName } from '@star-cliproxy/shared';
+import type { RateLimitConfig } from '@star-cliproxy/shared';
 import { getDatabase } from '../db/client.js';
 import { settings } from '../db/schema.js';
 
@@ -39,7 +39,7 @@ export class RateLimiter {
   // 요청 가능 여부 확인 + 카운터 원자적 증가
   checkAndIncrement(
     apiKeyId: string,
-    provider: ProviderName,
+    provider: string,
     keyLimits?: { rpm?: number | null; rpd?: number | null },
   ): { allowed: boolean; retryAfterSeconds?: number } {
     const now = Date.now();

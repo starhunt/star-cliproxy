@@ -1,17 +1,17 @@
-import type { ProviderName, ProviderConfigYaml } from '@star-cliproxy/shared';
+import type { ProviderConfigYaml } from '@star-cliproxy/shared';
 import type { BaseProvider } from './base-provider.js';
 import { ClaudeProvider } from './claude-provider.js';
 import { CodexProvider } from './codex-provider.js';
 import { GeminiProvider } from './gemini-provider.js';
 
 export class ProviderRegistry {
-  private providers = new Map<ProviderName, BaseProvider>();
+  private providers = new Map<string, BaseProvider>();
 
   register(provider: BaseProvider): void {
     this.providers.set(provider.name, provider);
   }
 
-  get(name: ProviderName): BaseProvider | undefined {
+  get(name: string): BaseProvider | undefined {
     return this.providers.get(name);
   }
 
@@ -19,7 +19,7 @@ export class ProviderRegistry {
     return Array.from(this.providers.values());
   }
 
-  has(name: ProviderName): boolean {
+  has(name: string): boolean {
     return this.providers.has(name);
   }
 }
@@ -33,27 +33,31 @@ function validateCliPath(provider: string, cliPath: string): void {
   }
 }
 
+// 빌트인 프로바이더 팩토리
+type ProviderFactory = (config: ProviderConfigYaml) => BaseProvider;
+
+const builtinFactories: Record<string, ProviderFactory> = {
+  claude: (config) => new ClaudeProvider(config),
+  codex: (config) => new CodexProvider(config),
+  gemini: (config) => new GeminiProvider(config),
+};
+
 // 설정 기반으로 활성화된 Provider들을 등록
 export function createProviderRegistry(
-  configs: Record<ProviderName, ProviderConfigYaml>,
+  configs: Record<string, ProviderConfigYaml>,
 ): ProviderRegistry {
   const registry = new ProviderRegistry();
 
-  // cli_path 안전성 검증 (shell injection 방지)
   for (const [name, config] of Object.entries(configs)) {
-    if (config.enabled) {
-      validateCliPath(name, config.cli_path);
-    }
-  }
+    if (!config.enabled) continue;
 
-  if (configs.claude.enabled) {
-    registry.register(new ClaudeProvider(configs.claude));
-  }
-  if (configs.codex.enabled) {
-    registry.register(new CodexProvider(configs.codex));
-  }
-  if (configs.gemini.enabled) {
-    registry.register(new GeminiProvider(configs.gemini));
+    validateCliPath(name, config.cli_path);
+
+    const factory = builtinFactories[name];
+    if (factory) {
+      registry.register(factory(config));
+    }
+    // 빌트인이 아닌 프로바이더는 플러그인 로더에서 등록
   }
 
   return registry;

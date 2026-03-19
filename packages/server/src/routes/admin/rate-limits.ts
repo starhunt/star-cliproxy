@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
-import type { RateLimitConfig, ProviderName } from '@star-cliproxy/shared';
+import type { RateLimitConfig } from '@star-cliproxy/shared';
 import { getDatabase } from '../../db/client.js';
 import { settings } from '../../db/schema.js';
 import { RateLimiter } from '../../middleware/rate-limiter.js';
@@ -9,11 +9,7 @@ const RATE_LIMITS_KEY = 'rate_limits';
 
 interface RateLimitsBody {
   global: { rpm: number; rpd: number };
-  perProvider: {
-    claude?: { rpm: number };
-    codex?: { rpm: number };
-    gemini?: { rpm: number };
-  };
+  perProvider: Record<string, { rpm: number }>;
 }
 
 export function registerRateLimitsRoutes(
@@ -35,16 +31,20 @@ export function registerRateLimitsRoutes(
       return reply.status(400).send({ error: { message: 'global.rpm and global.rpd are required as numbers.' } });
     }
 
+    // perProvider를 동적으로 구성 (빌트인 + 플러그인 프로바이더 모두 지원)
+    const perProvider: Record<string, { rpm: number }> = {};
+    if (body.perProvider) {
+      for (const [name, val] of Object.entries(body.perProvider)) {
+        perProvider[name] = { rpm: Math.max(1, Math.floor(val?.rpm ?? 20)) };
+      }
+    }
+
     const newConfig: RateLimitConfig = {
       global: {
         rpm: Math.max(1, Math.floor(body.global.rpm)),
         rpd: Math.max(1, Math.floor(body.global.rpd)),
       },
-      perProvider: {
-        claude: { rpm: Math.max(1, Math.floor(body.perProvider?.claude?.rpm ?? 20)) },
-        codex: { rpm: Math.max(1, Math.floor(body.perProvider?.codex?.rpm ?? 20)) },
-        gemini: { rpm: Math.max(1, Math.floor(body.perProvider?.gemini?.rpm ?? 20)) },
-      },
+      perProvider,
     };
 
     // DB에 저장

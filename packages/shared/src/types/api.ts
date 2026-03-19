@@ -78,6 +78,24 @@ export interface ModelListResponse {
   data: ModelObject[];
 }
 
+// OpenAI Images API 호환 타입
+export interface ImageGenerationRequest {
+  model: string;
+  prompt: string;
+  n?: number;
+  size?: string;
+  response_format?: 'url' | 'b64_json';
+}
+
+export interface ImageGenerationResponse {
+  created: number;
+  data: Array<{
+    url?: string;
+    b64_json?: string;
+    revised_prompt?: string;
+  }>;
+}
+
 // 에러 응답
 export interface ApiErrorResponse {
   error: {

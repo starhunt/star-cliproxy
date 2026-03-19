@@ -6,6 +6,7 @@ import {
   updateModelMapping,
   deleteModelMapping,
   testModel,
+  fetchProviders,
   type ModelMapping,
   type TestModelResult,
 } from '../api/client';
@@ -21,6 +22,7 @@ export default function ModelMappingsPage() {
   const [testResult, setTestResult] = useState<TestModelResult | null>(null);
   const [rowTesting, setRowTesting] = useState<string | null>(null);
   const [rowTestResult, setRowTestResult] = useState<{ id: string; result: TestModelResult } | null>(null);
+  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'gemini']);
 
   // AbortController refs
   const formTestAbortRef = useRef<AbortController | null>(null);
@@ -31,6 +33,13 @@ export default function ModelMappingsPage() {
   };
 
   useEffect(load, []);
+
+  // 프로바이더 목록 동적 로드 (플러그인 포함)
+  useEffect(() => {
+    fetchProviders()
+      .then((providers) => setProviderNames(providers.map((p) => p.name)))
+      .catch(() => { /* 실패 시 기본값 유지 */ });
+  }, []);
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
@@ -204,9 +213,9 @@ export default function ModelMappingsPage() {
                   onChange={(e) => { setForm({ ...form, provider: e.target.value }); setTestResult(null); }}
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
                 >
-                  <option value="claude">Claude</option>
-                  <option value="codex">Codex</option>
-                  <option value="gemini">Gemini</option>
+                  {providerNames.map((name) => (
+                    <option key={name} value={name}>{name.charAt(0).toUpperCase() + name.slice(1)}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -285,9 +294,19 @@ export default function ModelMappingsPage() {
                 <span className="text-xs text-gray-400 dark:text-gray-500">{testResult.latencyMs}ms</span>
               </div>
               {testResult.success && testResult.response && (
-                <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                  {t('models.response')}: <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-green-600 dark:text-green-300">{testResult.response}</code>
-                </p>
+                <div className="mt-1">
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    {t('models.response')}: <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-green-600 dark:text-green-300">{testResult.response}</code>
+                  </p>
+                  {isImageUrl(testResult.response) && (
+                    <img
+                      src={testResult.response.trim()}
+                      alt="Generated image"
+                      className="mt-2 max-w-sm rounded-lg border border-gray-200 dark:border-gray-700"
+                      loading="lazy"
+                    />
+                  )}
+                </div>
               )}
               {testResult.success && testResult.usage && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
@@ -403,4 +422,15 @@ export default function ModelMappingsPage() {
       </div>
     </div>
   );
+}
+
+function isImageUrl(text: string): boolean {
+  const trimmed = text.trim();
+  try {
+    const url = new URL(trimmed);
+    return /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(url.pathname)
+      || url.hostname.includes('blob.core.windows.net');
+  } catch {
+    return false;
+  }
 }

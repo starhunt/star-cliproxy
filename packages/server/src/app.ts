@@ -10,6 +10,7 @@ import { HealthChecker } from './services/health-checker.js';
 import { authMiddleware, adminAuthMiddleware } from './middleware/auth.js';
 import { registerChatCompletionsRoute } from './routes/v1/chat-completions.js';
 import { registerModelsRoute } from './routes/v1/models.js';
+import { registerImageGenerationsRoute } from './routes/v1/images-generations.js';
 import { registerModelMappingsRoutes } from './routes/admin/model-mappings.js';
 import { registerApiKeysRoutes } from './routes/admin/api-keys.js';
 import { registerStatsRoutes } from './routes/admin/stats.js';
@@ -23,9 +24,10 @@ import { DebugService } from './services/debug.js';
 import { registerDebugRoutes } from './routes/admin/debug.js';
 import { registerSettingsRoutes, loadValidationFromDb } from './routes/admin/settings.js';
 import { seedDatabase } from './db/seed.js';
+import { loadPlugins } from './plugins/plugin-loader.js';
 import type { ValidationConfig } from '@star-cliproxy/shared';
 
-export async function createApp(config: AppConfig) {
+export async function createApp(config: AppConfig, projectRoot?: string) {
   // admin token 검증 (빈 토큰으로 시작 방지)
   if (config.auth.enabled && !config.auth.adminToken) {
     throw new Error('ADMIN_TOKEN must be set when auth is enabled. Set it in .env or config.yaml.');
@@ -37,8 +39,39 @@ export async function createApp(config: AppConfig) {
   // 시드 데이터 (초기 API 키, 모델 매핑)
   await seedDatabase(config);
 
-  // Provider 레지스트리
+  // Provider 레지스트리 (빌트인)
   const registry = createProviderRegistry(config.providers);
+
+  // 플러그인 로드 (config.yaml의 plugins 섹션)
+  if (config.plugins.length > 0) {
+    const pluginResult = await loadPlugins(config.plugins, registry, {
+      info: (msg) => console.log(`[plugin] ${msg}`),
+      warn: (msg) => console.warn(`[plugin] ${msg}`),
+    }, projectRoot);
+
+    // 플러그인 프로바이더의 큐와 rate limit 설정
+    for (const name of pluginResult.loaded) {
+      const provider = registry.get(name);
+      if (provider) {
+        const pluginEntry = config.plugins.find((p) => {
+          const providerObj = registry.get(name);
+          return providerObj?.name === name;
+        });
+        const maxConcurrent = pluginEntry?.config?.max_concurrent ?? 2;
+        config.providers[name] = {
+          enabled: true,
+          cli_path: pluginEntry?.config?.cli_path ?? '',
+          default_model: pluginEntry?.config?.default_model ?? '',
+          max_concurrent: maxConcurrent,
+          timeout_ms: pluginEntry?.config?.timeout_ms ?? 120000,
+          extra_args: pluginEntry?.config?.extra_args ?? [],
+        };
+        if (!config.rateLimits.perProvider[name]) {
+          config.rateLimits.perProvider[name] = { rpm: 20 };
+        }
+      }
+    }
+  }
 
   // DB에서 저장된 Rate Limits 로드 (없으면 config.yaml 기본값 사용)
   const savedRateLimits = await loadRateLimitsFromDb(config.rateLimits);
@@ -59,7 +92,7 @@ export async function createApp(config: AppConfig) {
   // Provider별 큐 설정
   for (const [name, providerConfig] of Object.entries(config.providers)) {
     if (providerConfig.enabled) {
-      queueManager.addQueue(name as 'claude' | 'codex' | 'gemini', providerConfig.max_concurrent);
+      queueManager.addQueue(name, providerConfig.max_concurrent);
     }
   }
 
@@ -118,6 +151,15 @@ export async function createApp(config: AppConfig) {
     debug,
   });
   registerModelsRoute(app);
+  registerImageGenerationsRoute(app, {
+    router,
+    queue: queueManager,
+    rateLimiter,
+    registry,
+    healthChecker,
+    activeRequests,
+    debug,
+  });
 
   // Admin 라우트 등록
   registerModelMappingsRoutes(app);

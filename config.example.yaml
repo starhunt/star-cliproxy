@@ -45,6 +45,17 @@ providers:
     timeout_ms: 300000
     extra_args: []
 
+# 플러그인: 커스텀 프로바이더를 코드 수정 없이 추가
+# plugins/ 디렉토리에 플러그인을 만들고 여기에 등록
+# 자세한 가이드: plugins/README.md, 예제: plugins/example-plugin/
+plugins: []
+  # - path: "./plugins/example-plugin"
+  #   config:
+  #     cli_path: "/usr/local/bin/my-cli"
+  #     default_model: "my-model"
+  #     max_concurrent: 2
+  #     timeout_ms: 120000
+
 rate_limits:
   global:
     rpm: 60

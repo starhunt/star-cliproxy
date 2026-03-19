@@ -1,5 +1,5 @@
 import PQueue from 'p-queue';
-import type { ProviderName } from '@star-cliproxy/shared';
+// ProviderName은 string 타입
 
 export interface QueueStatus {
   pending: number;
@@ -8,14 +8,14 @@ export interface QueueStatus {
 }
 
 export class QueueManager {
-  private queues = new Map<ProviderName, PQueue>();
+  private queues = new Map<string, PQueue>();
 
-  addQueue(provider: ProviderName, concurrency: number): void {
+  addQueue(provider: string, concurrency: number): void {
     this.queues.set(provider, new PQueue({ concurrency }));
   }
 
   async enqueue<T>(
-    provider: ProviderName,
+    provider: string,
     fn: () => Promise<T>,
     timeoutMs?: number,
   ): Promise<T> {
@@ -31,7 +31,7 @@ export class QueueManager {
     }) as Promise<T>;
   }
 
-  getStatus(provider: ProviderName): QueueStatus | null {
+  getStatus(provider: string): QueueStatus | null {
     const queue = this.queues.get(provider);
     if (!queue) return null;
 

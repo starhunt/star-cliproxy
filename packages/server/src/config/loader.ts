@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { AppConfig, ProviderConfigYaml } from '@star-cliproxy/shared';
+import type { AppConfig, ProviderConfigYaml, PluginEntry } from '@star-cliproxy/shared';
 import {
   DEFAULT_SERVER_PORT,
   DEFAULT_DASHBOARD_PORT,
@@ -37,6 +37,13 @@ function defaultProviderConfig(cliPath: string, defaultModel: string): ProviderC
   };
 }
 
+// 빌트인 프로바이더 기본값
+const BUILTIN_DEFAULTS: Record<string, { cliPath: string; defaultModel: string }> = {
+  claude: { cliPath: 'claude', defaultModel: 'claude-sonnet-4-6' },
+  codex: { cliPath: 'codex', defaultModel: '' },
+  gemini: { cliPath: 'gemini', defaultModel: 'gemini-2.5-pro' },
+};
+
 export function loadConfig(configPath?: string): AppConfig {
   const resolvedPath = configPath ?? resolve(process.cwd(), 'config.yaml');
 
@@ -57,12 +64,41 @@ export function loadConfig(configPath?: string): AppConfig {
   const cache = rawConfig.cache as Record<string, unknown> | undefined;
   const validation = rawConfig.validation as Record<string, unknown> | undefined;
   const modelMappings = rawConfig.model_mappings as Array<Record<string, string>> | undefined;
+  const rawPlugins = rawConfig.plugins as Array<Record<string, unknown>> | undefined;
 
   const corsObj = server?.cors as Record<string, unknown> | undefined;
   const globalLimits = rateLimits?.global as Record<string, number> | undefined;
   const perProvider = rateLimits?.per_provider as Record<string, Record<string, number>> | undefined;
 
   const initialKeys = (auth?.initial_keys as Array<Record<string, string>> | undefined) ?? [];
+
+  // 빌트인 프로바이더 설정 병합
+  const providerConfigs: Record<string, ProviderConfigYaml> = {};
+  for (const [name, defaults] of Object.entries(BUILTIN_DEFAULTS)) {
+    providerConfigs[name] = mergeProviderConfig(
+      providers?.[name], defaults.cliPath, defaults.defaultModel,
+    );
+  }
+
+  // config.yaml providers 섹션의 커스텀 프로바이더 (빌트인 아닌 것)
+  if (providers) {
+    for (const [name, raw] of Object.entries(providers)) {
+      if (name in BUILTIN_DEFAULTS) continue;
+      providerConfigs[name] = mergeProviderConfig(raw, name, '');
+    }
+  }
+
+  // perProvider rate limits: 빌트인 + 커스텀 모두 동적으로 구성
+  const perProviderConfig: Record<string, { rpm: number }> = {};
+  for (const name of Object.keys(providerConfigs)) {
+    perProviderConfig[name] = { rpm: perProvider?.[name]?.rpm ?? 20 };
+  }
+
+  // 플러그인 엔트리 파싱
+  const plugins: PluginEntry[] = (rawPlugins ?? []).map((p) => ({
+    path: (p.path as string) ?? '',
+    config: p.config as Partial<ProviderConfigYaml> | undefined,
+  }));
 
   return {
     server: {
@@ -88,21 +124,14 @@ export function loadConfig(configPath?: string): AppConfig {
         key: k.key ?? process.env.PROXY_API_KEY ?? '',
       })),
     },
-    providers: {
-      claude: mergeProviderConfig(providers?.claude, 'claude', 'claude-sonnet-4-6'),
-      codex: mergeProviderConfig(providers?.codex, 'codex', ''),
-      gemini: mergeProviderConfig(providers?.gemini, 'gemini', 'gemini-2.5-pro'),
-    },
+    providers: providerConfigs,
+    plugins,
     rateLimits: {
       global: {
         rpm: globalLimits?.rpm ?? DEFAULT_RATE_LIMIT_RPM,
         rpd: globalLimits?.rpd ?? DEFAULT_RATE_LIMIT_RPD,
       },
-      perProvider: {
-        claude: { rpm: perProvider?.claude?.rpm ?? 20 },
-        codex: { rpm: perProvider?.codex?.rpm ?? 20 },
-        gemini: { rpm: perProvider?.gemini?.rpm ?? 20 },
-      },
+      perProvider: perProviderConfig,
     },
     cache: {
       enabled: (cache?.enabled as boolean) ?? true,
@@ -118,7 +147,7 @@ export function loadConfig(configPath?: string): AppConfig {
     },
     modelMappings: modelMappings?.map((m) => ({
       alias: m.alias,
-      provider: m.provider as 'claude' | 'codex' | 'gemini',
+      provider: m.provider,
       actual_model: m.actual_model,
     })) ?? [
       { alias: 'claude-opus', provider: 'claude', actual_model: 'claude-opus-4-6' },

@@ -128,6 +128,12 @@ export class DebugService {
       .limit(limit).offset(offset);
   }
 
+  async deleteLog(id: string): Promise<boolean> {
+    const db = getDatabase();
+    const result = await db.delete(debugLogs).where(eq(debugLogs.id, id));
+    return result.changes > 0;
+  }
+
   async clearLogs(): Promise<number> {
     const db = getDatabase();
     const result = await db.delete(debugLogs);

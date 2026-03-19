@@ -41,6 +41,15 @@ export function registerDebugRoutes(app: FastifyInstance, debug: DebugService): 
     },
   );
 
+  // 디버그 로그 개별 삭제
+  app.delete<{ Params: { id: string } }>('/admin/debug-logs/:id', async (request, reply) => {
+    const deleted = await debug.deleteLog(request.params.id);
+    if (!deleted) {
+      return reply.status(404).send({ error: { message: 'Debug log not found.' } });
+    }
+    return reply.send({ success: true });
+  });
+
   // 디버그 로그 전체 삭제
   app.delete('/admin/debug-logs', async (_request, reply) => {
     const deleted = await debug.clearLogs();

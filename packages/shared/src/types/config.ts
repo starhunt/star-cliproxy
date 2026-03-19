@@ -1,6 +1,7 @@
 // 설정 파일 타입 정의
 
-import type { ProviderName } from './provider.js';
+// EndpointType은 PluginEntry에서 사용
+import type { EndpointType } from './provider.js';
 
 export interface ServerConfig {
   port: number;
@@ -42,7 +43,7 @@ export interface RateLimitConfig {
     rpm: number;
     rpd: number;
   };
-  perProvider: Partial<Record<ProviderName, { rpm: number }>>;
+  perProvider: Record<string, { rpm: number }>;
 }
 
 export interface CacheConfig {
@@ -53,7 +54,7 @@ export interface CacheConfig {
 
 export interface ModelMappingSeed {
   alias: string;
-  provider: ProviderName;
+  provider: string;
   actual_model: string;
 }
 
@@ -65,12 +66,18 @@ export interface ValidationConfig {
   bodyLimitBytes: number;        // HTTP 요청 본문 최대 크기 (기본 10MB)
 }
 
+export interface PluginEntry {
+  path: string;                                              // 플러그인 디렉토리 경로
+  config?: Partial<ProviderConfigYaml> & Record<string, unknown>;  // 기본 설정 + 플러그인 고유 설정
+}
+
 export interface AppConfig {
   server: ServerConfig;
   dashboard: DashboardConfig;
   database: DatabaseConfig;
   auth: AuthConfig;
-  providers: Record<ProviderName, ProviderConfigYaml>;
+  providers: Record<string, ProviderConfigYaml>;
+  plugins: PluginEntry[];
   rateLimits: RateLimitConfig;
   cache: CacheConfig;
   validation: ValidationConfig;

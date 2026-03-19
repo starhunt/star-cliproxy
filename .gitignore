@@ -9,3 +9,8 @@ config.yaml
 *.log
 coverage/
 .vite/
+
+# 커스텀 플러그인 (개인용 프로바이더는 메인 레포에 포함하지 않음)
+plugins/*/
+!plugins/example-plugin/
+!plugins/README.md
