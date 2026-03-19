@@ -278,3 +278,54 @@ export function updateRateLimits(config: RateLimitsConfig) {
     body: JSON.stringify(config),
   });
 }
+
+// Debug
+export interface DebugConfig {
+  global: boolean;
+  models: Record<string, boolean>;
+}
+
+export interface DebugLog {
+  id: string;
+  requestId: string;
+  modelAlias: string;
+  provider: string;
+  actualModel: string;
+  isStream: boolean;
+  cliArgs: string | null;
+  requestMessages: string | null;
+  rawStdout: string | null;
+  rawStderr: string | null;
+  parsedContent: string | null;
+  tokenUsage: string | null;
+  status: string;
+  latencyMs: number | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export function fetchDebugConfig() {
+  return request<DebugConfig>('/debug');
+}
+
+export function updateDebugConfig(data: { global?: boolean; model?: string; enabled?: boolean }) {
+  return request<DebugConfig>('/debug', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export function fetchDebugLogs(params?: { limit?: number; offset?: number; model?: string }) {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  if (params?.model) query.set('model', String(params.model));
+  const qs = query.toString();
+  return request<{ data: DebugLog[]; pagination: { limit: number; offset: number } }>(
+    `/debug-logs${qs ? `?${qs}` : ''}`,
+  );
+}
+
+export function clearDebugLogs() {
+  return request<{ deleted: number }>('/debug-logs', { method: 'DELETE' });
+}

@@ -64,6 +64,25 @@ export const providerHealth = sqliteTable('provider_health', {
   errorMessage: text('error_message'),
 });
 
+export const debugLogs = sqliteTable('debug_logs', {
+  id: text('id').primaryKey(),
+  requestId: text('request_id').notNull(),
+  modelAlias: text('model_alias').notNull(),
+  provider: text('provider').notNull(),
+  actualModel: text('actual_model').notNull(),
+  isStream: integer('is_stream', { mode: 'boolean' }).notNull().default(false),
+  cliArgs: text('cli_args'),
+  requestMessages: text('request_messages'),
+  rawStdout: text('raw_stdout'),
+  rawStderr: text('raw_stderr'),
+  parsedContent: text('parsed_content'),
+  tokenUsage: text('token_usage'),
+  status: text('status').notNull(),
+  latencyMs: integer('latency_ms'),
+  errorMessage: text('error_message'),
+  createdAt: text('created_at').notNull().default('(datetime(\'now\'))'),
+});
+
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),

@@ -19,6 +19,8 @@ import { registerRateLimitsRoutes, loadRateLimitsFromDb } from './routes/admin/r
 import { registerDashboardRoute } from './routes/admin/dashboard.js';
 import { ActiveRequestTracker } from './services/active-requests.js';
 import { ResponseCache } from './services/cache.js';
+import { DebugService } from './services/debug.js';
+import { registerDebugRoutes } from './routes/admin/debug.js';
 import { seedDatabase } from './db/seed.js';
 
 export async function createApp(config: AppConfig) {
@@ -46,6 +48,7 @@ export async function createApp(config: AppConfig) {
   const healthChecker = new HealthChecker(registry);
   const activeRequests = new ActiveRequestTracker();
   const cache = new ResponseCache(config.cache);
+  const debug = new DebugService();
 
   // Provider별 큐 설정
   for (const [name, providerConfig] of Object.entries(config.providers)) {
@@ -106,6 +109,7 @@ export async function createApp(config: AppConfig) {
     validation: config.validation,
     activeRequests,
     cache,
+    debug,
   });
   registerModelsRoute(app);
 
@@ -120,6 +124,7 @@ export async function createApp(config: AppConfig) {
   });
   registerTestModelRoute(app, registry);
   registerRateLimitsRoutes(app, rateLimiter, config.rateLimits);
+  registerDebugRoutes(app, debug);
   registerDashboardRoute(app, { registry, queueManager, activeRequests });
 
   // 활성 요청 API

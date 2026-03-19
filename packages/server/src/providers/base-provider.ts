@@ -36,9 +36,11 @@ export abstract class BaseProvider {
     const { stdout, stderr, exitCode } = await this.runProcess(args, options.signal);
 
     if (exitCode !== 0) {
+      options.onDebug?.({ cliArgs: args, stdout, stderr });
       throw new Error(`${this.name} CLI exited with code ${exitCode}: ${stderr}`);
     }
 
+    options.onDebug?.({ cliArgs: args, stdout, stderr });
     return this.parseNonStreamOutput(stdout);
   }
 
@@ -58,10 +60,14 @@ export abstract class BaseProvider {
       gracefulKill(child);
     }, this.config.timeout_ms);
 
+    const debugLines: string[] = [];
+    const captureDebug = !!options.onDebug;
+
     try {
       const rl = createInterface({ input: child.stdout! });
 
       for await (const line of rl) {
+        if (captureDebug) debugLines.push(line);
         const chunk = this.parser.parse(line);
         if (chunk) {
           yield chunk;
@@ -71,6 +77,9 @@ export abstract class BaseProvider {
     } finally {
       clearTimeout(timeout);
       gracefulKill(child);
+      if (captureDebug) {
+        options.onDebug!({ cliArgs: args, streamLines: debugLines });
+      }
     }
   }
 

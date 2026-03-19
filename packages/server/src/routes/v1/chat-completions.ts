@@ -15,6 +15,8 @@ import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import type { HealthChecker } from '../../services/health-checker.js';
 import type { ActiveRequestTracker } from '../../services/active-requests.js';
 import type { ResponseCache } from '../../services/cache.js';
+import type { DebugService } from '../../services/debug.js';
+import type { DebugCaptureInfo } from '@star-cliproxy/shared';
 
 interface ChatCompletionDeps {
   router: ModelRouter;
@@ -25,6 +27,7 @@ interface ChatCompletionDeps {
   validation: ValidationConfig;
   activeRequests: ActiveRequestTracker;
   cache: ResponseCache;
+  debug: DebugService;
 }
 
 // null byte 제거 (CLI 인젝션 방지)
@@ -221,6 +224,13 @@ export function registerChatCompletionsRoute(
           startedAt: startTime,
         });
 
+        // 디버그 캡처
+        const debugEnabled = deps.debug.isEnabled(body.model);
+        let debugCapture: DebugCaptureInfo | undefined;
+        const onDebug = debugEnabled
+          ? (info: DebugCaptureInfo) => { debugCapture = info; }
+          : undefined;
+
         try {
           if (body.stream) {
             // 클라이언트 연결 끊김 감지용 AbortController (큐 외부에서 생성하여 대기 중에도 감지)
@@ -261,6 +271,7 @@ export function registerChatCompletionsRoute(
               maxTokens: body.max_tokens,
               temperature: body.temperature,
               signal: abortController.signal,
+              onDebug,
             });
 
             try {
@@ -313,6 +324,7 @@ export function registerChatCompletionsRoute(
 
             reply.raw.end();
 
+            const streamLatency = Date.now() - startTime;
             logRequest({
               requestId,
               apiKeyId,
@@ -325,10 +337,27 @@ export function registerChatCompletionsRoute(
               promptTokens: streamUsage?.promptTokens ?? 0,
               completionTokens: streamUsage?.completionTokens ?? Math.ceil(totalContent.length / 4),
               totalTokens: streamUsage?.totalTokens ?? Math.ceil(totalContent.length / 4),
-              latencyMs: Date.now() - startTime,
+              latencyMs: streamLatency,
               ttfbMs,
               isStream: true,
             });
+
+            if (debugEnabled && debugCapture) {
+              deps.debug.log({
+                requestId,
+                modelAlias: body.model,
+                provider: route.provider,
+                actualModel: route.actualModel,
+                isStream: true,
+                cliArgs: debugCapture.cliArgs,
+                requestMessages: body.messages,
+                streamLines: debugCapture.streamLines,
+                parsedContent: totalContent,
+                tokenUsage: streamUsage,
+                status: 'success',
+                latencyMs: streamLatency,
+              });
+            }
 
             deps.activeRequests.finish(requestId);
             }); // queue.enqueue 끝
@@ -345,6 +374,7 @@ export function registerChatCompletionsRoute(
               stream: false,
               maxTokens: body.max_tokens,
               temperature: body.temperature,
+              onDebug,
             }),
           );
 
@@ -391,6 +421,7 @@ export function registerChatCompletionsRoute(
             );
           }
 
+          const nonStreamLatency = Date.now() - startTime;
           logRequest({
             requestId,
             apiKeyId,
@@ -402,10 +433,28 @@ export function registerChatCompletionsRoute(
             promptTokens: result.usage.promptTokens,
             completionTokens: result.usage.completionTokens,
             totalTokens: result.usage.totalTokens,
-            latencyMs: Date.now() - startTime,
+            latencyMs: nonStreamLatency,
             isStream: false,
             requestHash,
           });
+
+          if (debugEnabled && debugCapture) {
+            deps.debug.log({
+              requestId,
+              modelAlias: body.model,
+              provider: route.provider,
+              actualModel: route.actualModel,
+              isStream: false,
+              cliArgs: debugCapture.cliArgs,
+              requestMessages: body.messages,
+              rawStdout: debugCapture.stdout,
+              rawStderr: debugCapture.stderr,
+              parsedContent: content,
+              tokenUsage: result.usage,
+              status: 'success',
+              latencyMs: nonStreamLatency,
+            });
+          }
 
           deps.activeRequests.finish(requestId);
           return reply.status(200).send(response);
@@ -413,6 +462,7 @@ export function registerChatCompletionsRoute(
           lastError = err instanceof Error ? err : new Error(String(err));
           const isTimeout = lastError.message.includes('timed out');
 
+          const errLatency = Date.now() - startTime;
           logRequest({
             requestId,
             apiKeyId,
@@ -420,11 +470,29 @@ export function registerChatCompletionsRoute(
             provider: route.provider,
             actualModel: route.actualModel,
             status: isTimeout ? 'timeout' : 'error',
-            statusCode: isTimeout ? 504 : 502, // ADD-03: 타임아웃은 504 반환
-            latencyMs: Date.now() - startTime,
+            statusCode: isTimeout ? 504 : 502,
+            latencyMs: errLatency,
             isStream: body.stream ?? false,
             errorMessage: lastError.message,
           });
+
+          if (debugEnabled) {
+            deps.debug.log({
+              requestId,
+              modelAlias: body.model,
+              provider: route.provider,
+              actualModel: route.actualModel,
+              isStream: body.stream ?? false,
+              cliArgs: debugCapture?.cliArgs,
+              requestMessages: body.messages,
+              rawStdout: debugCapture?.stdout,
+              rawStderr: debugCapture?.stderr,
+              streamLines: debugCapture?.streamLines,
+              status: isTimeout ? 'timeout' : 'error',
+              latencyMs: errLatency,
+              errorMessage: lastError.message,
+            });
+          }
 
           deps.activeRequests.finish(requestId);
           continue;

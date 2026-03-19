@@ -62,15 +62,18 @@ export class GeminiProvider extends BaseProvider {
       });
 
       const stdout = await readFile(tmpFile, 'utf-8');
+      options.onDebug?.({ cliArgs: args, stdout });
       return this.parseNonStreamOutput(stdout);
     } catch (err) {
       // 에러 시에도 부분 출력이 파일에 있을 수 있음
       try {
         const stdout = await readFile(tmpFile, 'utf-8');
         if (stdout.trim()) {
+          options.onDebug?.({ cliArgs: args, stdout });
           return this.parseNonStreamOutput(stdout);
         }
       } catch { /* 파일 없음 */ }
+      options.onDebug?.({ cliArgs: args, stderr: (err as Error).message });
       throw err;
     } finally {
       try { await unlink(tmpFile); } catch { /* 이미 없으면 무시 */ }

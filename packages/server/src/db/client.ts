@@ -87,12 +87,33 @@ function createTables(sqlite: Database.Database) {
       error_message TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS debug_logs (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      model_alias TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      actual_model TEXT NOT NULL,
+      is_stream INTEGER NOT NULL DEFAULT 0,
+      cli_args TEXT,
+      request_messages TEXT,
+      raw_stdout TEXT,
+      raw_stderr TEXT,
+      parsed_content TEXT,
+      token_usage TEXT,
+      status TEXT NOT NULL,
+      latency_ms INTEGER,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE INDEX IF NOT EXISTS idx_debug_logs_created_at ON debug_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_debug_logs_model ON debug_logs(model_alias);
     CREATE INDEX IF NOT EXISTS idx_logs_created_at ON request_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_logs_provider ON request_logs(provider);
     CREATE INDEX IF NOT EXISTS idx_logs_status ON request_logs(status);

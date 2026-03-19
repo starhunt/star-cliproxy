@@ -14,6 +14,13 @@ export interface ProviderConfig {
   extraArgs: string[];
 }
 
+export interface DebugCaptureInfo {
+  cliArgs: string[];
+  stdout?: string;
+  stderr?: string;
+  streamLines?: string[];
+}
+
 export interface ExecuteOptions {
   messages: ChatMessage[];
   model: string;
@@ -21,6 +28,7 @@ export interface ExecuteOptions {
   maxTokens?: number;
   temperature?: number;
   signal?: AbortSignal;
+  onDebug?: (info: DebugCaptureInfo) => void;
 }
 
 export interface ExecuteResult {
