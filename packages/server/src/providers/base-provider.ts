@@ -110,11 +110,15 @@ export abstract class BaseProvider {
     return env;
   }
 
+  protected get workingDir(): string {
+    return this.config.working_dir ?? tmpdir();
+  }
+
   protected spawnProcess(args: string[]): ChildProcess {
     return spawn(this.config.cli_path, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: this.getCleanEnv(),
-      cwd: tmpdir(),
+      cwd: this.workingDir,
     });
   }
 

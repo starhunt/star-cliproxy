@@ -43,7 +43,7 @@ export class HealthChecker {
     const provider = this.registry.get(name);
     if (!provider) return 'unknown';
 
-    // 1단계: CLI --version 체크
+    // 1단계: CLI 체크 (--version 또는 --help)
     const cliStatus = await provider.checkHealth();
 
     // 2단계: CLI 실패면 즉시 unhealthy
@@ -52,12 +52,20 @@ export class HealthChecker {
       return cliStatus;
     }
 
-    // 3단계: CLI 성공 후, 최근 요청 이력 기반 추가 판정
-    const recentHealthy = await this.checkRecentRequests(name);
-    const finalStatus: HealthStatus = recentHealthy ? 'healthy' : 'unhealthy';
+    // 3단계: CLI 성공 → healthy (복구 신호)
+    // CLI가 정상이면 서비스 복구로 판정하여 deadlock 방지
+    // (이전: 과거 요청 에러 이력이 복구를 영구 차단하는 문제가 있었음)
+    // 실시간 장애 감지는 요청 실패 시 onRequestFailure()에서 처리
+    await this.updateHealth(name, 'healthy');
+    return 'healthy';
+  }
 
-    await this.updateHealth(name, finalStatus);
-    return finalStatus;
+  // 요청 실패 시 호출 — CLI 체크 사이의 실시간 장애 감지
+  async onRequestFailure(name: string): Promise<void> {
+    const recentHealthy = await this.checkRecentRequests(name);
+    if (!recentHealthy) {
+      await this.updateHealth(name, 'unhealthy');
+    }
   }
 
   // 최근 요청 기반 건강 판정

@@ -212,6 +212,7 @@ export function registerImageGenerationsRoute(
           }
 
           deps.activeRequests.finish(requestId);
+          deps.healthChecker.onRequestFailure(route.provider);
           continue;
         }
       }

@@ -42,7 +42,7 @@ export class GeminiProvider extends BaseProvider {
         const child = spawn('sh', ['-c', shellCmd], {
           stdio: 'ignore',
           env: this.getCleanEnv(),
-          cwd: tmpdir(),
+          cwd: this.workingDir,
         });
 
         const timeout = setTimeout(() => {

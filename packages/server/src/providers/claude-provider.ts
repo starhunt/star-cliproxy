@@ -21,7 +21,7 @@ export class ClaudeProvider extends BaseProvider {
       '-p', userPrompt,
       '--output-format', format,
       '--model', model,
-      '--max-turns', '1',
+      '--max-turns', '5',
     ];
 
     if (options.stream) {

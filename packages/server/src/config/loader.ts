@@ -177,5 +177,6 @@ function mergeProviderConfig(
     max_concurrent: (raw.max_concurrent as number) ?? defaults.max_concurrent,
     timeout_ms: (raw.timeout_ms as number) ?? defaults.timeout_ms,
     extra_args: (raw.extra_args as string[]) ?? defaults.extra_args,
+    working_dir: (raw.working_dir as string) ?? undefined,
   };
 }

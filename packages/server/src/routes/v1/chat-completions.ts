@@ -85,6 +85,11 @@ export function registerChatCompletionsRoute(
           return reply.status(400).send(makeValidationError(`Invalid role "${msg.role}" at messages[${i}]. Allowed: ${ALLOWED_ROLES.join(', ')}`, 'messages'));
         }
 
+        // developer → system 정규화 (OpenAI API 호환)
+        if (msg.role === 'developer') {
+          msg.role = 'system';
+        }
+
         // content parts 배열 → string으로 정규화
         if (Array.isArray(msg.content)) {
           const textParts: string[] = [];
@@ -331,6 +336,7 @@ export function registerChatCompletionsRoute(
               });
 
               deps.activeRequests.finish(requestId);
+              deps.healthChecker.onRequestFailure(route.provider);
               return;
             }
 
@@ -492,6 +498,7 @@ export function registerChatCompletionsRoute(
           }
 
           deps.activeRequests.finish(requestId);
+          deps.healthChecker.onRequestFailure(route.provider);
           continue;
         }
       }

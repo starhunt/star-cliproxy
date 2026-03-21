@@ -36,6 +36,7 @@ export interface ProviderConfigYaml {
   max_concurrent: number;
   timeout_ms: number;
   extra_args: string[];
+  working_dir?: string;
 }
 
 export interface RateLimitConfig {

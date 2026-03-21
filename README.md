@@ -42,7 +42,9 @@ response = client.chat.completions.create(
 - **Dashboard** — real-time monitoring, model management, API key management
 - **Active request tracking** — live view of in-flight requests
 - **Test Model** — validate a mapping by making a real CLI call before saving
-- **Enhanced health check** — composite judgment using `--version` probe plus recent request history
+- **Enhanced health check** — CLI probe is authoritative for recovery; real-time failure detection via request-level monitoring
+- **developer role support** — OpenAI `developer` role accepted and normalized to `system` for CLI compatibility
+- **Configurable working directory** — per-provider `working_dir` option for agentic CLI tool use (file creation, shell commands)
 - **Security** — SHA-256 API key auth, prompt injection prevention, CLI injection prevention, timing-safe comparisons
 - **Process teardown** — SIGTERM with 3-second grace period, then SIGKILL fallback
 - **Error differentiation** — 504 on timeout, 502 on other errors
@@ -247,6 +249,8 @@ providers:
     timeout_ms: 300000         # 5-minute timeout
     extra_args:
       - "--no-session-persistence"
+      - "--permission-mode"
+      - "bypassPermissions"
   codex:
     enabled: true
     cli_path: "codex"
@@ -255,12 +259,17 @@ providers:
     timeout_ms: 300000
     extra_args:
       - "--skip-git-repo-check"
+      - "--sandbox"
+      - "workspace-write"
   gemini:
     enabled: true
     cli_path: "gemini"
     default_model: "gemini-2.5-pro"
     max_concurrent: 2
     timeout_ms: 300000
+    extra_args:
+      - "--yolo"
+    working_dir: "/path/to/project"   # CLI working directory (default: system temp)
 
 rate_limits:
   global:

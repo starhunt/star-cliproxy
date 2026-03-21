@@ -42,7 +42,9 @@ response = client.chat.completions.create(
 - **대시보드** — 실시간 모니터링, 모델 관리, API 키 관리
 - **활성 요청 추적** — 처리 중인 요청을 실시간 표시
 - **Test Model** — 매핑 저장 전 실제 CLI 호출로 검증
-- **Health Check 강화** — `--version` 실행 + 최근 요청 이력 복합 판정
+- **Health Check 강화** — CLI 체크 통과 시 복구 보장, 실시간 장애 감지는 요청 레벨에서 처리
+- **developer role 지원** — OpenAI `developer` role 허용, CLI 호환을 위해 `system`으로 자동 변환
+- **작업 디렉토리 설정** — 프로바이더별 `working_dir` 옵션으로 에이전틱 CLI의 파일 작업 지원
 - **보안** — API 키 인증(SHA-256), 프롬프트 인젝션 방지, CLI 인젝션 방지, 타이밍 공격 방지
 - **프로세스 종료** — SIGTERM 후 3초 대기, 미종료 시 SIGKILL fallback
 - **오류 구분** — 타임아웃 504, 기타 에러 502
@@ -247,6 +249,8 @@ providers:
     timeout_ms: 300000         # 5분 타임아웃
     extra_args:
       - "--no-session-persistence"
+      - "--permission-mode"
+      - "bypassPermissions"
   codex:
     enabled: true
     cli_path: "codex"
@@ -255,12 +259,17 @@ providers:
     timeout_ms: 300000
     extra_args:
       - "--skip-git-repo-check"
+      - "--sandbox"
+      - "workspace-write"
   gemini:
     enabled: true
     cli_path: "gemini"
     default_model: "gemini-2.5-pro"
     max_concurrent: 2
     timeout_ms: 300000
+    extra_args:
+      - "--yolo"
+    working_dir: "/path/to/project"   # CLI 작업 디렉토리 (기본값: 시스템 temp)
 
 rate_limits:
   global:
