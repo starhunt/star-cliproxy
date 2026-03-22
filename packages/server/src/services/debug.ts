@@ -51,10 +51,11 @@ export class DebugService {
   }
 
   setModel(alias: string, enabled: boolean): void {
+    const key = alias.trim();
     if (enabled) {
-      this.config.models[alias] = true;
+      this.config.models[key] = true;
     } else {
-      delete this.config.models[alias];
+      delete this.config.models[key];
     }
   }
 
