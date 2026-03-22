@@ -365,13 +365,20 @@ export function fetchDebugLogs(params?: { limit?: number; offset?: number; model
   if (params?.offset) query.set('offset', String(params.offset));
   if (params?.model) query.set('model', String(params.model));
   const qs = query.toString();
-  return request<{ data: DebugLog[]; pagination: { limit: number; offset: number } }>(
+  return request<{ data: DebugLog[]; pagination: { limit: number; offset: number; total: number } }>(
     `/debug-logs${qs ? `?${qs}` : ''}`,
   );
 }
 
 export function deleteDebugLog(id: string) {
   return request<{ success: boolean }>(`/debug-logs/${id}`, { method: 'DELETE' });
+}
+
+export function deleteDebugLogsBatch(ids: string[]) {
+  return request<{ deleted: number }>('/debug-logs/batch-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
 }
 
 export function clearDebugLogs() {

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { desc, eq, like } from 'drizzle-orm';
+import { desc, eq, like, sql } from 'drizzle-orm';
 import { getDatabase } from '../db/client.js';
 import { debugLogs } from '../db/schema.js';
 
@@ -127,6 +127,30 @@ export class DebugService {
     return db.select().from(debugLogs)
       .orderBy(desc(debugLogs.createdAt))
       .limit(limit).offset(offset);
+  }
+
+  // 총 건수 조회 (페이징용)
+  async getLogCount(model?: string): Promise<number> {
+    const db = getDatabase();
+    if (model) {
+      const result = db.select({ count: sql<number>`count(*)` }).from(debugLogs)
+        .where(like(debugLogs.modelAlias, `%${model}%`)).all();
+      return result[0]?.count ?? 0;
+    }
+    const result = db.select({ count: sql<number>`count(*)` }).from(debugLogs).all();
+    return result[0]?.count ?? 0;
+  }
+
+  // 복수 건 삭제
+  async deleteLogs(ids: string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const db = getDatabase();
+    let deleted = 0;
+    for (const id of ids) {
+      const result = await db.delete(debugLogs).where(eq(debugLogs.id, id));
+      deleted += result.changes;
+    }
+    return deleted;
   }
 
   async deleteLog(id: string): Promise<boolean> {

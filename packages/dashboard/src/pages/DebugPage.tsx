@@ -5,6 +5,7 @@ import {
   updateDebugConfig,
   fetchDebugLogs,
   deleteDebugLog,
+  deleteDebugLogsBatch,
   clearDebugLogs,
   fetchModelMappings,
   type DebugConfig,
@@ -19,16 +20,23 @@ export default function DebugPage() {
   const [filterModel, setFilterModel] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 20;
 
   const loadConfig = useCallback(() => {
     fetchDebugConfig().then(setConfig).catch((e) => setError(e.message));
   }, []);
 
   const loadLogs = useCallback(() => {
-    fetchDebugLogs({ limit: 100, model: filterModel || undefined })
-      .then((res) => setLogs(res.data))
+    fetchDebugLogs({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, model: filterModel || undefined })
+      .then((res) => {
+        setLogs(res.data);
+        setTotal(res.pagination.total);
+      })
       .catch((e) => setError(e.message));
-  }, [filterModel]);
+  }, [filterModel, page]);
 
   useEffect(() => {
     loadConfig();
@@ -76,14 +84,55 @@ export default function DebugPage() {
     try {
       await clearDebugLogs();
       setLogs([]);
+      setTotal(0);
+      setSelectedIds(new Set());
+      setPage(0);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed');
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(t('debug.confirmDeleteSelected').replace('{count}', String(selectedIds.size)))) return;
+    try {
+      await deleteDebugLogsBatch([...selectedIds]);
+      setSelectedIds(new Set());
+      loadLogs();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === logs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(logs.map((l) => l.id)));
+    }
+  };
+
+  const handleFilterChange = (model: string) => {
+    setFilterModel(model);
+    setPage(0);
+    setSelectedIds(new Set());
+  };
+
   const handleRefresh = () => {
+    setSelectedIds(new Set());
     loadLogs();
   };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-6">
@@ -145,12 +194,12 @@ export default function DebugPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('debug.debugLogs')}</h3>
-          <span className="text-xs text-gray-400 dark:text-gray-500">{logs.length} {t('debug.entries')}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">{total} {t('debug.entries')}</span>
         </div>
         <div className="flex items-center gap-2">
           <select
             value={filterModel}
-            onChange={(e) => setFilterModel(e.target.value)}
+            onChange={(e) => handleFilterChange(e.target.value)}
             className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs text-gray-700 dark:text-gray-300"
           >
             <option value="">{t('debug.allModels')}</option>
@@ -164,6 +213,14 @@ export default function DebugPage() {
           >
             {t('common.refresh')}
           </button>
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              className="px-3 py-1 bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 rounded text-xs transition-colors"
+            >
+              {t('debug.deleteSelected').replace('{count}', String(selectedIds.size))}
+            </button>
+          )}
           <button
             onClick={handleClear}
             className="px-3 py-1 bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 rounded text-xs transition-colors"
@@ -173,6 +230,19 @@ export default function DebugPage() {
         </div>
       </div>
 
+      {/* 전체 선택 */}
+      {logs.length > 0 && (
+        <div className="flex items-center gap-2 px-1">
+          <input
+            type="checkbox"
+            checked={selectedIds.size === logs.length && logs.length > 0}
+            onChange={toggleSelectAll}
+            className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 accent-blue-500"
+          />
+          <span className="text-xs text-gray-400 dark:text-gray-500">{t('debug.selectAll')}</span>
+        </div>
+      )}
+
       {/* 로그 목록 */}
       <div className="space-y-2">
         {logs.map((log) => (
@@ -180,8 +250,10 @@ export default function DebugPage() {
             key={log.id}
             log={log}
             expanded={expandedId === log.id}
+            selected={selectedIds.has(log.id)}
             onToggle={() => setExpandedId(expandedId === log.id ? null : log.id)}
             onDelete={() => handleDelete(log.id)}
+            onSelect={() => toggleSelect(log.id)}
           />
         ))}
         {logs.length === 0 && (
@@ -192,6 +264,29 @@ export default function DebugPage() {
           </div>
         )}
       </div>
+
+      {/* 페이징 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="px-3 py-1 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-xs transition-colors text-gray-600 dark:text-gray-300 disabled:opacity-40"
+          >
+            {t('common.prev')}
+          </button>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {page + 1} / {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page >= totalPages - 1}
+            className="px-3 py-1 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-xs transition-colors text-gray-600 dark:text-gray-300 disabled:opacity-40"
+          >
+            {t('common.next')}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -199,13 +294,17 @@ export default function DebugPage() {
 function DebugLogEntry({
   log,
   expanded,
+  selected,
   onToggle,
   onDelete,
+  onSelect,
 }: {
   log: DebugLog;
   expanded: boolean;
+  selected: boolean;
   onToggle: () => void;
   onDelete: () => void;
+  onSelect: () => void;
 }) {
   const { t } = useTranslation();
   const statusColor = log.status === 'pending'
@@ -221,10 +320,17 @@ function DebugLogEntry({
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
       {/* 요약 행 */}
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-      >
+      <div className="w-full flex items-center gap-3 px-4 py-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(e) => { e.stopPropagation(); onSelect(); }}
+          className="w-3.5 h-3.5 rounded border-gray-300 dark:border-gray-600 accent-blue-500 shrink-0"
+        />
+        <button
+          onClick={onToggle}
+          className="flex-1 flex items-center gap-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors rounded -m-1 p-1"
+        >
         <span className={`text-xs font-mono font-bold ${statusColor}`}>
           {log.status.toUpperCase()}
         </span>
@@ -260,7 +366,8 @@ function DebugLogEntry({
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
-      </button>
+        </button>
+      </div>
 
       {/* 상세 패널 */}
       {expanded && (

@@ -36,8 +36,11 @@ export function registerDebugRoutes(app: FastifyInstance, debug: DebugService): 
       const offset = request.query.offset ? parseInt(request.query.offset, 10) : 0;
       const model = request.query.model;
 
-      const logs = await debug.getLogs({ limit, offset, model });
-      return reply.send({ data: logs, pagination: { limit, offset } });
+      const [logs, total] = await Promise.all([
+        debug.getLogs({ limit, offset, model }),
+        debug.getLogCount(model),
+      ]);
+      return reply.send({ data: logs, pagination: { limit, offset, total } });
     },
   );
 
@@ -48,6 +51,16 @@ export function registerDebugRoutes(app: FastifyInstance, debug: DebugService): 
       return reply.status(404).send({ error: { message: 'Debug log not found.' } });
     }
     return reply.send({ success: true });
+  });
+
+  // 디버그 로그 복수 삭제
+  app.post<{ Body: { ids: string[] } }>('/admin/debug-logs/batch-delete', async (request, reply) => {
+    const { ids } = request.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return reply.status(400).send({ error: { message: 'ids array is required.' } });
+    }
+    const deleted = await debug.deleteLogs(ids);
+    return reply.send({ deleted });
   });
 
   // 디버그 로그 전체 삭제
