@@ -31,6 +31,7 @@ response = client.chat.completions.create(
 ## Features
 
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/images/generations`, and `/v1/models` endpoints
+- **Anthropic Messages API** — `/v1/messages` endpoint for native Claude Code / Anthropic SDK support
 - **Three CLI providers** — Claude Code, Codex, Gemini CLI
 - **Plugin system** — extend with custom providers without modifying the main codebase (see [Plugin Guide](./plugins/README.md))
 - **Image generation API** — `/v1/images/generations` endpoint (OpenAI Images API compatible)
@@ -215,6 +216,25 @@ curl http://localhost:8300/v1/chat/completions \
   }'
 ```
 
+### Claude Code (Native Anthropic API)
+
+```bash
+# Use Claude Code directly with star-cliproxy
+ANTHROPIC_BASE_URL=http://localhost:8300 \
+ANTHROPIC_API_KEY=sk-proxy-your-secret-key \
+claude "Hello!"
+```
+
+Shell function for convenience:
+
+```bash
+localcc() {
+  ANTHROPIC_BASE_URL=http://localhost:8300 \
+  ANTHROPIC_API_KEY=$LOCAL_CLAUDE_API_KEY \
+  claude "$@"
+}
+```
+
 ## Model Mapping
 
 Default mappings (add or modify from the dashboard):
@@ -310,6 +330,7 @@ validation:
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | `POST` | `/v1/chat/completions` | Bearer | Chat completion (streaming / non-streaming) |
+| `POST` | `/v1/messages` | Bearer / x-api-key | Anthropic Messages API (streaming / non-streaming) |
 | `POST` | `/v1/images/generations` | Bearer | Image generation (OpenAI Images API compatible) |
 | `GET` | `/v1/models` | Bearer | List available models |
 | `GET` | `/health` | — | Health check |

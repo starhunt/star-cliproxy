@@ -27,20 +27,30 @@ export async function authMiddleware(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  // API 키 추출: x-api-key 헤더 또는 Authorization: Bearer 헤더
+  const xApiKey = request.headers['x-api-key'] as string | undefined;
   const authHeader = request.headers.authorization;
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  let apiKey: string | undefined;
+
+  if (xApiKey) {
+    // Anthropic 스타일: x-api-key 헤더
+    apiKey = xApiKey;
+  } else if (authHeader?.startsWith('Bearer ')) {
+    // OpenAI 스타일: Authorization: Bearer <key>
+    apiKey = authHeader.substring(7);
+  }
+
+  if (!apiKey) {
     return reply.status(401).send({
       error: {
-        message: 'Missing or invalid Authorization header. Expected: Bearer sk-proxy-xxx',
+        message: 'Missing or invalid API key. Expected: Authorization: Bearer sk-proxy-xxx or x-api-key header',
         type: 'invalid_request_error',
         param: null,
         code: 'invalid_api_key',
       },
     });
   }
-
-  const apiKey = authHeader.substring(7);
 
   if (!apiKey.startsWith(API_KEY_PREFIX)) {
     return reply.status(401).send({

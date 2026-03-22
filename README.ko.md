@@ -31,6 +31,7 @@ response = client.chat.completions.create(
 ## Features
 
 - **OpenAI 호환 API** — `/v1/chat/completions`, `/v1/images/generations`, `/v1/models` 엔드포인트
+- **Anthropic Messages API** — `/v1/messages` 엔드포인트로 Claude Code / Anthropic SDK 네이티브 지원
 - **3개 CLI Provider 지원** — Claude Code, Codex, Gemini CLI
 - **플러그인 시스템** — 메인 코드 수정 없이 커스텀 프로바이더 추가 가능 ([플러그인 가이드](./plugins/README.md))
 - **이미지 생성 API** — `/v1/images/generations` 엔드포인트 (OpenAI Images API 호환)
@@ -215,6 +216,25 @@ curl http://localhost:8300/v1/chat/completions \
   }'
 ```
 
+### Claude Code (Anthropic API 네이티브)
+
+```bash
+# star-cliproxy를 통해 Claude Code 직접 사용
+ANTHROPIC_BASE_URL=http://localhost:8300 \
+ANTHROPIC_API_KEY=sk-proxy-your-secret-key \
+claude "Hello!"
+```
+
+편의를 위한 Shell 함수:
+
+```bash
+localcc() {
+  ANTHROPIC_BASE_URL=http://localhost:8300 \
+  ANTHROPIC_API_KEY=$LOCAL_CLAUDE_API_KEY \
+  claude "$@"
+}
+```
+
 ## Model Mapping
 
 기본 매핑 (대시보드에서 추가/수정 가능):
@@ -310,6 +330,7 @@ validation:
 | Method | Endpoint | Auth | 설명 |
 |--------|----------|------|------|
 | `POST` | `/v1/chat/completions` | Bearer | Chat completion (스트리밍/일반) |
+| `POST` | `/v1/messages` | Bearer / x-api-key | Anthropic Messages API (스트리밍/일반) |
 | `POST` | `/v1/images/generations` | Bearer | 이미지 생성 (OpenAI Images API 호환) |
 | `GET` | `/v1/models` | Bearer | 사용 가능한 모델 목록 |
 | `GET` | `/health` | - | Health check |

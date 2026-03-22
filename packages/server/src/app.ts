@@ -9,6 +9,7 @@ import { RateLimiter } from './middleware/rate-limiter.js';
 import { HealthChecker } from './services/health-checker.js';
 import { authMiddleware, adminAuthMiddleware } from './middleware/auth.js';
 import { registerChatCompletionsRoute } from './routes/v1/chat-completions.js';
+import { registerMessagesRoute } from './routes/v1/messages.js';
 import { registerModelsRoute } from './routes/v1/models.js';
 import { registerImageGenerationsRoute } from './routes/v1/images-generations.js';
 import { registerModelMappingsRoutes } from './routes/admin/model-mappings.js';
@@ -153,6 +154,17 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
 
   // v1 라우트 등록
   registerChatCompletionsRoute(app, {
+    router,
+    queue: queueManager,
+    rateLimiter,
+    registry,
+    healthChecker,
+    validation: currentValidation,
+    activeRequests,
+    cache,
+    debug,
+  });
+  registerMessagesRoute(app, {
     router,
     queue: queueManager,
     rateLimiter,
