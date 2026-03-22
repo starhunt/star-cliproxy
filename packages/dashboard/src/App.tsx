@@ -9,6 +9,7 @@ import ApiGuidePage from './pages/ApiGuidePage';
 import RateLimitsPage from './pages/RateLimitsPage';
 import DebugPage from './pages/DebugPage';
 import SettingsPage from './pages/SettingsPage';
+import ProvidersPage from './pages/ProvidersPage';
 
 // 번역 키 기반 네비게이션
 const navItems = [
@@ -16,6 +17,7 @@ const navItems = [
   { to: '/models', labelKey: 'nav.models', icon: '#' },
   { to: '/keys', labelKey: 'nav.apiKeys', icon: '*' },
   { to: '/rate-limits', labelKey: 'nav.rateLimits', icon: '%' },
+  { to: '/providers', labelKey: 'nav.providers', icon: '&' },
   { to: '/logs', labelKey: 'nav.logs', icon: '>' },
   { to: '/debug', labelKey: 'nav.debug', icon: '!' },
   { to: '/settings', labelKey: 'nav.settings', icon: '@' },
@@ -137,6 +139,7 @@ export default function App() {
           <Route path="/keys" element={<ApiKeysPage />} />
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/rate-limits" element={<RateLimitsPage />} />
+          <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/debug" element={<DebugPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/guide" element={<ApiGuidePage />} />

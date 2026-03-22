@@ -53,6 +53,15 @@ class PluginProviderAdapter {
   async checkHealth() {
     return this.inner.checkHealth();
   }
+
+  // 런타임 설정 변경 (대시보드에서 사용)
+  updateConfig(partial: Partial<ProviderConfigYaml>): void {
+    Object.assign(this.config, partial);
+  }
+
+  getConfig(): ProviderConfigYaml {
+    return { ...this.config };
+  }
 }
 
 // CliproxyPlugin 인터페이스 최소 검증

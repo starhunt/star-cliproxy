@@ -27,6 +27,15 @@ export abstract class BaseProvider {
     this.parser = null!;
   }
 
+  // 런타임 설정 변경 (대시보드에서 사용)
+  updateConfig(partial: Partial<ProviderConfigYaml>): void {
+    Object.assign(this.config, partial);
+  }
+
+  getConfig(): ProviderConfigYaml {
+    return { ...this.config };
+  }
+
   protected initParser() {
     this.parser = getParserForProvider(this.name);
   }

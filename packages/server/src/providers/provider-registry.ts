@@ -22,6 +22,26 @@ export class ProviderRegistry {
   has(name: string): boolean {
     return this.providers.has(name);
   }
+
+  // 프로바이더 설정 조회 (대시보드용)
+  getProviderConfig(name: string): ProviderConfigYaml | undefined {
+    const provider = this.providers.get(name);
+    if (!provider) return undefined;
+    const configurable = provider as unknown as { getConfig?(): ProviderConfigYaml };
+    return typeof configurable.getConfig === 'function' ? configurable.getConfig() : undefined;
+  }
+
+  // 프로바이더 설정 런타임 변경 (대시보드용)
+  updateProviderConfig(name: string, partial: Partial<ProviderConfigYaml>): boolean {
+    const provider = this.providers.get(name);
+    if (!provider) return false;
+    const updatable = provider as unknown as { updateConfig?(p: Partial<ProviderConfigYaml>): void };
+    if (typeof updatable.updateConfig === 'function') {
+      updatable.updateConfig(partial);
+      return true;
+    }
+    return false;
+  }
 }
 
 // cli_path 검증: 허용된 문자만 (영숫자, -, _, ., /, \, :)

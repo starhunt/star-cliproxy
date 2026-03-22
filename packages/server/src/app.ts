@@ -17,12 +17,14 @@ import { registerStatsRoutes } from './routes/admin/stats.js';
 import { registerProvidersRoutes } from './routes/admin/providers.js';
 import { registerTestModelRoute } from './routes/admin/test-model.js';
 import { registerRateLimitsRoutes, loadRateLimitsFromDb } from './routes/admin/rate-limits.js';
+import { loadProviderConfigFromDb } from './routes/admin/providers.js';
 import { registerDashboardRoute } from './routes/admin/dashboard.js';
 import { ActiveRequestTracker } from './services/active-requests.js';
 import { ResponseCache } from './services/cache.js';
 import { DebugService } from './services/debug.js';
 import { registerDebugRoutes } from './routes/admin/debug.js';
 import { registerSettingsRoutes, loadValidationFromDb } from './routes/admin/settings.js';
+import { registerExportImportRoutes } from './routes/admin/export-import.js';
 import { seedDatabase } from './db/seed.js';
 import { loadPlugins } from './plugins/plugin-loader.js';
 import type { ValidationConfig } from '@star-cliproxy/shared';
@@ -93,6 +95,17 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
   for (const [name, providerConfig] of Object.entries(config.providers)) {
     if (providerConfig.enabled) {
       queueManager.addQueue(name, providerConfig.max_concurrent);
+    }
+  }
+
+  // DB에서 프로바이더 설정 오버라이드 로드 (이전 세션에서 대시보드로 변경한 값)
+  for (const provider of registry.getAll()) {
+    const override = await loadProviderConfigFromDb(provider.name);
+    if (override) {
+      registry.updateProviderConfig(provider.name, override);
+      if (override.max_concurrent !== undefined) {
+        queueManager.updateConcurrency(provider.name, override.max_concurrent);
+      }
     }
   }
 
@@ -169,6 +182,7 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
     registry,
     healthChecker,
     queueManager,
+    defaultConfigs: config.providers,
   });
   registerTestModelRoute(app, registry);
   registerRateLimitsRoutes(app, rateLimiter, config.rateLimits);
@@ -179,6 +193,15 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
       // 기존 객체의 프로퍼티를 덮어쓰기 (chat-completions가 참조 유지)
       Object.assign(currentValidation, v);
     },
+  });
+  registerExportImportRoutes(app, {
+    rateLimiter,
+    defaultRateLimits: config.rateLimits,
+    getValidation: () => currentValidation,
+    setValidation: (v) => { Object.assign(currentValidation, v); },
+    config,
+    registry,
+    queueManager,
   });
   registerDashboardRoute(app, { registry, queueManager, activeRequests });
 

@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useTranslation } from '../i18n/context';
-import { fetchValidationSettings, updateValidationSettings, type ValidationSettings } from '../api/client';
+import {
+  fetchValidationSettings, updateValidationSettings, type ValidationSettings,
+  fetchExport, importConfig, type ExportData, type ImportResult,
+} from '../api/client';
 
 function formatValue(value: number, format: 'chars' | 'bytes'): string {
   if (format === 'bytes') {
@@ -74,6 +77,78 @@ export default function SettingsPage() {
     return !isNaN(val) && val !== settings[f.key];
   });
 
+  // Export/Import 상태
+  const [exporting, setExporting] = useState(false);
+  const [importPreview, setImportPreview] = useState<ExportData | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const data = await fetchExport();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const date = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `cliproxy-config-${date}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string) as ExportData;
+        if (!data.version || data.version !== 1) {
+          setError(t('settings.invalidFile'));
+          return;
+        }
+        setImportPreview(data);
+        setImportResult(null);
+        setError(null);
+      } catch {
+        setError(t('settings.invalidFile'));
+      }
+    };
+    reader.readAsText(file);
+    // input 초기화 (같은 파일 재선택 가능)
+    e.target.value = '';
+  };
+
+  const handleImport = async () => {
+    if (!importPreview) return;
+    if (!confirm(t('settings.importConfirm'))) return;
+
+    setImporting(true);
+    setError(null);
+    try {
+      const result = await importConfig(importPreview);
+      setImportResult(result);
+      setImportPreview(null);
+      // validation 설정이 변경되었을 수 있으므로 다시 로드
+      const s = await fetchValidationSettings();
+      setSettings(s);
+      setDraft(Object.fromEntries(FIELDS.map((f) => [f.key, String(s[f.key])])));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('settings.title')}</h2>
@@ -137,6 +212,99 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div className="h-32 flex items-center justify-center text-gray-400 dark:text-gray-600 text-sm">{t('common.loading')}</div>
+        )}
+      </div>
+
+      {/* 데이터 관리 (Export/Import) */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{t('settings.dataManagement')}</h3>
+          <p className="text-xs text-gray-400 dark:text-gray-600 mt-0.5">{t('settings.dataManagementDesc')}</p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="px-4 py-1.5 rounded text-sm transition-colors bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+          >
+            {exporting ? t('common.loading') : t('settings.export')}
+          </button>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="px-4 py-1.5 rounded text-sm transition-colors bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700"
+          >
+            {t('settings.import')}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+        </div>
+
+        {/* Import 미리보기 */}
+        {importPreview && (
+          <div className="mt-4 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
+            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{t('settings.importSummary')}</h4>
+            <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+              <li>{t('settings.importModels').replace('{count}', String(importPreview.modelMappings?.length ?? 0))}</li>
+              <li>{t('settings.importApiKeys').replace('{count}', String(importPreview.apiKeys?.length ?? 0))}</li>
+              {(importPreview.apiKeys?.length ?? 0) > 0 && (
+                <li className="text-yellow-600 dark:text-yellow-400">{t('settings.importApiKeysWarning')}</li>
+              )}
+              {importPreview.rateLimits && <li>{t('settings.importRateLimits')}</li>}
+              {importPreview.validation && <li>{t('settings.importValidation')}</li>}
+              {importPreview.providers && Object.keys(importPreview.providers).length > 0 && (
+                <li className="text-gray-400 dark:text-gray-600">{t('settings.importProviders')}</li>
+              )}
+            </ul>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleImport}
+                disabled={importing}
+                className="px-4 py-1.5 rounded text-sm transition-colors bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              >
+                {importing ? t('common.loading') : t('settings.importConfirm').split('?')[0]}
+              </button>
+              <button
+                onClick={() => setImportPreview(null)}
+                className="px-4 py-1.5 rounded text-sm transition-colors bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Import 결과 */}
+        {importResult && (
+          <div className="mt-4 border border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-500/10 rounded-lg p-4 space-y-2">
+            <h4 className="text-sm font-semibold text-green-700 dark:text-green-400">{t('settings.importSuccess')}</h4>
+            <ul className="text-xs text-green-600 dark:text-green-400 space-y-1">
+              <li>{t('settings.importModels').replace('{count}', String(importResult.imported.modelMappings))}</li>
+              <li>
+                API Keys: {t('settings.importCreated').replace('{count}', String(importResult.imported.apiKeys.created))},{' '}
+                {t('settings.importUpdated').replace('{count}', String(importResult.imported.apiKeys.updated))}
+              </li>
+              {importResult.imported.rateLimits && <li>{t('settings.importRateLimits')}</li>}
+              {importResult.imported.validation && <li>{t('settings.importValidation')}</li>}
+            </ul>
+            {importResult.skipped.length > 0 && (
+              <p className="text-xs text-gray-400 dark:text-gray-600">
+                Skipped: {importResult.skipped.join(', ')}
+              </p>
+            )}
+            <button
+              onClick={() => setImportResult(null)}
+              className="text-xs text-green-500 hover:text-green-600 dark:hover:text-green-300"
+            >
+              {t('common.dismiss')}
+            </button>
+          </div>
         )}
       </div>
     </div>

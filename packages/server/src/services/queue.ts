@@ -42,6 +42,14 @@ export class QueueManager {
     };
   }
 
+  // 프로바이더 동시 처리 수 런타임 변경 (PQueue의 concurrency setter 사용)
+  updateConcurrency(provider: string, concurrency: number): boolean {
+    const queue = this.queues.get(provider);
+    if (!queue) return false;
+    queue.concurrency = concurrency;
+    return true;
+  }
+
   getAllStatus(): Record<string, QueueStatus> {
     const result: Record<string, QueueStatus> = {};
     for (const [name, queue] of this.queues) {

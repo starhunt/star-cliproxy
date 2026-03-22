@@ -251,6 +251,42 @@ export function triggerHealthCheck(name: string) {
   });
 }
 
+// Provider Config (런타임 설정)
+export interface ProviderConfig {
+  enabled: boolean;
+  cli_path: string;
+  default_model: string;
+  max_concurrent: number;
+  timeout_ms: number;
+  extra_args: string[];
+  working_dir?: string;
+}
+
+export interface ProviderTestResult {
+  success: boolean;
+  response?: string;
+  error?: string;
+  latencyMs: number;
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+}
+
+export function fetchProviderConfig(name: string) {
+  return request<ProviderConfig>(`/providers/${name}/config`);
+}
+
+export function updateProviderConfig(name: string, config: Partial<ProviderConfig>) {
+  return request<ProviderConfig>(`/providers/${name}`, {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}
+
+export function testProvider(name: string) {
+  return request<ProviderTestResult>(`/providers/${name}/test`, {
+    method: 'POST',
+  });
+}
+
 // Test Model
 export interface TestModelResult {
   success: boolean;
@@ -340,6 +376,66 @@ export function deleteDebugLog(id: string) {
 
 export function clearDebugLogs() {
   return request<{ deleted: number }>('/debug-logs', { method: 'DELETE' });
+}
+
+// Export/Import
+export interface ExportData {
+  version: number;
+  exportedAt: string;
+  modelMappings: Array<{
+    alias: string;
+    provider: string;
+    actualModel: string;
+    displayName: string | null;
+    priority: number;
+    enabled: boolean;
+  }>;
+  rateLimits: { global: { rpm: number; rpd: number }; perProvider: Record<string, { rpm: number }> };
+  validation: {
+    maxMessageCount: number;
+    maxMessageLength: number;
+    maxPromptLength: number;
+    maxResponseLength: number;
+    bodyLimitBytes: number;
+  };
+  apiKeys: Array<{
+    name: string;
+    enabled: boolean;
+    rateLimitRpm: number | null;
+    rateLimitRpd: number | null;
+  }>;
+  providers: Record<string, {
+    enabled: boolean;
+    cli_path: string;
+    default_model: string;
+    max_concurrent: number;
+    timeout_ms: number;
+    extra_args: string[];
+    working_dir?: string;
+  }>;
+}
+
+export interface ImportResult {
+  success: boolean;
+  imported: {
+    modelMappings: number;
+    rateLimits: boolean;
+    validation: boolean;
+    apiKeys: { created: number; updated: number };
+    providers: number;
+  };
+  skipped: string[];
+}
+
+export function fetchExport() {
+  return request<ExportData>('/export');
+}
+
+export function importConfig(data: ExportData) {
+  return request<ImportResult>('/import', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
 // Settings
