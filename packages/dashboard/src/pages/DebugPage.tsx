@@ -237,6 +237,15 @@ function DebugLogEntry({
         <span className="text-xs text-gray-400 dark:text-gray-500">{log.latencyMs}ms</span>
         <span className="text-xs text-gray-400 dark:text-gray-600">{time}</span>
         <button
+          onClick={(e) => { e.stopPropagation(); exportDebugLog(log); }}
+          className="text-gray-300 dark:text-gray-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+          title="Export"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+          </svg>
+        </button>
+        <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="text-gray-300 dark:text-gray-700 hover:text-red-500 dark:hover:text-red-400 transition-colors"
           title="Delete"
@@ -259,14 +268,14 @@ function DebugLogEntry({
           {/* CLI 인자 */}
           {log.cliArgs && (
             <DetailSection title={t('debug.cliCommand')}>
-              <code className="text-green-600 dark:text-green-300">
+              <pre className="text-green-600 dark:text-green-300 whitespace-pre-wrap break-all">
                 {(() => {
                   try {
                     const args = JSON.parse(log.cliArgs) as string[];
-                    return args.map((a) => (a.includes(' ') ? `'${a}'` : a)).join(' ');
+                    return args.map((a) => (a.includes(' ') ? `'${a}'` : a)).join(' \\\n  ');
                   } catch { return log.cliArgs; }
                 })()}
-              </code>
+              </pre>
             </DetailSection>
           )}
 
@@ -282,7 +291,7 @@ function DebugLogEntry({
           {/* Raw 출력 */}
           {log.rawStdout && (
             <DetailSection title={t('debug.rawStdout')}>
-              <pre className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">{log.rawStdout}</pre>
+              <pre className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">{formatNdjson(log.rawStdout)}</pre>
             </DetailSection>
           )}
 
@@ -312,7 +321,7 @@ function DebugLogEntry({
           {/* 토큰 사용량 */}
           {log.tokenUsage && (
             <DetailSection title={t('debug.tokenUsage')}>
-              <code className="text-cyan-600 dark:text-cyan-300">{formatJson(log.tokenUsage)}</code>
+              <pre className="text-cyan-600 dark:text-cyan-300 whitespace-pre-wrap">{formatJson(log.tokenUsage)}</pre>
             </DetailSection>
           )}
 
@@ -336,7 +345,7 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   return (
     <div>
       <p className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">{title}</p>
-      <div className="bg-gray-50 dark:bg-gray-950 rounded px-3 py-2 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto">
+      <div className="bg-gray-50 dark:bg-gray-950 rounded px-3 py-2 text-xs font-mono overflow-x-auto max-h-96 overflow-y-auto">
         {children}
       </div>
     </div>
@@ -377,6 +386,88 @@ function formatTime(dateStr: string): string {
   return d.toLocaleTimeString();
 }
 
+// 개별 디버그 로그를 텍스트 파일로 내보내기
+function exportDebugLog(log: DebugLog): void {
+  const divider = '='.repeat(60);
+  const sections: string[] = [];
+
+  sections.push(`${divider}`);
+  sections.push(`Debug Log Export`);
+  sections.push(`${divider}`);
+  sections.push(``);
+  sections.push(`Request ID : ${log.requestId}`);
+  sections.push(`Model      : ${log.modelAlias} -> ${log.provider}:${log.actualModel}`);
+  sections.push(`Status     : ${log.status.toUpperCase()}`);
+  sections.push(`Mode       : ${log.isStream ? 'stream' : 'sync'}`);
+  sections.push(`Latency    : ${log.latencyMs}ms`);
+  sections.push(`Time       : ${log.createdAt}`);
+  if (log.errorMessage) {
+    sections.push(`Error      : ${log.errorMessage}`);
+  }
+
+  if (log.cliArgs) {
+    sections.push(``);
+    sections.push(`${divider}`);
+    sections.push(`CLI Command`);
+    sections.push(`${divider}`);
+    try {
+      const args = JSON.parse(log.cliArgs) as string[];
+      sections.push(args.map((a) => (a.includes(' ') ? `'${a}'` : a)).join(' \\\n  '));
+    } catch {
+      sections.push(log.cliArgs);
+    }
+  }
+
+  if (log.requestMessages) {
+    sections.push(``);
+    sections.push(`${divider}`);
+    sections.push(`Request Messages`);
+    sections.push(`${divider}`);
+    sections.push(formatJson(log.requestMessages));
+  }
+
+  if (log.rawStdout) {
+    sections.push(``);
+    sections.push(`${divider}`);
+    sections.push(`Raw STDOUT`);
+    sections.push(`${divider}`);
+    sections.push(formatNdjson(log.rawStdout));
+  }
+
+  if (log.rawStderr) {
+    sections.push(``);
+    sections.push(`${divider}`);
+    sections.push(`Raw STDERR`);
+    sections.push(`${divider}`);
+    sections.push(log.rawStderr);
+  }
+
+  if (log.parsedContent) {
+    sections.push(``);
+    sections.push(`${divider}`);
+    sections.push(`Parsed Response`);
+    sections.push(`${divider}`);
+    sections.push(log.parsedContent);
+  }
+
+  if (log.tokenUsage) {
+    sections.push(``);
+    sections.push(`${divider}`);
+    sections.push(`Token Usage`);
+    sections.push(`${divider}`);
+    sections.push(formatJson(log.tokenUsage));
+  }
+
+  const text = sections.join('\n');
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `debug-${log.modelAlias}-${log.requestId}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function isImageUrl(text: string): boolean {
   const trimmed = text.trim();
   try {
@@ -388,10 +479,28 @@ function isImageUrl(text: string): boolean {
   }
 }
 
+// NDJSON (줄바꿈 구분 JSON) 포맷팅 — 각 줄을 개별 JSON으로 파싱 후 들여쓰기
+function formatNdjson(str: string): string {
+  const lines = str.split('\n').filter((l) => l.trim());
+  const formatted = lines.map((line) => {
+    try {
+      const obj = JSON.parse(line);
+      return JSON.stringify(obj, null, 2).replace(/\\n/g, '\n');
+    } catch {
+      return line;
+    }
+  });
+  return formatted.join('\n\n---\n\n');
+}
+
 function formatJson(str: string): string {
   try {
-    return JSON.stringify(JSON.parse(str), null, 2);
+    const parsed = JSON.parse(str);
+    const formatted = JSON.stringify(parsed, null, 2);
+    // 리터럴 \n을 실제 줄바꿈으로 변환
+    return formatted.replace(/\\n/g, '\n');
   } catch {
-    return str;
+    // JSON이 아니면 리터럴 \n만 변환
+    return str.replace(/\\n/g, '\n');
   }
 }
