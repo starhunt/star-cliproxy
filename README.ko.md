@@ -356,38 +356,7 @@ validation:
 
 ## Architecture
 
-```
-Client (OpenAI SDK)
-    |
-    POST /v1/chat/completions
-    POST /v1/images/generations
-    |
-+---+-----------------------------+
-|  Fastify Server (:8300)        |
-|                                |
-|  Auth -> RateLimit -> Cache    |
-|              |                 |
-|     +--------+--------+        |
-|     | Provider Engine  |       |
-|     | (fallback chain) |       |
-|     +--+------+-----+--+       |
-|        |      |     |          |
-|     Claude  Codex  Gemini      |
-|     (spawn) (spawn) (spawn)    |
-|        |                       |
-|     Plugins (dynamic load)     |
-|     (custom providers)         |
-|                                |
-|  SQLite (logs, config, cache,  |
-|          rate limit counters)  |
-+--------------------------------+
-
-+--------------------------------+
-|  Dashboard (:5300)             |
-|  React + Vite                  |
-|  -> Admin API (:8300/admin)    |
-+--------------------------------+
-```
+![Architecture](docs/images/star_cliproxy_full_architecture.svg)
 
 ## Project Structure
 
