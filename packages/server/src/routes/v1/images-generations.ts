@@ -20,6 +20,16 @@ interface ImageGenerationDeps {
   debug: DebugService;
 }
 
+// CLI 에러 메시지에서 내부 정보 제거 (파일 경로, 스택 트레이스 등)
+// 클라이언트에 노출되는 에러 응답에만 적용 — 내부 로그는 원본 유지
+function sanitizeProviderError(message: string): string {
+  return message
+    .replace(/\/[\w/.@-]+/g, '[path]')        // 파일/디렉토리 경로 마스킹
+    .replace(/at\s+\S+\s*\(.*?\)/g, '')       // 스택 트레이스 제거
+    .trim()
+    .substring(0, 200);                        // 길이 제한
+}
+
 export function registerImageGenerationsRoute(
   app: FastifyInstance,
   deps: ImageGenerationDeps,
@@ -222,7 +232,7 @@ export function registerImageGenerationsRoute(
 
       return reply.status(statusCode).send({
         error: {
-          message: `All providers failed for model "${body.model}". Last error: ${lastError?.message ?? 'unknown'}`,
+          message: `All providers failed for model "${body.model}". Last error: ${sanitizeProviderError(lastError?.message ?? 'unknown')}`,
           type: isTimeout ? 'timeout_error' : 'provider_error',
           param: null,
           code: isTimeout ? 'timeout' : 'provider_error',

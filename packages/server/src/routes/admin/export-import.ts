@@ -68,6 +68,54 @@ interface ImportResult {
   skipped: string[];
 }
 
+// Import 데이터의 각 섹션 구조를 수동 검증 (외부 의존성 없이)
+function validateExportData(body: unknown): string | null {
+  const data = body as Record<string, unknown>;
+
+  // modelMappings 검증
+  if (data.modelMappings !== undefined) {
+    if (!Array.isArray(data.modelMappings)) return 'modelMappings must be an array';
+    for (const m of data.modelMappings) {
+      if (!m || typeof m !== 'object') return 'modelMappings items must be objects';
+      const mapping = m as Record<string, unknown>;
+      if (typeof mapping.alias !== 'string' || !mapping.alias) return 'modelMappings.alias is required';
+      if (typeof mapping.provider !== 'string' || !mapping.provider) return 'modelMappings.provider is required';
+      if (typeof mapping.actualModel !== 'string' || !mapping.actualModel) return 'modelMappings.actualModel is required';
+    }
+  }
+
+  // rateLimits 검증
+  if (data.rateLimits !== undefined) {
+    if (!data.rateLimits || typeof data.rateLimits !== 'object') return 'rateLimits must be an object';
+    const rl = data.rateLimits as Record<string, unknown>;
+    if (!rl.global || typeof rl.global !== 'object') return 'rateLimits.global is required';
+    const global = rl.global as Record<string, unknown>;
+    if (typeof global.rpm !== 'number' || typeof global.rpd !== 'number') return 'rateLimits.global.rpm and rpd must be numbers';
+  }
+
+  // validation 검증
+  if (data.validation !== undefined) {
+    if (!data.validation || typeof data.validation !== 'object') return 'validation must be an object';
+  }
+
+  // apiKeys 검증
+  if (data.apiKeys !== undefined) {
+    if (!Array.isArray(data.apiKeys)) return 'apiKeys must be an array';
+    for (const k of data.apiKeys) {
+      if (!k || typeof k !== 'object') return 'apiKeys items must be objects';
+      const key = k as Record<string, unknown>;
+      if (typeof key.name !== 'string' || !key.name) return 'apiKeys.name is required';
+    }
+  }
+
+  // providers 검증
+  if (data.providers !== undefined) {
+    if (!data.providers || typeof data.providers !== 'object') return 'providers must be an object';
+  }
+
+  return null; // 유효
+}
+
 export function registerExportImportRoutes(
   app: FastifyInstance,
   deps: ExportImportDeps,
@@ -138,6 +186,14 @@ export function registerExportImportRoutes(
     if (!body.version || body.version !== EXPORT_VERSION) {
       return reply.status(400).send({
         error: { message: `Unsupported export version: ${body.version}. Expected: ${EXPORT_VERSION}` },
+      });
+    }
+
+    // 각 섹션 구조 검증
+    const validationError = validateExportData(body);
+    if (validationError) {
+      return reply.status(400).send({
+        error: { message: `Invalid import data: ${validationError}` },
       });
     }
 

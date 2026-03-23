@@ -20,8 +20,9 @@ export class RateLimiter {
   constructor(config: RateLimitConfig) {
     this.config = config;
     // DB에서 기존 카운터 복원
-    this.loadFromDb().catch(() => {
+    this.loadFromDb().catch((err) => {
       // DB 로드 실패해도 레이트 리미팅은 정상 동작
+      console.warn('[rate-limiter] loadFromDb failed:', err);
     });
     this.cleanupTimer = setInterval(() => this.cleanup(), 60_000);
   }
@@ -133,8 +134,9 @@ export class RateLimiter {
       if (now >= entry.resetAt) this.dayCounters.delete(key);
     }
     // cleanup 주기(1분)마다 DB에 flush
-    this.flushToDb().catch(() => {
+    this.flushToDb().catch((err) => {
       // DB flush 실패해도 레이트 리미팅은 정상 동작
+      console.warn('[rate-limiter] flushToDb failed:', err);
     });
   }
 

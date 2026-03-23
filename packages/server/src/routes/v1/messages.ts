@@ -52,6 +52,16 @@ function sanitizeString(str: string): string {
   return str.replace(/\x00/g, '');
 }
 
+// CLI 에러 메시지에서 내부 정보 제거 (파일 경로, 스택 트레이스 등)
+// 클라이언트에 노출되는 에러 응답에만 적용 — 내부 로그는 원본 유지
+function sanitizeProviderError(message: string): string {
+  return message
+    .replace(/\/[\w/.@-]+/g, '[path]')        // 파일/디렉토리 경로 마스킹
+    .replace(/at\s+\S+\s*\(.*?\)/g, '')       // 스택 트레이스 제거
+    .trim()
+    .substring(0, 200);                        // 길이 제한
+}
+
 // Anthropic 에러 응답 형식
 function makeAnthropicError(type: string, message: string) {
   return {
@@ -94,9 +104,19 @@ function normalizeSystem(system: string | Array<{ type: string; text: string }>)
   return '';
 }
 
-// Anthropic SSE 이벤트 작성 헬퍼
-function writeSSE(raw: { write: (data: string) => boolean }, event: string, data: unknown): void {
-  raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+/**
+ * Anthropic SSE 이벤트 작성 헬퍼
+ * 클라이언트 연결 끊김 시 write 에러로 프로세스 크래시 방지:
+ * destroyed/writableEnded 체크 + try-catch 적용
+ * @returns 쓰기 성공 여부 (false = 연결 끊김)
+ */
+function writeSSE(raw: NodeJS.WritableStream, event: string, data: unknown): boolean {
+  try {
+    if ((raw as unknown as Record<string, unknown>).destroyed || (raw as unknown as Record<string, unknown>).writableEnded) return false;
+    return raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  } catch {
+    return false;
+  }
 }
 
 // 메시지 ID 생성
@@ -316,8 +336,8 @@ export function registerMessagesRoute(
                 ...(unsupportedParams.length > 0 ? { 'X-Unsupported-Params': unsupportedParams.join(',') } : {}),
               });
 
-              // message_start 이벤트
-              writeSSE(reply.raw, 'message_start', {
+              // message_start 이벤트 (연결 끊김이면 조기 종료)
+              if (!writeSSE(reply.raw, 'message_start', {
                 type: 'message_start',
                 message: {
                   id: messageId,
@@ -329,14 +349,14 @@ export function registerMessagesRoute(
                   stop_sequence: null,
                   usage: { input_tokens: 0, output_tokens: 1 },
                 },
-              });
+              })) return;
 
               // content_block_start 이벤트
-              writeSSE(reply.raw, 'content_block_start', {
+              if (!writeSSE(reply.raw, 'content_block_start', {
                 type: 'content_block_start',
                 index: 0,
                 content_block: { type: 'text', text: '' },
-              });
+              })) return;
 
               // ping 이벤트
               writeSSE(reply.raw, 'ping', { type: 'ping' });
@@ -362,12 +382,12 @@ export function registerMessagesRoute(
                   }
 
                   if (chunk.type === 'delta' && chunk.content) {
-                    // content_block_delta 이벤트
-                    writeSSE(reply.raw, 'content_block_delta', {
+                    // content_block_delta 이벤트 (write 실패 = 연결 끊김 → 루프 조기 종료)
+                    if (!writeSSE(reply.raw, 'content_block_delta', {
                       type: 'content_block_delta',
                       index: 0,
                       delta: { type: 'text_delta', text: chunk.content },
-                    });
+                    })) break;
                     totalContent += chunk.content;
                   }
 
@@ -384,7 +404,7 @@ export function registerMessagesRoute(
                 // 헤더 전송 후 에러: 스트림 에러 이벤트 전송 후 종료
                 const errMsg = streamErr instanceof Error ? streamErr.message : 'Stream interrupted';
                 writeSSE(reply.raw, 'error', makeAnthropicError('api_error', errMsg));
-                reply.raw.end();
+                reply.raw.end();  // end()는 이미 destroyed 체크를 내부적으로 처리
 
                 logRequest({
                   requestId,
@@ -410,17 +430,18 @@ export function registerMessagesRoute(
                 index: 0,
               });
 
-              // message_delta 이벤트
-              writeSSE(reply.raw, 'message_delta', {
+              // message_delta 이벤트 (연결 끊김이면 이후 쓰기 시도하지 않음)
+              if (!writeSSE(reply.raw, 'message_delta', {
                 type: 'message_delta',
                 delta: { stop_reason: 'end_turn', stop_sequence: null },
                 usage: { output_tokens: streamUsage?.completionTokens ?? Math.ceil(totalContent.length / 4) },
-              });
-
-              // message_stop 이벤트
-              writeSSE(reply.raw, 'message_stop', { type: 'message_stop' });
-
-              reply.raw.end();
+              })) {
+                reply.raw.end();
+              } else {
+                // message_stop 이벤트
+                writeSSE(reply.raw, 'message_stop', { type: 'message_stop' });
+                reply.raw.end();
+              }
 
               const streamLatency = Date.now() - startTime;
               logRequest({
@@ -585,7 +606,7 @@ export function registerMessagesRoute(
       const statusCode = isTimeout ? 504 : 502;
       const errorType = isTimeout ? 'timeout_error' : 'api_error';
 
-      return reply.status(statusCode).send(makeAnthropicError(errorType, `All providers failed for model "${body.model}". Last error: ${lastError?.message ?? 'unknown'}`));
+      return reply.status(statusCode).send(makeAnthropicError(errorType, `All providers failed for model "${body.model}". Last error: ${sanitizeProviderError(lastError?.message ?? 'unknown')}`));
     },
   );
 }

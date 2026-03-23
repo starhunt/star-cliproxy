@@ -34,6 +34,29 @@ function sanitizeString(str: string): string {
   return str.replace(/\x00/g, '');
 }
 
+// CLI 에러 메시지에서 내부 정보 제거 (파일 경로, 스택 트레이스 등)
+// 클라이언트에 노출되는 에러 응답에만 적용 — 내부 로그는 원본 유지
+function sanitizeProviderError(message: string): string {
+  return message
+    .replace(/\/[\w/.@-]+/g, '[path]')        // 파일/디렉토리 경로 마스킹
+    .replace(/at\s+\S+\s*\(.*?\)/g, '')       // 스택 트레이스 제거
+    .trim()
+    .substring(0, 200);                        // 길이 제한
+}
+
+/**
+ * 클라이언트 연결 끊김 시 write 에러로 프로세스 크래시 방지
+ * destroyed/writableEnded 체크 후 try-catch로 감싸 false 반환
+ */
+function safeWrite(raw: NodeJS.WritableStream, data: string): boolean {
+  try {
+    if ((raw as unknown as Record<string, unknown>).destroyed || (raw as unknown as Record<string, unknown>).writableEnded) return false;
+    return raw.write(data);
+  } catch {
+    return false;
+  }
+}
+
 function makeValidationError(message: string, param?: string) {
   return {
     error: {
@@ -274,7 +297,7 @@ export function registerChatCompletionsRoute(
               requestId,
               body.model,
             );
-            if (roleChunk) reply.raw.write(roleChunk);
+            if (roleChunk) safeWrite(reply.raw, roleChunk);
 
             let totalContent = '';
             let ttfbMs: number | undefined;
@@ -299,7 +322,8 @@ export function registerChatCompletionsRoute(
 
                 const sseData = formatAsSSE(chunk, requestId, body.model);
                 if (sseData) {
-                  reply.raw.write(sseData);
+                  // write 실패(연결 끊김)면 스트림 루프 조기 종료
+                  if (!safeWrite(reply.raw, sseData)) break;
                 }
                 if (chunk.type === 'delta' && chunk.content) {
                   totalContent += chunk.content;
@@ -311,15 +335,15 @@ export function registerChatCompletionsRoute(
                 // 응답 크기 제한
                 if (totalContent.length > v.maxResponseLength) {
                   const doneSSE = formatAsSSE({ type: 'done' }, requestId, body.model);
-                  if (doneSSE) reply.raw.write(doneSSE);
+                  if (doneSSE) safeWrite(reply.raw, doneSSE);
                   break;
               }
               }
             } catch (streamErr) {
               // 헤더 전송 후 에러: 스트림 에러 이벤트 전송 후 종료 (폴백 불가)
               const errMsg = streamErr instanceof Error ? streamErr.message : 'Stream interrupted';
-              reply.raw.write(`data: ${JSON.stringify({ error: { message: errMsg } })}\n\n`);
-              reply.raw.write('data: [DONE]\n\n');
+              safeWrite(reply.raw, `data: ${JSON.stringify({ error: { message: errMsg } })}\n\n`);
+              safeWrite(reply.raw, 'data: [DONE]\n\n');
               reply.raw.end();
 
               logRequest({
@@ -509,7 +533,7 @@ export function registerChatCompletionsRoute(
 
       return reply.status(statusCode).send({
         error: {
-          message: `All providers failed for model "${body.model}". Last error: ${lastError?.message ?? 'unknown'}`,
+          message: `All providers failed for model "${body.model}". Last error: ${sanitizeProviderError(lastError?.message ?? 'unknown')}`,
           type: isTimeout ? 'timeout_error' : 'provider_error',
           param: null,
           code: isTimeout ? 'timeout' : 'provider_error',

@@ -24,18 +24,22 @@ const statusBadge: Record<string, string> = {
   cancelled: 'bg-gray-100 dark:bg-gray-500/20 text-gray-500 dark:text-gray-400',
 };
 
+// 페이지당 표시할 로그 수
+const PAGE_SIZE = 20;
+
 export default function LogsPage() {
   const { t } = useTranslation();
   const [logs, setLogs] = useState<LogItem[]>([]);
   const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const limit = 50;
 
   const load = (newOffset: number) => {
-    fetchLogs({ limit, offset: newOffset })
+    fetchLogs({ limit: PAGE_SIZE, offset: newOffset })
       .then((r) => {
         setLogs(r.data as LogItem[]);
         setOffset(newOffset);
+        setTotal(r.pagination.total);
       })
       .catch((e) => setError(e.message));
   };
@@ -99,18 +103,20 @@ export default function LogsPage() {
       {/* 페이지네이션 */}
       <div className="flex justify-between items-center">
         <button
-          onClick={() => load(Math.max(0, offset - limit))}
+          onClick={() => load(Math.max(0, offset - PAGE_SIZE))}
           disabled={offset === 0}
           className="px-3 py-1.5 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 dark:text-gray-200"
         >
           {t('common.previous')}
         </button>
         <span className="text-gray-400 dark:text-gray-500 text-sm">
-          {t('logs.showing')} {offset + 1} - {offset + logs.length}
+          {logs.length > 0
+            ? `${t('logs.showing')} ${offset + 1} - ${offset + logs.length} / ${total}`
+            : t('logs.noLogs')}
         </span>
         <button
-          onClick={() => load(offset + limit)}
-          disabled={logs.length < limit}
+          onClick={() => load(offset + PAGE_SIZE)}
+          disabled={offset + PAGE_SIZE >= total}
           className="px-3 py-1.5 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 dark:text-gray-200"
         >
           {t('common.next')}

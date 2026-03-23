@@ -101,29 +101,36 @@ export function registerStatsRoutes(app: FastifyInstance): void {
       const limit = Math.min(parseInt(request.query.limit ?? '50', 10), 200);
       const offset = parseInt(request.query.offset ?? '0', 10);
 
-      let query = db.select({
-        id: requestLogs.id,
-        requestId: requestLogs.requestId,
-        modelAlias: requestLogs.modelAlias,
-        provider: requestLogs.provider,
-        actualModel: requestLogs.actualModel,
-        status: requestLogs.status,
-        latencyMs: requestLogs.latencyMs,
-        ttfbMs: requestLogs.ttfbMs,
-        isStream: requestLogs.isStream,
-        totalTokens: requestLogs.totalTokens,
-        errorMessage: requestLogs.errorMessage,
-        createdAt: requestLogs.createdAt,
-      }).from(requestLogs)
-        .orderBy(sql`created_at DESC`)
-        .limit(limit)
-        .offset(offset);
+      // 전체 카운트와 데이터를 병렬로 조회
+      const [countResult, logs] = await Promise.all([
+        Promise.resolve(db.select({
+          total: sql<number>`count(*)`,
+        }).from(requestLogs).all()),
+        Promise.resolve(db.select({
+          id: requestLogs.id,
+          requestId: requestLogs.requestId,
+          modelAlias: requestLogs.modelAlias,
+          provider: requestLogs.provider,
+          actualModel: requestLogs.actualModel,
+          status: requestLogs.status,
+          latencyMs: requestLogs.latencyMs,
+          ttfbMs: requestLogs.ttfbMs,
+          isStream: requestLogs.isStream,
+          totalTokens: requestLogs.totalTokens,
+          errorMessage: requestLogs.errorMessage,
+          createdAt: requestLogs.createdAt,
+        }).from(requestLogs)
+          .orderBy(sql`created_at DESC`)
+          .limit(limit)
+          .offset(offset)
+          .all()),
+      ]);
 
-      const logs = query.all();
+      const total = countResult[0]?.total ?? 0;
 
       return reply.send({
         data: logs,
-        pagination: { limit, offset },
+        pagination: { limit, offset, total },
       });
     },
   );

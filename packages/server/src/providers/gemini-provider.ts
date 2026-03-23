@@ -2,6 +2,7 @@ import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } f
 import { BaseProvider, gracefulKill } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { readFile, unlink } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -29,21 +30,22 @@ export class GeminiProvider extends BaseProvider {
     return args;
   }
 
-  // shell 리다이렉트로 stdout 캡처: spawn stdout pipe 잘림 문제 우회
+  // stdout을 WriteStream으로 직접 파이프: shell 호출 없이 잘림 없이 캡처
   override async execute(options: ExecuteOptions): Promise<ExecuteResult> {
     const args = this.buildArgs({ ...options, stream: false });
     const tmpFile = join(tmpdir(), `gemini-out-${randomBytes(8).toString('hex')}.json`);
 
     try {
-      const escapedArgs = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
-      const shellCmd = `${this.config.cli_path} ${escapedArgs} > '${tmpFile}' 2>/dev/null`;
-
       await new Promise<void>((resolve, reject) => {
-        const child = spawn('sh', ['-c', shellCmd], {
-          stdio: 'ignore',
+        const child = spawn(this.config.cli_path, args, {
+          stdio: ['ignore', 'pipe', 'ignore'],  // stdout만 pipe, stderr 무시
           env: this.getCleanEnv(),
           cwd: this.workingDir,
         });
+
+        // stdout을 tmpFile WriteStream으로 파이프
+        const writeStream = createWriteStream(tmpFile);
+        child.stdout!.pipe(writeStream);
 
         const timeout = setTimeout(() => {
           gracefulKill(child);
@@ -55,10 +57,14 @@ export class GeminiProvider extends BaseProvider {
           reject(new Error(`Failed to spawn gemini CLI: ${err.message}`));
         });
 
+        // 프로세스 종료 후 파일 쓰기 완료까지 대기
         child.on('close', () => {
           clearTimeout(timeout);
-          resolve();
+          writeStream.end();
         });
+
+        writeStream.on('finish', () => resolve());
+        writeStream.on('error', (err) => reject(new Error(`Failed to write output: ${err.message}`)));
       });
 
       const stdout = await readFile(tmpFile, 'utf-8');

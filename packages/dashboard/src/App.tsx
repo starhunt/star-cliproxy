@@ -103,6 +103,7 @@ export default function App() {
         <div className="flex items-center justify-end gap-2 px-6 pt-4 pb-2">
           <button
             onClick={() => setLang(lang === 'ko' ? 'en' : 'ko')}
+            aria-label={lang === 'ko' ? 'Switch to English' : '한국어로 전환'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
               bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800
               text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800
@@ -115,6 +116,7 @@ export default function App() {
           </button>
           <button
             onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
               bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800
               text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800

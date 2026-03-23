@@ -101,7 +101,7 @@ export async function authMiddleware(
   db.update(apiKeys)
     .set({ lastUsedAt: new Date().toISOString() })
     .where(eq(apiKeys.id, keyRecord.id))
-    .catch(() => {});
+    .catch((err) => console.warn('[auth] lastUsedAt update failed:', err));
 
   // 요청에 키 정보 첨부
   (request as FastifyRequest & { apiKeyId?: string }).apiKeyId = keyRecord.id;

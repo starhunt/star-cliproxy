@@ -138,7 +138,7 @@ export function fetchLogs(params?: { limit?: number; offset?: number }) {
       errorMessage: string | null;
       createdAt: string;
     }>;
-    pagination: { limit: number; offset: number };
+    pagination: { limit: number; offset: number; total: number };
   }>(`/logs${qs ? `?${qs}` : ''}`);
 }
 

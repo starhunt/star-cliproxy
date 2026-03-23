@@ -77,44 +77,51 @@ export class ResponseCache {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + this.config.ttlSeconds * 1000);
 
-      // maxEntries 초과 시 가장 오래된 항목 삭제
-      const countResult = await db.select({ value: count() }).from(responseCache);
-      const currentCount = countResult[0]?.value ?? 0;
+      // count → delete → insert를 단일 트랜잭션으로 묶어 원자성 보장
+      // (better-sqlite3 드라이버는 동기 트랜잭션을 사용)
+      db.transaction((tx) => {
+        // maxEntries 초과 시 가장 오래된 항목 삭제
+        const countResult = tx.select({ value: count() }).from(responseCache).all();
+        const currentCount = (countResult[0]?.value ?? 0) as number;
 
-      if (currentCount >= this.config.maxEntries) {
-        // 가장 오래된 항목을 찾아서 삭제
-        const oldest = await db
-          .select({ requestHash: responseCache.requestHash })
-          .from(responseCache)
-          .orderBy(asc(responseCache.createdAt))
-          .limit(currentCount - this.config.maxEntries + 1);
+        if (currentCount >= this.config.maxEntries) {
+          // 삭제할 항목 수: 새 항목 삽입 후 maxEntries 이하가 되도록
+          const deleteCount = currentCount - this.config.maxEntries + 1;
+          const oldest = tx
+            .select({ requestHash: responseCache.requestHash })
+            .from(responseCache)
+            .orderBy(asc(responseCache.createdAt))
+            .limit(deleteCount)
+            .all();
 
-        for (const row of oldest) {
-          await db.delete(responseCache).where(eq(responseCache.requestHash, row.requestHash));
+          for (const row of oldest) {
+            tx.delete(responseCache).where(eq(responseCache.requestHash, row.requestHash)).run();
+          }
         }
-      }
 
-      // upsert: 같은 해시가 있으면 덮어쓰기
-      await db
-        .insert(responseCache)
-        .values({
-          requestHash,
-          modelAlias,
-          provider,
-          responseBody,
-          tokenCount: tokenCount ?? null,
-          createdAt: now.toISOString(),
-          expiresAt: expiresAt.toISOString(),
-        })
-        .onConflictDoUpdate({
-          target: responseCache.requestHash,
-          set: {
+        // upsert: 같은 해시가 있으면 덮어쓰기
+        tx
+          .insert(responseCache)
+          .values({
+            requestHash,
+            modelAlias,
+            provider,
             responseBody,
             tokenCount: tokenCount ?? null,
             createdAt: now.toISOString(),
             expiresAt: expiresAt.toISOString(),
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: responseCache.requestHash,
+            set: {
+              responseBody,
+              tokenCount: tokenCount ?? null,
+              createdAt: now.toISOString(),
+              expiresAt: expiresAt.toISOString(),
+            },
+          })
+          .run();
+      });
     } catch (err) {
       // 캐시 실패가 요청을 중단시키지 않도록
       console.error('Cache set failed:', err);
