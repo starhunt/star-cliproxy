@@ -40,8 +40,9 @@ export class GeminiProvider extends BaseProvider {
       await new Promise<void>((resolve, reject) => {
         // shell을 통해 stdout을 파일로 리다이렉트
         // single quote 이스케이프: 셸 메타문자($, `, \, !)에 의한 command injection 방지
-        const shellEscape = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
-        const shellCmd = [shellEscape(this.config.cli_path), ...args.map(shellEscape)].join(' ') + ' > ' + tmpFile;
+        // null byte 제거: 일부 셸에서 문자열 종단자로 해석될 수 있음
+        const shellEscape = (s: string) => "'" + s.replace(/\x00/g, '').replace(/'/g, "'\\''") + "'";
+        const shellCmd = [shellEscape(this.config.cli_path), ...args.map(shellEscape)].join(' ') + ' > ' + shellEscape(tmpFile);
         const child = spawn('sh', ['-c', shellCmd], {
           stdio: ['ignore', 'ignore', 'ignore'],
           env: this.getCleanEnv(),
@@ -53,14 +54,27 @@ export class GeminiProvider extends BaseProvider {
           reject(new Error(`gemini CLI timed out after ${this.config.timeout_ms}ms`));
         }, this.config.timeout_ms);
 
+        // 클라이언트 취소 시 프로세스 정리
+        if (options.signal) {
+          options.signal.addEventListener('abort', () => {
+            clearTimeout(timeout);
+            gracefulKill(child);
+            reject(new Error('Request cancelled'));
+          }, { once: true });
+        }
+
         child.on('error', (err) => {
           clearTimeout(timeout);
           reject(new Error(`Failed to spawn gemini CLI: ${err.message}`));
         });
 
-        child.on('close', () => {
+        child.on('close', (code) => {
           clearTimeout(timeout);
-          resolve();
+          if (code !== 0) {
+            reject(new Error(`gemini CLI exited with code ${code}`));
+          } else {
+            resolve();
+          }
         });
       });
 

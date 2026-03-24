@@ -35,6 +35,18 @@ export class ProviderRegistry {
   updateProviderConfig(name: string, partial: Partial<ProviderConfigYaml>): boolean {
     const provider = this.providers.get(name);
     if (!provider) return false;
+
+    // cli_path 변경 시 검증 필수 (RCE 방지)
+    if (partial.cli_path !== undefined) {
+      validateCliPath(name, partial.cli_path);
+    }
+    // extra_args 타입 검증
+    if (partial.extra_args !== undefined) {
+      if (!Array.isArray(partial.extra_args) || !partial.extra_args.every(a => typeof a === 'string')) {
+        throw new Error(`Invalid extra_args for ${name}: must be string array`);
+      }
+    }
+
     const updatable = provider as unknown as { updateConfig?(p: Partial<ProviderConfigYaml>): void };
     if (typeof updatable.updateConfig === 'function') {
       updatable.updateConfig(partial);
