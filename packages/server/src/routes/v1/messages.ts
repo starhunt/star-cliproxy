@@ -327,11 +327,14 @@ export function registerMessagesRoute(
               if (abortController.signal.aborted) return;
 
               // Anthropic SSE 스트리밍 응답
+              // reply.raw 직접 쓰기 시 Fastify CORS 미들웨어가 우회되므로 수동 추가
+              const origin = request.headers.origin;
               reply.raw.writeHead(200, {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
                 'X-Request-ID': requestId,
+                ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}),
                 ...(routes.indexOf(route) > 0 ? { 'X-Fallback-Provider': route.provider } : {}),
                 ...(unsupportedParams.length > 0 ? { 'X-Unsupported-Params': unsupportedParams.join(',') } : {}),
               });

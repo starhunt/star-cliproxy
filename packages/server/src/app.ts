@@ -122,10 +122,14 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
     },
   });
 
-  // CORS
+  // CORS: ["*"]이면 모든 origin 허용 (로컬 프록시용), 아니면 지정된 origin만 허용
+  const corsOrigins = config.server.cors.origins;
+  const allowAll = corsOrigins.length === 1 && corsOrigins[0] === '*';
   await app.register(cors, {
-    origin: config.server.cors.origins,
+    origin: allowAll ? true : corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    // allowedHeaders 생략 → 클라이언트가 요청한 헤더를 그대로 반영 (reflect)
+    // Obsidian Copilot 등이 x-stainless-*, dangerously-allow-browser 등 커스텀 헤더 전송
   });
 
   // Health check (인증 불필요)
@@ -150,6 +154,153 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
   app.addHook('onRequest', async (request, reply) => {
     if (!request.url.startsWith('/admin')) return;
     await adminAuthMiddleware(request, reply, config.auth.adminToken);
+  });
+
+  // /v1/responses: OpenAI Responses API 호환
+  // Obsidian Copilot 등 일부 클라이언트가 이 엔드포인트를 사용
+  // 내부적으로 /v1/chat/completions를 호출한 뒤 Responses API 형식으로 변환
+  app.post('/v1/responses', async (request, reply) => {
+    const body = request.body as Record<string, unknown>;
+    const wantStream = body.stream === true;
+
+    // input → messages 변환
+    let messages = body.messages;
+    if (!messages) {
+      const input = body.input;
+      if (typeof input === 'string') {
+        messages = [{ role: 'user', content: input }];
+      } else if (Array.isArray(input)) {
+        messages = input;
+      } else {
+        messages = [{ role: 'user', content: '' }];
+      }
+    }
+
+    // 항상 non-streaming으로 내부 호출 (결과를 변환해야 하므로)
+    const redirectBody = {
+      model: body.model,
+      messages,
+      stream: false,
+      max_tokens: body.max_output_tokens ?? body.max_tokens,
+      temperature: body.temperature,
+    };
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/chat/completions',
+      headers: {
+        'content-type': 'application/json',
+        authorization: request.headers.authorization,
+      },
+      payload: JSON.stringify(redirectBody),
+    });
+
+    if (response.statusCode !== 200) {
+      return reply.status(response.statusCode).headers(response.headers).send(response.payload);
+    }
+
+    let chatResult: Record<string, unknown>;
+    try {
+      chatResult = JSON.parse(response.payload);
+    } catch {
+      return reply.status(502).send({ error: 'Failed to parse upstream response' });
+    }
+
+    const choice = (chatResult.choices as Array<Record<string, unknown>>)?.[0];
+    const msg = choice?.message as Record<string, string> | undefined;
+    const content = msg?.content ?? '';
+    const respId = (chatResult.id as string) ?? `resp_${Date.now()}`;
+    const model = (chatResult.model as string) ?? (body.model as string);
+    const usage = chatResult.usage as Record<string, number> | undefined;
+
+    const responsesResult = {
+      id: respId,
+      object: 'response',
+      created_at: (chatResult.created as number) ?? Math.floor(Date.now() / 1000),
+      status: 'completed',
+      model,
+      output: [{
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: content }],
+      }],
+      usage: usage ? {
+        input_tokens: usage.prompt_tokens ?? 0,
+        output_tokens: usage.completion_tokens ?? 0,
+        total_tokens: usage.total_tokens ?? 0,
+      } : undefined,
+    };
+
+    if (!wantStream) {
+      return reply.status(200).send(responsesResult);
+    }
+
+    // 스트리밍 모드: Responses API SSE 형식으로 이벤트 전송
+    const origin = request.headers.origin;
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}),
+    });
+
+    const sse = (event: string, data: unknown) =>
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
+    // response.created
+    sse('response.created', {
+      type: 'response.created',
+      response: { ...responsesResult, status: 'in_progress', output: [] },
+    });
+
+    // response.output_item.added
+    sse('response.output_item.added', {
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { type: 'message', role: 'assistant', content: [] },
+    });
+
+    // response.content_part.added
+    sse('response.content_part.added', {
+      type: 'response.content_part.added',
+      output_index: 0,
+      content_index: 0,
+      part: { type: 'output_text', text: '' },
+    });
+
+    // response.output_text.delta — 청크 단위로 전송
+    const chunkSize = 20;
+    for (let i = 0; i < content.length; i += chunkSize) {
+      sse('response.output_text.delta', {
+        type: 'response.output_text.delta',
+        output_index: 0,
+        content_index: 0,
+        delta: content.substring(i, i + chunkSize),
+      });
+    }
+
+    // response.output_text.done
+    sse('response.output_text.done', {
+      type: 'response.output_text.done',
+      output_index: 0,
+      content_index: 0,
+      text: content,
+    });
+
+    // response.output_item.done
+    sse('response.output_item.done', {
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: responsesResult.output[0],
+    });
+
+    // response.completed
+    sse('response.completed', {
+      type: 'response.completed',
+      response: responsesResult,
+    });
+
+    reply.raw.end();
   });
 
   // v1 라우트 등록
