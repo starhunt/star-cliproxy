@@ -39,7 +39,9 @@ export class GeminiProvider extends BaseProvider {
     try {
       await new Promise<void>((resolve, reject) => {
         // shell을 통해 stdout을 파일로 리다이렉트
-        const shellCmd = [this.config.cli_path, ...args.map(a => JSON.stringify(a))].join(' ') + ' > ' + tmpFile;
+        // single quote 이스케이프: 셸 메타문자($, `, \, !)에 의한 command injection 방지
+        const shellEscape = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
+        const shellCmd = [shellEscape(this.config.cli_path), ...args.map(shellEscape)].join(' ') + ' > ' + tmpFile;
         const child = spawn('sh', ['-c', shellCmd], {
           stdio: ['ignore', 'ignore', 'ignore'],
           env: this.getCleanEnv(),
