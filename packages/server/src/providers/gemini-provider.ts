@@ -1,12 +1,11 @@
 import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } from '@star-cliproxy/shared';
 import { BaseProvider, gracefulKill } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
+import { spawn } from 'node:child_process';
 import { readFile, unlink } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { spawn } from 'node:child_process';
 
 export class GeminiProvider extends BaseProvider {
   readonly name = 'gemini' as const;
@@ -30,22 +29,22 @@ export class GeminiProvider extends BaseProvider {
     return args;
   }
 
-  // stdout을 WriteStream으로 직접 파이프: shell 호출 없이 잘림 없이 캡처
+  // shell redirect로 stdout 완전 수집
+  // Gemini CLI는 stdout이 pipe일 때 8KB 버퍼를 마지막에 flush하지 않아 데이터 잘림 발생
+  // 파일 리다이렉트(> file)로 우회하면 프로세스 종료 시 OS가 파일을 완전히 flush함
   override async execute(options: ExecuteOptions): Promise<ExecuteResult> {
     const args = this.buildArgs({ ...options, stream: false });
     const tmpFile = join(tmpdir(), `gemini-out-${randomBytes(8).toString('hex')}.json`);
 
     try {
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(this.config.cli_path, args, {
-          stdio: ['ignore', 'pipe', 'ignore'],  // stdout만 pipe, stderr 무시
+        // shell을 통해 stdout을 파일로 리다이렉트
+        const shellCmd = [this.config.cli_path, ...args.map(a => JSON.stringify(a))].join(' ') + ' > ' + tmpFile;
+        const child = spawn('sh', ['-c', shellCmd], {
+          stdio: ['ignore', 'ignore', 'ignore'],
           env: this.getCleanEnv(),
           cwd: this.workingDir,
         });
-
-        // stdout을 tmpFile WriteStream으로 파이프
-        const writeStream = createWriteStream(tmpFile);
-        child.stdout!.pipe(writeStream);
 
         const timeout = setTimeout(() => {
           gracefulKill(child);
@@ -57,14 +56,10 @@ export class GeminiProvider extends BaseProvider {
           reject(new Error(`Failed to spawn gemini CLI: ${err.message}`));
         });
 
-        // 프로세스 종료 후 파일 쓰기 완료까지 대기
         child.on('close', () => {
           clearTimeout(timeout);
-          writeStream.end();
+          resolve();
         });
-
-        writeStream.on('finish', () => resolve());
-        writeStream.on('error', (err) => reject(new Error(`Failed to write output: ${err.message}`)));
       });
 
       const stdout = await readFile(tmpFile, 'utf-8');
