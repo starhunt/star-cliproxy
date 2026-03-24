@@ -10,15 +10,20 @@ export class ClaudeProvider extends BaseProvider {
     this.initParser();
   }
 
+  protected override getStdinData(options: ExecuteOptions): string {
+    const { userPrompt } = convertMessages(options.messages);
+    return userPrompt;
+  }
+
   protected buildArgs(options: ExecuteOptions): string[] {
-    const { systemPrompt, userPrompt } = convertMessages(options.messages);
+    const { systemPrompt } = convertMessages(options.messages);
     const model = options.model || this.config.default_model;
 
     // non-streaming: json, streaming: stream-json --verbose
     // stream-json은 --verbose 필수 (Claude CLI 요구사항)
     const format = options.stream ? 'stream-json' : 'json';
     const args: string[] = [
-      '-p', userPrompt,
+      '-p', '-', // stdin에서 프롬프트 읽기 (ARG_MAX 제한 우회)
       '--output-format', format,
       '--model', model,
       '--max-turns', '5',

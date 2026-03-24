@@ -43,10 +43,18 @@ export abstract class BaseProvider {
   // CLI 인수 구성 (서브클래스에서 구현)
   protected abstract buildArgs(options: ExecuteOptions): string[];
 
+  // stdin으로 전달할 프롬프트 데이터 (서브클래스에서 오버라이드)
+  // ARG_MAX 제한(macOS 1MB, Linux 2MB) 우회를 위해 대용량 프롬프트는 stdin으로 전달
+  // undefined 반환 시 stdin 즉시 닫기 (기존 동작)
+  protected getStdinData(_options: ExecuteOptions): string | undefined {
+    return undefined;
+  }
+
   // non-streaming 실행
   async execute(options: ExecuteOptions): Promise<ExecuteResult> {
     const args = this.buildArgs({ ...options, stream: false });
-    const { stdout, stderr, exitCode } = await this.runProcess(args, options.signal);
+    const stdinData = this.getStdinData({ ...options, stream: false });
+    const { stdout, stderr, exitCode } = await this.runProcess(args, options.signal, undefined, stdinData);
 
     if (exitCode !== 0) {
       options.onDebug?.({ cliArgs: args, stdout, stderr });
@@ -60,7 +68,12 @@ export abstract class BaseProvider {
   // streaming 실행
   async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
     const args = this.buildArgs({ ...options, stream: true });
+    const stdinData = this.getStdinData({ ...options, stream: true });
     const child = this.spawnProcess(args);
+    // stdin에 프롬프트 데이터 전달 후 닫기
+    if (stdinData) {
+      child.stdin?.write(stdinData);
+    }
     child.stdin?.end();
 
     if (options.signal) {
@@ -125,7 +138,7 @@ export abstract class BaseProvider {
 
   protected spawnProcess(args: string[]): ChildProcess {
     return spawn(this.config.cli_path, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       env: this.getCleanEnv(),
       cwd: this.workingDir,
     });
@@ -135,10 +148,14 @@ export abstract class BaseProvider {
     args: string[],
     signal?: AbortSignal,
     timeoutMs?: number,
+    stdinData?: string,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     return new Promise((resolve, reject) => {
       const child = this.spawnProcess(args);
-      // stdin을 즉시 닫아 CLI가 입력 대기하지 않도록
+      // stdin에 프롬프트 데이터 전달 후 닫기
+      if (stdinData) {
+        child.stdin?.write(stdinData);
+      }
       child.stdin?.end();
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];

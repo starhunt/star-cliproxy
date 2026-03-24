@@ -15,12 +15,14 @@ export class GeminiProvider extends BaseProvider {
     this.initParser();
   }
 
+  protected override getStdinData(options: ExecuteOptions): string {
+    return convertMessagesToSinglePrompt(options.messages);
+  }
+
   protected buildArgs(options: ExecuteOptions): string[] {
-    const prompt = convertMessagesToSinglePrompt(options.messages);
     const model = options.model || this.config.default_model;
 
     const args: string[] = [
-      '-p', prompt,
       '-m', model,
       '-o', options.stream ? 'stream-json' : 'json',
     ];
@@ -36,6 +38,8 @@ export class GeminiProvider extends BaseProvider {
     const args = this.buildArgs({ ...options, stream: false });
     const tmpFile = join(tmpdir(), `gemini-out-${randomBytes(8).toString('hex')}.json`);
 
+    const stdinData = this.getStdinData({ ...options, stream: false });
+
     try {
       await new Promise<void>((resolve, reject) => {
         // shell을 통해 stdout을 파일로 리다이렉트
@@ -47,11 +51,17 @@ export class GeminiProvider extends BaseProvider {
           : (s: string) => "'" + s.replace(/\x00/g, '').replace(/'/g, "'\\''") + "'";
         const shellCmd = [shellEscape(this.config.cli_path), ...args.map(shellEscape)].join(' ') + ' > ' + shellEscape(tmpFile);
         const child = spawn(shellCmd, {
-          stdio: ['ignore', 'ignore', 'ignore'],
+          stdio: ['pipe', 'ignore', 'ignore'],
           shell: true,
           env: this.getCleanEnv(),
           cwd: this.workingDir,
         });
+
+        // stdin으로 프롬프트 전달 후 닫기
+        if (stdinData) {
+          child.stdin?.write(stdinData);
+        }
+        child.stdin?.end();
 
         const timeout = setTimeout(() => {
           gracefulKill(child);
