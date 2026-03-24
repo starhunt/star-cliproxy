@@ -39,12 +39,16 @@ export class GeminiProvider extends BaseProvider {
     try {
       await new Promise<void>((resolve, reject) => {
         // shell을 통해 stdout을 파일로 리다이렉트
-        // single quote 이스케이프: 셸 메타문자($, `, \, !)에 의한 command injection 방지
+        // { shell: true }로 Node.js가 플랫폼별 셸 자동 선택 (macOS: sh, Windows: cmd.exe)
         // null byte 제거: 일부 셸에서 문자열 종단자로 해석될 수 있음
-        const shellEscape = (s: string) => "'" + s.replace(/\x00/g, '').replace(/'/g, "'\\''") + "'";
+        const isWin = process.platform === 'win32';
+        const shellEscape = isWin
+          ? (s: string) => '"' + s.replace(/\x00/g, '').replace(/"/g, '\\"') + '"'
+          : (s: string) => "'" + s.replace(/\x00/g, '').replace(/'/g, "'\\''") + "'";
         const shellCmd = [shellEscape(this.config.cli_path), ...args.map(shellEscape)].join(' ') + ' > ' + shellEscape(tmpFile);
-        const child = spawn('sh', ['-c', shellCmd], {
+        const child = spawn(shellCmd, {
           stdio: ['ignore', 'ignore', 'ignore'],
+          shell: true,
           env: this.getCleanEnv(),
           cwd: this.workingDir,
         });
