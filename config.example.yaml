@@ -82,7 +82,7 @@ cache:
   max_entries: 1000
 
 validation:
-  max_message_count: 200         # 메시지 배열 최대 수
+  max_message_count: 2000        # 메시지 배열 최대 수
   max_message_length: 1000000    # 개별 메시지 최대 길이 (1M chars, ~250K tokens)
   max_prompt_length: 4000000     # 전체 프롬프트 총 길이 (4M chars, ~1M tokens)
   max_response_length: 1000000   # CLI 응답 최대 길이 (1M chars)
