@@ -34,6 +34,65 @@ function sanitizeString(str: string): string {
   return str.replace(/\x00/g, '');
 }
 
+function stringifyUnknown(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value == null) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeContentBlock(part: unknown): string {
+  if (typeof part === 'string') return part;
+  if (!part || typeof part !== 'object') return stringifyUnknown(part);
+
+  const block = part as Record<string, unknown>;
+  const type = typeof block.type === 'string' ? block.type : '';
+
+  if (typeof block.text === 'string') return block.text;
+  if (typeof block.content === 'string') return block.content;
+
+  if (Array.isArray(block.content)) {
+    return block.content.map((item) => normalizeContentBlock(item)).filter(Boolean).join('\n');
+  }
+
+  if (type === 'toolCall') {
+    const name = typeof block.name === 'string' ? block.name : 'tool';
+    const args = block.arguments ?? block.input ?? block.args;
+    return `[Tool call ${name}] ${stringifyUnknown(args)}`.trim();
+  }
+
+  if (type === 'toolResult') {
+    const name = typeof block.name === 'string' ? block.name : (typeof block.toolName === 'string' ? block.toolName : 'tool');
+    const result = block.result ?? block.output ?? block.content ?? block.data;
+    return `[Tool result ${name}] ${typeof result === 'string' ? result : stringifyUnknown(result)}`.trim();
+  }
+
+  if (type === 'thinking') {
+    return typeof block.thinking === 'string' ? `[Thinking] ${block.thinking}` : '';
+  }
+
+  if (type === 'input_text') {
+    return typeof block.text === 'string' ? block.text : stringifyUnknown(block);
+  }
+
+  return stringifyUnknown(block);
+}
+
+function normalizeMessageContent(content: unknown): string | null {
+  if (typeof content === 'string') return sanitizeString(content);
+  if (Array.isArray(content)) {
+    return sanitizeString(content.map((part) => normalizeContentBlock(part)).filter(Boolean).join('\n'));
+  }
+  if (content && typeof content === 'object') {
+    return sanitizeString(normalizeContentBlock(content));
+  }
+  return null;
+}
+
 // CLI 에러 메시지에서 내부 정보 제거 (파일 경로, 스택 트레이스 등)
 // 클라이언트에 노출되는 에러 응답에만 적용 — 내부 로그는 원본 유지
 function sanitizeProviderError(message: string): string {
@@ -113,28 +172,11 @@ export function registerChatCompletionsRoute(
           msg.role = 'system';
         }
 
-        // tool 메시지: content가 null/undefined이면 빈 문자열로 정규화
-        if (msg.role === 'tool' && (msg.content === null || msg.content === undefined)) {
-          msg.content = '';
-        }
+        // content를 string으로 정규화 (OpenAI content parts + 구조화 블록 허용)
+        const normalizedContent = normalizeMessageContent(msg.content);
 
-        // content parts 배열 → string으로 정규화
-        if (Array.isArray(msg.content)) {
-          const textParts: string[] = [];
-          for (const part of msg.content) {
-            if (typeof part === 'string') {
-              textParts.push(part);
-            } else if (part && typeof part === 'object' && typeof part.text === 'string') {
-              textParts.push(part.text);
-            }
-          }
-          msg.content = textParts.join('\n');
-        } else if (typeof msg.content !== 'string') {
-          return reply.status(400).send(makeValidationError(`messages[${i}].content must be a string or content parts array.`, 'messages'));
-        }
-
-        // null byte 제거
-        msg.content = sanitizeString(msg.content);
+        // null byte 제거 포함
+        msg.content = normalizedContent;
 
         // 개별 메시지 길이 제한
         if (msg.content.length > v.maxMessageLength) {

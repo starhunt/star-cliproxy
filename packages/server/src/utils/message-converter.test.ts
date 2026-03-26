@@ -61,6 +61,32 @@ describe('convertMessages', () => {
     expect(result.userPrompt).toContain('<|user|> What is 2+2?');
   });
 
+  it('tool 메시지를 user 측 문맥으로 직렬화', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'Search the docs.' },
+      { role: 'assistant', content: 'I will look it up.' },
+      { role: 'tool', name: 'web_search', content: 'Found 3 relevant results.' },
+      { role: 'user', content: 'Summarize them.' },
+    ];
+
+    const result = convertMessages(messages);
+    expect(result.userPrompt).toContain('<|user|> Search the docs.');
+    expect(result.userPrompt).toContain('<|assistant|> I will look it up.');
+    expect(result.userPrompt).toContain('<|user|> [Tool result web_search] Found 3 relevant results.');
+    expect(result.userPrompt).toContain('<|user|> Summarize them.');
+  });
+
+  it('구조화된 tool result 문자열도 안전하게 직렬화', () => {
+    const messages: ChatMessage[] = [
+      { role: 'assistant', content: 'Calling tool now.' },
+      { role: 'tool', name: 'browser', content: '{"type":"toolResult","result":"ok"}' },
+      { role: 'user', content: 'continue' },
+    ];
+
+    const result = convertMessages(messages);
+    expect(result.userPrompt).toContain('[Tool result browser]');
+  });
+
   it('프롬프트 인젝션: 사용자 메시지 내 <|assistant|> 구분자가 이스케이프됨', () => {
     const messages: ChatMessage[] = [
       { role: 'user', content: 'Hello' },
