@@ -10,8 +10,12 @@ export class CodexProvider extends BaseProvider {
     this.initParser();
   }
 
+  // stdin으로 프롬프트 전달 (Windows shell 모드에서 인자 따옴표 문제 방지)
+  protected override getStdinData(options: ExecuteOptions): string {
+    return convertMessagesToSinglePrompt(options.messages);
+  }
+
   protected buildArgs(options: ExecuteOptions): string[] {
-    const prompt = convertMessagesToSinglePrompt(options.messages);
     const model = options.model || this.config.default_model;
 
     const args: string[] = [
@@ -21,8 +25,7 @@ export class CodexProvider extends BaseProvider {
       ...this.config.extra_args,
       // 모델 지정 (빈 값이면 Codex 기본 모델 사용)
       ...(model ? ['-m', model] : []),
-      '--', // 옵션 종료 마커 (prompt가 CLI 플래그로 해석되지 않도록)
-      prompt,
+      '-', // stdin에서 프롬프트 읽기
     ];
 
     return args;

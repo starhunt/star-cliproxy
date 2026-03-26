@@ -1,28 +1,30 @@
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { createClient, type Client } from '@libsql/client';
+import { drizzle } from 'drizzle-orm/libsql';
 import * as schema from './schema.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null;
-let sqlite: Database.Database | null = null;
+let client: Client | null = null;
 
-export function initDatabase(dbPath: string) {
+export async function initDatabase(dbPath: string) {
   mkdirSync(dirname(dbPath), { recursive: true });
 
-  sqlite = new Database(dbPath);
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
+  client = createClient({ url: `file:${dbPath}` });
 
-  db = drizzle(sqlite, { schema });
+  // PRAGMA 설정
+  await client.execute('PRAGMA journal_mode = WAL');
+  await client.execute('PRAGMA foreign_keys = ON');
 
-  createTables(sqlite);
+  db = drizzle(client, { schema });
+
+  await createTables(client);
 
   return db;
 }
 
-function createTables(sqlite: Database.Database) {
-  sqlite.exec(`
+async function createTables(client: Client) {
+  await client.executeMultiple(`
     CREATE TABLE IF NOT EXISTS api_keys (
       id TEXT PRIMARY KEY,
       key_hash TEXT NOT NULL UNIQUE,
@@ -130,9 +132,9 @@ export function getDatabase() {
 }
 
 export function closeDatabase() {
-  if (sqlite) {
-    sqlite.close();
-    sqlite = null;
+  if (client) {
+    client.close();
+    client = null;
     db = null;
   }
 }

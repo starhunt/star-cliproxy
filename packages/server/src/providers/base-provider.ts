@@ -142,10 +142,13 @@ export abstract class BaseProvider {
   }
 
   protected spawnProcess(args: string[]): ChildProcess {
+    // Windows에서 npm global CLI(.cmd)는 shell 경유 필수
+    const isWin = process.platform === 'win32';
     return spawn(this.config.cli_path, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: this.getCleanEnv(),
       cwd: this.workingDir,
+      shell: isWin,
     });
   }
 

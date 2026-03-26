@@ -8,14 +8,14 @@ export function registerStatsRoutes(app: FastifyInstance): void {
   app.get('/admin/stats', async (_request, reply) => {
     const db = getDatabase();
 
-    const totalResult = db.select({
+    const totalResult = await db.select({
       totalRequests: sql<number>`count(*)`,
       successCount: sql<number>`sum(case when status = 'success' then 1 else 0 end)`,
       errorCount: sql<number>`sum(case when status = 'error' then 1 else 0 end)`,
       avgLatencyMs: sql<number>`avg(latency_ms)`,
       totalPromptTokens: sql<number>`sum(prompt_tokens)`,
       totalCompletionTokens: sql<number>`sum(completion_tokens)`,
-    }).from(requestLogs).all();
+    }).from(requestLogs);
 
     const stats = totalResult[0] ?? {
       totalRequests: 0,
@@ -27,23 +27,21 @@ export function registerStatsRoutes(app: FastifyInstance): void {
     };
 
     // Provider별 통계
-    const providerStats = db.select({
+    const providerStats = await db.select({
       provider: requestLogs.provider,
       count: sql<number>`count(*)`,
       successCount: sql<number>`sum(case when status = 'success' then 1 else 0 end)`,
       avgLatencyMs: sql<number>`avg(latency_ms)`,
     }).from(requestLogs)
-      .groupBy(requestLogs.provider)
-      .all();
+      .groupBy(requestLogs.provider);
 
     // 모델별 통계
-    const modelStats = db.select({
+    const modelStats = await db.select({
       modelAlias: requestLogs.modelAlias,
       provider: requestLogs.provider,
       count: sql<number>`count(*)`,
     }).from(requestLogs)
-      .groupBy(requestLogs.modelAlias, requestLogs.provider)
-      .all();
+      .groupBy(requestLogs.modelAlias, requestLogs.provider);
 
     return reply.send({
       overview: {
@@ -67,7 +65,7 @@ export function registerStatsRoutes(app: FastifyInstance): void {
       const hours = Math.min(parseInt(request.query.hours ?? '24', 10), 168); // 최대 7일
 
       // 날짜+시간 키로 그룹핑 (YYYY-MM-DD HH 형식)
-      const trend = db.select({
+      const trend = await db.select({
         slot: sql<string>`strftime('%Y-%m-%d %H', created_at)`,
         count: sql<number>`count(*)`,
         successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
@@ -75,19 +73,17 @@ export function registerStatsRoutes(app: FastifyInstance): void {
       }).from(requestLogs)
         .where(sql`created_at >= datetime('now', ${`-${hours} hours`})`)
         .groupBy(sql`strftime('%Y-%m-%d %H', created_at)`)
-        .orderBy(sql`strftime('%Y-%m-%d %H', created_at) ASC`)
-        .all();
+        .orderBy(sql`strftime('%Y-%m-%d %H', created_at) ASC`);
 
       // 모델별 breakdown
-      const byModel = db.select({
+      const byModel = await db.select({
         slot: sql<string>`strftime('%Y-%m-%d %H', created_at)`,
         modelAlias: requestLogs.modelAlias,
         count: sql<number>`count(*)`,
       }).from(requestLogs)
         .where(sql`created_at >= datetime('now', ${`-${hours} hours`})`)
         .groupBy(sql`strftime('%Y-%m-%d %H', created_at)`, requestLogs.modelAlias)
-        .orderBy(sql`strftime('%Y-%m-%d %H', created_at) ASC`)
-        .all();
+        .orderBy(sql`strftime('%Y-%m-%d %H', created_at) ASC`);
 
       return reply.send({ hours, trend, byModel });
     },
@@ -103,10 +99,10 @@ export function registerStatsRoutes(app: FastifyInstance): void {
 
       // 전체 카운트와 데이터를 병렬로 조회
       const [countResult, logs] = await Promise.all([
-        Promise.resolve(db.select({
+        db.select({
           total: sql<number>`count(*)`,
-        }).from(requestLogs).all()),
-        Promise.resolve(db.select({
+        }).from(requestLogs),
+        db.select({
           id: requestLogs.id,
           requestId: requestLogs.requestId,
           modelAlias: requestLogs.modelAlias,
@@ -122,8 +118,7 @@ export function registerStatsRoutes(app: FastifyInstance): void {
         }).from(requestLogs)
           .orderBy(sql`created_at DESC`)
           .limit(limit)
-          .offset(offset)
-          .all()),
+          .offset(offset),
       ]);
 
       const total = countResult[0]?.total ?? 0;

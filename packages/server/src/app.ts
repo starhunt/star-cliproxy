@@ -39,7 +39,7 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
   }
 
   // DB 초기화
-  initDatabase(config.database.path);
+  await initDatabase(config.database.path);
 
   // 시드 데이터 (초기 API 키, 모델 매핑)
   await seedDatabase(config);

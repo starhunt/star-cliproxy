@@ -17,7 +17,7 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
     const db = getDatabase();
 
     // 1. 요약 통계
-    const statsResult = db.select({
+    const statsResult = await db.select({
       totalRequests: sql<number>`count(*)`,
       successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
       errorCount: sql<number>`coalesce(sum(case when status = 'error' then 1 else 0 end), 0)`,
@@ -27,35 +27,34 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       totalCompletionTokens: sql<number>`coalesce(sum(completion_tokens), 0)`,
       totalTokens: sql<number>`coalesce(sum(total_tokens), 0)`,
       streamCount: sql<number>`coalesce(sum(case when is_stream = 1 then 1 else 0 end), 0)`,
-    }).from(requestLogs).all();
+    }).from(requestLogs);
     const overview = statsResult[0];
 
     // 2. 오늘 통계
-    const todayResult = db.select({
+    const todayResult = await db.select({
       count: sql<number>`count(*)`,
       successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
       avgLatencyMs: sql<number>`coalesce(avg(case when status = 'success' then latency_ms end), 0)`,
     }).from(requestLogs)
-      .where(sql`date(created_at) = date('now')`)
-      .all();
+      .where(sql`date(created_at) = date('now')`);
     const today = todayResult[0];
 
     // 3. 활성 API 키 수
-    const keyCountResult = db.select({
+    const keyCountResult = await db.select({
       total: sql<number>`count(*)`,
       active: sql<number>`sum(case when enabled = 1 then 1 else 0 end)`,
-    }).from(apiKeys).all();
+    }).from(apiKeys);
     const keyCount = keyCountResult[0];
 
     // 4. 모델 매핑 수
-    const mappingCountResult = db.select({
+    const mappingCountResult = await db.select({
       total: sql<number>`count(*)`,
       active: sql<number>`sum(case when enabled = 1 then 1 else 0 end)`,
-    }).from(modelMappings).all();
+    }).from(modelMappings);
     const mappingCount = mappingCountResult[0];
 
     // 5. Provider 상태
-    const healthData = db.select().from(providerHealth).all();
+    const healthData = await db.select().from(providerHealth);
     const providers = deps.registry.getAll().map((p) => {
       const health = healthData.find((h) => h.provider === p.name);
       const queue = deps.queueManager.getStatus(p.name);
@@ -69,35 +68,33 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
     });
 
     // 6. 캐시 통계
-    const cacheResult = db.select({
+    const cacheResult = await db.select({
       totalEntries: sql<number>`count(*)`,
       activeEntries: sql<number>`sum(case when expires_at > datetime('now') then 1 else 0 end)`,
-    }).from(responseCache).all();
+    }).from(responseCache);
     const cache = cacheResult[0];
 
     // 7. Rate Limit 설정
-    const rateLimitResult = db.select()
+    const rateLimitResult = await db.select()
       .from(settings)
-      .where(eq(settings.key, 'rate_limits'))
-      .all();
+      .where(eq(settings.key, 'rate_limits'));
     let rateLimits = { global: { rpm: 60, rpd: 1000 }, perProvider: {} };
     if (rateLimitResult.length > 0) {
       try { rateLimits = JSON.parse(rateLimitResult[0].value); } catch {}
     }
 
     // 8. Provider별 통계
-    const providerStats = db.select({
+    const providerStats = await db.select({
       provider: requestLogs.provider,
       count: sql<number>`count(*)`,
       successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
       avgLatencyMs: sql<number>`coalesce(avg(case when status = 'success' then latency_ms end), 0)`,
       totalTokens: sql<number>`coalesce(sum(total_tokens), 0)`,
     }).from(requestLogs)
-      .groupBy(requestLogs.provider)
-      .all();
+      .groupBy(requestLogs.provider);
 
     // 9. 인기 모델 (상위 5개)
-    const popularModels = db.select({
+    const popularModels = await db.select({
       modelAlias: requestLogs.modelAlias,
       provider: requestLogs.provider,
       count: sql<number>`count(*)`,
@@ -105,11 +102,10 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
     }).from(requestLogs)
       .groupBy(requestLogs.modelAlias, requestLogs.provider)
       .orderBy(sql`count(*) DESC`)
-      .limit(5)
-      .all();
+      .limit(5);
 
     // 10. 24시간 시간대별 요청 추이 (모델별 breakdown 포함)
-    const hourlyTrend = db.select({
+    const hourlyTrend = await db.select({
       hour: sql<number>`cast(strftime('%H', created_at) as integer)`,
       count: sql<number>`count(*)`,
       successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
@@ -117,22 +113,20 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
     }).from(requestLogs)
       .where(sql`created_at >= datetime('now', '-24 hours')`)
       .groupBy(sql`strftime('%H', created_at)`)
-      .orderBy(sql`strftime('%H', created_at) ASC`)
-      .all();
+      .orderBy(sql`strftime('%H', created_at) ASC`);
 
     // 10-1. 모델별 시간대 breakdown
-    const hourlyByModel = db.select({
+    const hourlyByModel = await db.select({
       hour: sql<number>`cast(strftime('%H', created_at) as integer)`,
       modelAlias: requestLogs.modelAlias,
       count: sql<number>`count(*)`,
     }).from(requestLogs)
       .where(sql`created_at >= datetime('now', '-24 hours')`)
       .groupBy(sql`strftime('%H', created_at)`, requestLogs.modelAlias)
-      .orderBy(sql`strftime('%H', created_at) ASC`)
-      .all();
+      .orderBy(sql`strftime('%H', created_at) ASC`);
 
     // 11. 최근 요청 (10건)
-    const recentRequests = db.select({
+    const recentRequests = await db.select({
       id: requestLogs.id,
       modelAlias: requestLogs.modelAlias,
       provider: requestLogs.provider,
@@ -145,11 +139,10 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       createdAt: requestLogs.createdAt,
     }).from(requestLogs)
       .orderBy(desc(requestLogs.createdAt))
-      .limit(10)
-      .all();
+      .limit(10);
 
     // 12. 최근 에러 (5건)
-    const recentErrors = db.select({
+    const recentErrors = await db.select({
       id: requestLogs.id,
       modelAlias: requestLogs.modelAlias,
       provider: requestLogs.provider,
@@ -160,8 +153,7 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
     }).from(requestLogs)
       .where(sql`status != 'success'`)
       .orderBy(desc(requestLogs.createdAt))
-      .limit(5)
-      .all();
+      .limit(5);
 
     return reply.send({
       overview: {

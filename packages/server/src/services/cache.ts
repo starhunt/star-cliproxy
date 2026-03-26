@@ -78,29 +78,27 @@ export class ResponseCache {
       const expiresAt = new Date(now.getTime() + this.config.ttlSeconds * 1000);
 
       // count → delete → insert를 단일 트랜잭션으로 묶어 원자성 보장
-      // (better-sqlite3 드라이버는 동기 트랜잭션을 사용)
-      db.transaction((tx) => {
+      await db.transaction(async (tx) => {
         // maxEntries 초과 시 가장 오래된 항목 삭제
-        const countResult = tx.select({ value: count() }).from(responseCache).all();
+        const countResult = await tx.select({ value: count() }).from(responseCache);
         const currentCount = (countResult[0]?.value ?? 0) as number;
 
         if (currentCount >= this.config.maxEntries) {
           // 삭제할 항목 수: 새 항목 삽입 후 maxEntries 이하가 되도록
           const deleteCount = currentCount - this.config.maxEntries + 1;
-          const oldest = tx
+          const oldest = await tx
             .select({ requestHash: responseCache.requestHash })
             .from(responseCache)
             .orderBy(asc(responseCache.createdAt))
-            .limit(deleteCount)
-            .all();
+            .limit(deleteCount);
 
           for (const row of oldest) {
-            tx.delete(responseCache).where(eq(responseCache.requestHash, row.requestHash)).run();
+            await tx.delete(responseCache).where(eq(responseCache.requestHash, row.requestHash));
           }
         }
 
         // upsert: 같은 해시가 있으면 덮어쓰기
-        tx
+        await tx
           .insert(responseCache)
           .values({
             requestHash,
@@ -119,8 +117,7 @@ export class ResponseCache {
               createdAt: now.toISOString(),
               expiresAt: expiresAt.toISOString(),
             },
-          })
-          .run();
+          });
       });
     } catch (err) {
       // 캐시 실패가 요청을 중단시키지 않도록

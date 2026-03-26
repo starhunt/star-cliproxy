@@ -133,11 +133,11 @@ export class DebugService {
   async getLogCount(model?: string): Promise<number> {
     const db = getDatabase();
     if (model) {
-      const result = db.select({ count: sql<number>`count(*)` }).from(debugLogs)
-        .where(like(debugLogs.modelAlias, `%${model}%`)).all();
+      const result = await db.select({ count: sql<number>`count(*)` }).from(debugLogs)
+        .where(like(debugLogs.modelAlias, `%${model}%`));
       return result[0]?.count ?? 0;
     }
-    const result = db.select({ count: sql<number>`count(*)` }).from(debugLogs).all();
+    const result = await db.select({ count: sql<number>`count(*)` }).from(debugLogs);
     return result[0]?.count ?? 0;
   }
 
@@ -148,7 +148,7 @@ export class DebugService {
     let deleted = 0;
     for (const id of ids) {
       const result = await db.delete(debugLogs).where(eq(debugLogs.id, id));
-      deleted += result.changes;
+      deleted += result.rowsAffected;
     }
     return deleted;
   }
@@ -156,12 +156,12 @@ export class DebugService {
   async deleteLog(id: string): Promise<boolean> {
     const db = getDatabase();
     const result = await db.delete(debugLogs).where(eq(debugLogs.id, id));
-    return result.changes > 0;
+    return result.rowsAffected > 0;
   }
 
   async clearLogs(): Promise<number> {
     const db = getDatabase();
     const result = await db.delete(debugLogs);
-    return result.changes;
+    return result.rowsAffected;
   }
 }

@@ -58,9 +58,21 @@ function escapeShellArg(a: string): string {
   return a;
 }
 
-// printf 'text' | cmd 형태로 한 줄 명령 생성 (줄바꿈은 \n 이스케이프)
-function wrapWithPrintf(stdinData: string, cmd: string): string {
-  // printf용 이스케이프: \ → \\, ' → '\'' , 실제 줄바꿈 → \n
+// OS 감지
+const isWindows = navigator.platform.startsWith('Win');
+
+// stdin 파이프 명령 생성 (OS별 분기)
+// macOS/Linux: printf 'text' | cmd
+// Windows: echo text | cmd
+function wrapWithStdinPipe(stdinData: string, cmd: string): string {
+  if (isWindows) {
+    // PowerShell/CMD: echo로 파이프, 줄바꿈 제거 (한 줄 명령)
+    const escaped = stdinData
+      .replace(/\n/g, ' ')
+      .replace(/"/g, '\\"');
+    return `echo "${escaped}" | ${cmd}`;
+  }
+  // macOS/Linux: printf로 줄바꿈 보존
   const escaped = stdinData
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "'\\''")
@@ -86,7 +98,7 @@ function buildTerminalCommand(log: { cliArgs: string; provider: string; requestM
     if (provider === 'claude') {
       const cmd = cmdArgs.map(escapeShellArg).join(' ');
       if (messages) {
-        return wrapWithPrintf(rebuildClaudeStdin(messages), cmd);
+        return wrapWithStdinPipe(rebuildClaudeStdin(messages), cmd);
       }
       return cmd;
     }
@@ -94,7 +106,7 @@ function buildTerminalCommand(log: { cliArgs: string; provider: string; requestM
     if (provider === 'gemini') {
       const cmd = cmdArgs.map(escapeShellArg).join(' ');
       if (messages) {
-        return wrapWithPrintf(rebuildSinglePrompt(messages), cmd);
+        return wrapWithStdinPipe(rebuildSinglePrompt(messages), cmd);
       }
       return cmd;
     }
@@ -107,7 +119,7 @@ function buildTerminalCommand(log: { cliArgs: string; provider: string; requestM
     // 기타 프로바이더
     const cmd = cmdArgs.map(escapeShellArg).join(' ');
     if (messages) {
-      return wrapWithPrintf(rebuildSinglePrompt(messages), cmd);
+      return wrapWithStdinPipe(rebuildSinglePrompt(messages), cmd);
     }
     return cmd;
   } catch {

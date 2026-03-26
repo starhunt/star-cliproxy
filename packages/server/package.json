@@ -10,21 +10,20 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@star-cliproxy/shared": "*",
-    "fastify": "^5.3.3",
     "@fastify/cors": "^11.0.0",
-    "better-sqlite3": "^11.8.2",
-    "drizzle-orm": "^0.44.2",
-    "yaml": "^2.7.1",
+    "@libsql/client": "^0.17.2",
+    "@star-cliproxy/shared": "*",
     "dotenv": "^16.5.0",
+    "drizzle-orm": "^0.44.2",
+    "fastify": "^5.3.3",
+    "nanoid": "^5.1.5",
     "p-queue": "^8.1.0",
-    "nanoid": "^5.1.5"
+    "yaml": "^2.7.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0",
+    "drizzle-kit": "^0.31.1",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3",
-    "drizzle-kit": "^0.31.1"
+    "typescript": "^5.8.3"
   }
 }
