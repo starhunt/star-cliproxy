@@ -149,6 +149,16 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
     });
   });
 
+  // 서버 설정 정보 (대시보드 API 가이드에서 실제 URL 표시용)
+  app.get('/admin/server-info', async (_request, reply) => {
+    return reply.send({
+      serverPort: config.server.port,
+      serverHost: config.server.host,
+      dashboardPort: config.dashboard.port,
+      dashboardHost: config.dashboard.host,
+    });
+  });
+
   // OpenAI-compatible 라우트 (인증 필요)
   if (config.auth.enabled) {
     app.addHook('onRequest', async (request, reply) => {

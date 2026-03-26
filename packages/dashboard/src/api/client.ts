@@ -466,6 +466,18 @@ export function updateValidationSettings(data: Partial<ValidationSettings>) {
   });
 }
 
+// Server Info (서버 설정 정보)
+export interface ServerInfo {
+  serverPort: number;
+  serverHost: string;
+  dashboardPort: number;
+  dashboardHost: string;
+}
+
+export function fetchServerInfo() {
+  return request<ServerInfo>('/server-info');
+}
+
 // Generic Providers (커스텀 CLI 프로바이더)
 export interface GenericCliProviderConfig {
   enabled: boolean;

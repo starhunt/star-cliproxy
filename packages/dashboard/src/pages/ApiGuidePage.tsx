@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from '../i18n/context';
-import { fetchModelMappings, type ModelMapping } from '../api/client';
+import { fetchModelMappings, fetchServerInfo, type ModelMapping } from '../api/client';
 
 function CodeBlock({ title, lang, children }: { title?: string; lang?: string; children: string }) {
   const [copied, setCopied] = useState(false);
@@ -38,8 +38,22 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function ApiGuidePage() {
   const { t } = useTranslation();
   const [models, setModels] = useState<ModelMapping[]>([]);
+  const [apiBase, setApiBase] = useState('${apiBase}');
+  const [dashboardUrl, setDashboardUrl] = useState('${dashboardUrl}');
+
   useEffect(() => {
     fetchModelMappings().then(setModels).catch(() => {});
+    // 서버에서 실제 포트 정보를 가져와서 현재 호스트와 조합
+    fetchServerInfo().then((info) => {
+      const host = window.location.hostname;
+      setApiBase(`http://${host}:${info.serverPort}`);
+      setDashboardUrl(`http://${host}:${info.dashboardPort}`);
+    }).catch(() => {
+      // 실패 시 현재 브라우저 호스트 기반 추정
+      const host = window.location.hostname;
+      setApiBase(`http://${host}:8300`);
+      setDashboardUrl(window.location.origin);
+    });
   }, []);
 
   const enabledModels = models.filter(m => m.enabled);
@@ -56,11 +70,11 @@ export default function ApiGuidePage() {
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <div className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">{t('guide.apiBaseUrl')}</div>
-            <code className="text-blue-600 dark:text-blue-400">http://localhost:8300/v1</code>
+            <code className="text-blue-600 dark:text-blue-400">{apiBase}/v1</code>
           </div>
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
             <div className="text-xs text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">{t('guide.dashboard')}</div>
-            <code className="text-blue-600 dark:text-blue-400">http://localhost:5300</code>
+            <code className="text-blue-600 dark:text-blue-400">{dashboardUrl}</code>
           </div>
         </div>
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4 space-y-2 text-sm text-gray-600 dark:text-gray-400">
@@ -146,7 +160,7 @@ export default function ApiGuidePage() {
       <Section title={t('guide.usageExamples')}>
 
         <CodeBlock title={t('guide.curlNonStreaming')} lang="bash">
-{`curl http://localhost:8300/v1/chat/completions \\
+{`curl ${apiBase}/v1/chat/completions \\
   -H "Authorization: Bearer sk-proxy-your-key-here" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -158,7 +172,7 @@ export default function ApiGuidePage() {
         </CodeBlock>
 
         <CodeBlock title={t('guide.curlStreaming')} lang="bash">
-{`curl http://localhost:8300/v1/chat/completions \\
+{`curl ${apiBase}/v1/chat/completions \\
   -H "Authorization: Bearer sk-proxy-your-key-here" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -174,7 +188,7 @@ export default function ApiGuidePage() {
 {`from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8300/v1",
+    base_url="${apiBase}/v1",
     api_key="sk-proxy-your-key-here",
 )
 
@@ -201,7 +215,7 @@ print()`}
 {`import OpenAI from 'openai';
 
 const client = new OpenAI({
-  baseURL: 'http://localhost:8300/v1',
+  baseURL: '${apiBase}/v1',
   apiKey: 'sk-proxy-your-key-here',
 });
 
@@ -224,7 +238,7 @@ for await (const chunk of stream) {
         </CodeBlock>
 
         <CodeBlock title={t('guide.modelList')} lang="bash">
-{`curl http://localhost:8300/v1/models \\
+{`curl ${apiBase}/v1/models \\
   -H "Authorization: Bearer sk-proxy-your-key-here"`}
         </CodeBlock>
       </Section>
