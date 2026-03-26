@@ -16,21 +16,30 @@ const reqStatusStyle: Record<string, string> = {
   cancelled: 'text-gray-400',
 };
 
+const PERIOD_OPTIONS = [
+  { label: '1d', days: 1 },
+  { label: '7d', days: 7 },
+  { label: '30d', days: 30 },
+  { label: '90d', days: 90 },
+  { label: 'All', days: 0 },
+];
+
 export default function DashboardPage() {
   const { t } = useTranslation();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [days, setDays] = useState(0); // 0 = 전체
   const navigate = useNavigate();
 
   const load = () => {
-    fetchDashboard()
+    fetchDashboard(days || undefined)
       .then((d) => { setData(d); setLastUpdated(new Date()); setError(null); })
       .catch((e) => setError(e.message));
   };
 
-  // 초기 로드 (1회)
-  useEffect(() => { load(); }, []);
+  // 초기 로드 + 기간 변경 시 재로드
+  useEffect(() => { load(); }, [days]);
 
   // 자동 리프레시: 활성 요청 유무에 따라 간격 조정 (기본 10초, 활성 요청 시 2초)
   const hasActiveRequests = (data?.activeRequests?.count ?? 0) > 0;
@@ -71,6 +80,22 @@ export default function DashboardPage() {
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{t('dashboard.subtitle')}</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* 기간 선택 */}
+          <div className="flex items-center gap-1">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.days}
+                onClick={() => setDays(opt.days)}
+                className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                  days === opt.days
+                    ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400'
+                    : 'text-gray-400 dark:text-gray-600 hover:text-gray-600 dark:hover:text-gray-400'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           {lastUpdated && (
             <span className="text-xs text-gray-500 dark:text-gray-600">
               {t('dashboard.updated')} {lastUpdated.toLocaleTimeString()}

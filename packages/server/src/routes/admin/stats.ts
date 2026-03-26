@@ -129,4 +129,28 @@ export function registerStatsRoutes(app: FastifyInstance): void {
       });
     },
   );
+
+  // 기간별 로그 삭제 (지정 일수 이전 로그 삭제)
+  app.delete<{ Querystring: { days?: string } }>(
+    '/admin/logs',
+    async (request, reply) => {
+      const db = getDatabase();
+      const days = parseInt(request.query.days ?? '30', 10);
+
+      if (days < 1) {
+        return reply.status(400).send({ error: { message: 'days must be at least 1' } });
+      }
+
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      const result = await db.delete(requestLogs)
+        .where(sql`created_at < ${cutoff}`);
+
+      return reply.send({
+        deleted: result.rowsAffected,
+        cutoffDate: cutoff,
+        days,
+      });
+    },
+  );
 }

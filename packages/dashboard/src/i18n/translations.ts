@@ -154,6 +154,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'logs.stream': 'Stream',
     'logs.noLogs': 'No logs yet',
     'logs.showing': 'Showing',
+    'logs.entries': 'entries',
+    'logs.daysAgo': ' days ago',
+    'logs.deleteOld': 'Delete',
+    'logs.confirmDelete': 'Delete all logs older than {days} days? This cannot be undone.',
+    'logs.deleteSuccess': '{count} logs older than {days} days deleted.',
 
     // 디버그
     'debug.title': 'Debug',
@@ -479,6 +484,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'logs.stream': '스트림',
     'logs.noLogs': '로그 없음',
     'logs.showing': '표시 중',
+    'logs.entries': '건',
+    'logs.daysAgo': '일 전',
+    'logs.deleteOld': '삭제',
+    'logs.confirmDelete': '{days}일 이전의 로그를 모두 삭제하시겠습니까? 되돌릴 수 없습니다.',
+    'logs.deleteSuccess': '{days}일 이전 로그 {count}건이 삭제되었습니다.',
 
     // 디버그
     'debug.title': '디버그',

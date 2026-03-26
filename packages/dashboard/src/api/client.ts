@@ -88,8 +88,9 @@ export interface DashboardData {
   };
 }
 
-export function fetchDashboard() {
-  return request<DashboardData>('/dashboard');
+export function fetchDashboard(days?: number) {
+  const qs = days ? `?days=${days}` : '';
+  return request<DashboardData>(`/dashboard${qs}`);
 }
 
 // Trend (시간대별 요청 추이)
@@ -140,6 +141,13 @@ export function fetchLogs(params?: { limit?: number; offset?: number }) {
     }>;
     pagination: { limit: number; offset: number; total: number };
   }>(`/logs${qs ? `?${qs}` : ''}`);
+}
+
+// 기간별 로그 삭제
+export function deleteLogsByAge(days: number) {
+  return request<{ deleted: number; cutoffDate: string; days: number }>(`/logs?days=${days}`, {
+    method: 'DELETE',
+  });
 }
 
 // Model Mappings
