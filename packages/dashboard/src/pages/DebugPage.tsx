@@ -12,6 +12,109 @@ import {
   type DebugLog,
 } from '../api/client';
 
+// OpenAI messages → Claude CLI용 stdin 프롬프트 (convertMessages 미러링)
+function rebuildClaudeStdin(messages: Array<{ role: string; content: string }>): string {
+  const nonSystem = messages.filter((m) => m.role !== 'system');
+  if (nonSystem.length === 1 && nonSystem[0].role === 'user') {
+    return nonSystem[0].content;
+  }
+  const parts: string[] = [];
+  for (const msg of messages) {
+    if (msg.role === 'system') continue;
+    if (msg.role === 'user') parts.push(`<|user|> ${msg.content}`);
+    else if (msg.role === 'assistant') parts.push(`<|assistant|> ${msg.content}`);
+  }
+  return parts.join('\n\n');
+}
+
+// OpenAI messages → Gemini/Codex용 단일 프롬프트 (convertMessagesToSinglePrompt 미러링)
+function rebuildSinglePrompt(messages: Array<{ role: string; content: string }>): string {
+  const nonSystem = messages.filter((m) => m.role !== 'system');
+  const systemMsg = messages.find((m) => m.role === 'system');
+
+  let userPrompt: string;
+  if (nonSystem.length === 1 && nonSystem[0].role === 'user') {
+    userPrompt = nonSystem[0].content;
+  } else {
+    const parts: string[] = [];
+    for (const msg of messages) {
+      if (msg.role === 'system') continue;
+      if (msg.role === 'user') parts.push(`<|user|> ${msg.content}`);
+      else if (msg.role === 'assistant') parts.push(`<|assistant|> ${msg.content}`);
+    }
+    userPrompt = parts.join('\n\n');
+  }
+
+  if (systemMsg) {
+    return `<|system|> ${systemMsg.content}\n\n${userPrompt}`;
+  }
+  return userPrompt;
+}
+
+// 셸 인자 이스케이프
+function escapeShellArg(a: string): string {
+  if (a.includes("'")) return `"${a.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`')}"`;
+  if (a.includes(' ') || a.includes('"') || a.includes('\\') || a.includes('$') || a.includes('`')) return `'${a}'`;
+  return a;
+}
+
+// printf 'text' | cmd 형태로 한 줄 명령 생성 (줄바꿈은 \n 이스케이프)
+function wrapWithPrintf(stdinData: string, cmd: string): string {
+  // printf용 이스케이프: \ → \\, ' → '\'' , 실제 줄바꿈 → \n
+  const escaped = stdinData
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "'\\''")
+    .replace(/\n/g, '\\n');
+  return `printf '${escaped}' | ${cmd}`;
+}
+
+// 디버그 로그에서 터미널에 한 줄로 붙여넣기 가능한 실행 명령 생성
+function buildTerminalCommand(log: { cliArgs: string; provider: string; requestMessages?: string | null }): string {
+  try {
+    const args = JSON.parse(log.cliArgs) as string[];
+    const provider = log.provider;
+
+    // cliArgs 첫 번째가 CLI 바이너리인지 확인 (신규 로그는 포함, 기존 로그는 미포함)
+    const firstIsFlag = args[0]?.startsWith('-');
+    const cmdArgs = firstIsFlag ? [provider, ...args] : args;
+
+    let messages: Array<{ role: string; content: string }> | null = null;
+    if (log.requestMessages) {
+      try { messages = JSON.parse(log.requestMessages); } catch { /* ignore */ }
+    }
+
+    if (provider === 'claude') {
+      const cmd = cmdArgs.map(escapeShellArg).join(' ');
+      if (messages) {
+        return wrapWithPrintf(rebuildClaudeStdin(messages), cmd);
+      }
+      return cmd;
+    }
+
+    if (provider === 'gemini') {
+      const cmd = cmdArgs.map(escapeShellArg).join(' ');
+      if (messages) {
+        return wrapWithPrintf(rebuildSinglePrompt(messages), cmd);
+      }
+      return cmd;
+    }
+
+    if (provider === 'codex') {
+      // Codex: 프롬프트가 args에 직접 포함됨
+      return cmdArgs.map(escapeShellArg).join(' ');
+    }
+
+    // 기타 프로바이더
+    const cmd = cmdArgs.map(escapeShellArg).join(' ');
+    if (messages) {
+      return wrapWithPrintf(rebuildSinglePrompt(messages), cmd);
+    }
+    return cmd;
+  } catch {
+    return log.cliArgs;
+  }
+}
+
 export default function DebugPage() {
   const { t } = useTranslation();
   const [config, setConfig] = useState<DebugConfig | null>(null);
@@ -267,25 +370,7 @@ export default function DebugPage() {
 
       {/* 페이징 */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
-          <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="px-3 py-1 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-xs transition-colors text-gray-600 dark:text-gray-300 disabled:opacity-40"
-          >
-            {t('common.prev')}
-          </button>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            {page + 1} / {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-            disabled={page >= totalPages - 1}
-            className="px-3 py-1 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-xs transition-colors text-gray-600 dark:text-gray-300 disabled:opacity-40"
-          >
-            {t('common.next')}
-          </button>
-        </div>
+        <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
       )}
     </div>
   );
@@ -307,6 +392,22 @@ function DebugLogEntry({
   onSelect: () => void;
 }) {
   const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyCommand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!log.cliArgs) return;
+    const command = buildTerminalCommand({
+      cliArgs: log.cliArgs,
+      provider: log.provider,
+      requestMessages: log.requestMessages,
+    });
+    navigator.clipboard.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   const statusColor = log.status === 'pending'
     ? 'text-blue-500 dark:text-blue-400 animate-pulse'
     : log.status === 'success'
@@ -342,6 +443,23 @@ function DebugLogEntry({
         </span>
         <span className="text-xs text-gray-400 dark:text-gray-500">{log.latencyMs}ms</span>
         <span className="text-xs text-gray-400 dark:text-gray-600">{time}</span>
+        {log.cliArgs && (
+          <button
+            onClick={handleCopyCommand}
+            className={`transition-colors ${copied ? 'text-green-500 dark:text-green-400' : 'text-gray-300 dark:text-gray-700 hover:text-blue-500 dark:hover:text-blue-400'}`}
+            title={copied ? t('debug.copied') : t('debug.copyCommand')}
+          >
+            {copied ? (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            )}
+          </button>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); exportDebugLog(log); }}
           className="text-gray-300 dark:text-gray-700 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
@@ -610,4 +728,57 @@ function formatJson(str: string): string {
     // JSON이 아니면 리터럴 \n만 변환
     return str.replace(/\\n/g, '\n');
   }
+}
+
+// 페이지 번호 목록 생성 (현재 페이지 주변 + 처음/끝)
+function getPageNumbers(current: number, total: number): (number | '...')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i);
+
+  const pages: (number | '...')[] = [];
+  // 항상 첫 페이지
+  pages.push(0);
+
+  const start = Math.max(1, current - 1);
+  const end = Math.min(total - 2, current + 1);
+
+  if (start > 1) pages.push('...');
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (end < total - 2) pages.push('...');
+
+  // 항상 마지막 페이지
+  pages.push(total - 1);
+  return pages;
+}
+
+function Pagination({ currentPage, totalPages, onPageChange }: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  const btnBase = 'px-2.5 py-1 rounded text-xs transition-colors';
+  const btnNav = `${btnBase} bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-40 disabled:pointer-events-none`;
+  const btnPage = (active: boolean) =>
+    active
+      ? `${btnBase} bg-blue-600 text-white`
+      : `${btnBase} bg-gray-100 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300`;
+
+  const pages = getPageNumbers(currentPage, totalPages);
+
+  return (
+    <div className="flex items-center justify-center gap-1">
+      <button onClick={() => onPageChange(0)} disabled={currentPage === 0} className={btnNav}>«</button>
+      <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 0} className={btnNav}>‹</button>
+      {pages.map((p, i) =>
+        p === '...' ? (
+          <span key={`ellipsis-${i}`} className="px-1.5 text-xs text-gray-400 dark:text-gray-600">…</span>
+        ) : (
+          <button key={p} onClick={() => onPageChange(p)} className={btnPage(p === currentPage)}>
+            {p + 1}
+          </button>
+        ),
+      )}
+      <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage >= totalPages - 1} className={btnNav}>›</button>
+      <button onClick={() => onPageChange(totalPages - 1)} disabled={currentPage >= totalPages - 1} className={btnNav}>»</button>
+    </div>
+  );
 }

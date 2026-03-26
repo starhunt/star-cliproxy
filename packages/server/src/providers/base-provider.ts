@@ -50,6 +50,11 @@ export abstract class BaseProvider {
     return undefined;
   }
 
+  // cli_path + args를 합쳐 디버그용 전체 명령 배열 생성
+  private fullCommand(args: string[]): string[] {
+    return [this.config.cli_path, ...args];
+  }
+
   // non-streaming 실행
   async execute(options: ExecuteOptions): Promise<ExecuteResult> {
     const args = this.buildArgs({ ...options, stream: false });
@@ -57,11 +62,11 @@ export abstract class BaseProvider {
     const { stdout, stderr, exitCode } = await this.runProcess(args, options.signal, undefined, stdinData);
 
     if (exitCode !== 0) {
-      options.onDebug?.({ cliArgs: args, stdout, stderr });
+      options.onDebug?.({ cliArgs: this.fullCommand(args), stdout, stderr });
       throw new Error(`${this.name} CLI exited with code ${exitCode}: ${stderr}`);
     }
 
-    options.onDebug?.({ cliArgs: args, stdout, stderr });
+    options.onDebug?.({ cliArgs: this.fullCommand(args), stdout, stderr });
     return this.parseNonStreamOutput(stdout);
   }
 
@@ -104,7 +109,7 @@ export abstract class BaseProvider {
       clearTimeout(timeout);
       gracefulKill(child);
       if (captureDebug) {
-        options.onDebug!({ cliArgs: args, streamLines: debugLines });
+        options.onDebug!({ cliArgs: this.fullCommand(args), streamLines: debugLines });
       }
     }
   }

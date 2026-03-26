@@ -10,6 +10,9 @@ import {
   type ProviderTestResult,
 } from '../api/client';
 
+// 빌트인 프로바이더 목록
+const BUILTIN_PROVIDERS = new Set(['claude', 'codex', 'gemini']);
+
 interface ProviderState {
   info: ProviderInfo;
   config: ProviderConfig | null;
@@ -126,6 +129,23 @@ export default function ProvidersPage() {
     }
   };
 
+  // 프로바이더 활성/비활성 토글
+  const handleToggleEnabled = async (name: string, currentEnabled: boolean) => {
+    try {
+      const result = await updateProviderConfig(name, { enabled: !currentEnabled });
+      setProviders((prev) =>
+        prev.map((p) =>
+          p.info.name === name ? { ...p, config: result } : p,
+        ),
+      );
+      if (expandedProvider === name) {
+        setDraft((prev) => ({ ...prev, enabled: result.enabled }));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   // 드래프트 필드 업데이트 헬퍼
   const updateDraft = (field: keyof ProviderConfig, value: string | number | boolean) => {
     setDraft((prev) => ({ ...prev, [field]: value }));
@@ -159,20 +179,31 @@ export default function ProvidersPage() {
       </div>
 
       {/* 프로바이더 카드 목록 */}
-      <div className="space-y-3">
-        {providers.map(({ info, config, loading }) => {
+      {(() => {
+        const builtinProviders = providers.filter((p) => BUILTIN_PROVIDERS.has(p.info.name));
+        const customProviders = providers.filter((p) => !BUILTIN_PROVIDERS.has(p.info.name));
+
+        const renderProviderCard = ({ info, config, loading }: ProviderState) => {
           const isExpanded = expandedProvider === info.name;
+          const isBuiltin = BUILTIN_PROVIDERS.has(info.name);
+          const isEnabled = config?.enabled !== false;
           const statusColor =
-            info.status === 'healthy'
-              ? 'bg-green-500'
-              : info.status === 'unhealthy'
-                ? 'bg-red-500'
-                : 'bg-gray-400';
+            !isEnabled
+              ? 'bg-gray-400 dark:bg-gray-600'
+              : info.status === 'healthy'
+                ? 'bg-green-500'
+                : info.status === 'unhealthy'
+                  ? 'bg-red-500'
+                  : 'bg-gray-400';
 
           return (
             <div
               key={info.name}
-              className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden"
+              className={`bg-white dark:bg-gray-900 border rounded-xl overflow-hidden transition-colors ${
+                isBuiltin
+                  ? 'border-blue-200 dark:border-blue-500/30'
+                  : 'border-gray-200 dark:border-gray-800'
+              } ${!isEnabled ? 'opacity-60' : ''}`}
             >
               {/* 카드 헤더 */}
               <div
@@ -184,6 +215,11 @@ export default function ProvidersPage() {
                   <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 capitalize">
                     {info.name}
                   </span>
+                  {isBuiltin && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 font-medium">
+                      Built-in
+                    </span>
+                  )}
                   {config && (
                     <span className="text-xs text-gray-400 dark:text-gray-500">
                       {config.default_model} | {t('providers.maxConcurrent')}: {config.max_concurrent}
@@ -193,13 +229,24 @@ export default function ProvidersPage() {
                     <span className="text-xs text-gray-400 dark:text-gray-500">{t('common.loading')}</span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  {/* 활성/비활성 토글 */}
+                  {config && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <ToggleSwitch
+                        enabled={isEnabled}
+                        onToggle={() => handleToggleEnabled(info.name, isEnabled)}
+                      />
+                    </div>
+                  )}
                   <span className="text-xs text-gray-400 dark:text-gray-500">
-                    {info.status === 'healthy'
-                      ? t('common.online')
-                      : info.status === 'unhealthy'
-                        ? t('common.offline')
-                        : t('common.unknown')}
+                    {!isEnabled
+                      ? t('providers.disabled')
+                      : info.status === 'healthy'
+                        ? t('common.online')
+                        : info.status === 'unhealthy'
+                          ? t('common.offline')
+                          : t('common.unknown')}
                   </span>
                   <svg
                     className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -377,12 +424,69 @@ export default function ProvidersPage() {
               )}
             </div>
           );
-        })}
-      </div>
+        };
+
+        return (
+          <div className="space-y-6">
+            {/* 빌트인 프로바이더 */}
+            {builtinProviders.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    {t('providers.builtinSection')}
+                  </h3>
+                  <div className="flex-1 h-px bg-blue-200 dark:bg-blue-500/20" />
+                </div>
+                {builtinProviders.map(renderProviderCard)}
+              </div>
+            )}
+
+            {/* 커스텀/플러그인 프로바이더 */}
+            {customProviders.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    {t('providers.customSection')}
+                  </h3>
+                  <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+                </div>
+                {customProviders.map(renderProviderCard)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {providers.length === 0 && !error && (
         <div className="text-gray-400 dark:text-gray-500 text-sm">{t('common.loading')}</div>
       )}
     </div>
+  );
+}
+
+function ToggleSwitch({
+  enabled,
+  onToggle,
+  disabled,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={disabled}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        disabled ? 'opacity-50 cursor-not-allowed' : ''
+      } ${enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+      title={enabled ? 'Disable' : 'Enable'}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+          enabled ? 'translate-x-4' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
   );
 }

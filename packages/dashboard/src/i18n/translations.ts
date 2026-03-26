@@ -30,7 +30,6 @@ export const translations: Record<Lang, Record<string, string>> = {
     'common.dismiss': 'dismiss',
     'common.retry': 'Retry',
     'common.previous': 'Previous',
-    'common.next': 'Next',
     'common.generate': 'Generate',
     'common.reset': 'Reset',
     'common.saving': 'Saving...',
@@ -179,6 +178,8 @@ export const translations: Record<Lang, Record<string, string>> = {
     'debug.tokenUsage': 'Token Usage',
     'debug.error': 'Error',
     'debug.requestId': 'Request ID',
+    'debug.copyCommand': 'Copy command',
+    'debug.copied': 'Copied!',
 
     // 설정
     'settings.title': 'Settings',
@@ -232,6 +233,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.latency': 'Latency',
     'providers.response': 'Response',
     'providers.resetToDefault': 'Reset to Default',
+    'providers.builtinSection': 'Built-in',
+    'providers.customSection': 'Plugins',
+    'providers.disabled': 'Disabled',
 
     // API 가이드
     'guide.title': 'API Guide',
@@ -324,7 +328,6 @@ export const translations: Record<Lang, Record<string, string>> = {
     'common.dismiss': '닫기',
     'common.retry': '재시도',
     'common.previous': '이전',
-    'common.next': '다음',
     'common.generate': '생성',
     'common.reset': '초기화',
     'common.saving': '저장 중...',
@@ -473,6 +476,8 @@ export const translations: Record<Lang, Record<string, string>> = {
     'debug.tokenUsage': '토큰 사용량',
     'debug.error': '에러',
     'debug.requestId': '요청 ID',
+    'debug.copyCommand': '명령 복사',
+    'debug.copied': '복사됨!',
 
     // 설정
     'settings.title': '설정',
@@ -526,6 +531,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.latency': '응답 시간',
     'providers.response': '응답',
     'providers.resetToDefault': '기본값으로 초기화',
+    'providers.builtinSection': '기본 제공',
+    'providers.customSection': '플러그인',
+    'providers.disabled': '비활성',
 
     // API 가이드
     'guide.title': 'API 가이드',
