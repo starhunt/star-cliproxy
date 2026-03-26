@@ -420,6 +420,7 @@ export interface ExportData {
     extra_args: string[];
     working_dir?: string;
   }>;
+  genericProviders?: Record<string, GenericCliProviderConfig>;
 }
 
 export interface ImportResult {
@@ -461,6 +462,74 @@ export function fetchValidationSettings() {
 export function updateValidationSettings(data: Partial<ValidationSettings>) {
   return request<ValidationSettings>('/settings/validation', {
     method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+// Generic Providers (커스텀 CLI 프로바이더)
+export interface GenericCliProviderConfig {
+  enabled: boolean;
+  cli_path: string;
+  default_model: string;
+  max_concurrent: number;
+  timeout_ms: number;
+  extra_args: string[];
+  working_dir?: string;
+  // 프롬프트 전달 방식
+  prompt_mode: 'stdin' | 'arg';
+  prompt_arg_template?: string;
+  // CLI 인자 템플릿
+  args_template: string[];
+  // 출력 파싱
+  output_mode: 'plain_text' | 'json_field';
+  output_json_content_field?: string;
+  // 스트리밍
+  streaming_enabled: boolean;
+  stream_args_template?: string[];
+  stream_content_field?: string;
+  stream_done_indicator?: string;
+  // 헬스 체크
+  health_check_args?: string[];
+  // 메타
+  display_name: string;
+  description?: string;
+}
+
+export interface GenericProviderInfo {
+  name: string;
+  config: GenericCliProviderConfig;
+}
+
+export function fetchGenericProviders() {
+  return request<GenericProviderInfo[]>('/generic-providers');
+}
+
+export function fetchGenericProvider(name: string) {
+  return request<GenericProviderInfo>(`/generic-providers/${name}`);
+}
+
+export function createGenericProvider(data: { name: string } & GenericCliProviderConfig) {
+  return request<GenericProviderInfo>('/generic-providers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateGenericProvider(name: string, data: Partial<GenericCliProviderConfig>) {
+  return request<GenericProviderInfo>(`/generic-providers/${name}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteGenericProvider(name: string) {
+  return request<{ success: boolean }>(`/generic-providers/${name}`, { method: 'DELETE' });
+}
+
+// 등록 전 커스텀 프로바이더 테스트 (임시 인스턴스로 실행)
+export function testGenericProvider(data: { name?: string } & GenericCliProviderConfig) {
+  return request<ProviderTestResult>('/generic-providers/test', {
+    method: 'POST',
     body: JSON.stringify(data),
   });
 }

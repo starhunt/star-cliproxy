@@ -23,6 +23,10 @@ export class ProviderRegistry {
     return this.providers.has(name);
   }
 
+  unregister(name: string): boolean {
+    return this.providers.delete(name);
+  }
+
   // 프로바이더 설정 조회 (대시보드용)
   getProviderConfig(name: string): ProviderConfigYaml | undefined {
     const provider = this.providers.get(name);

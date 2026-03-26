@@ -26,6 +26,8 @@ import { DebugService } from './services/debug.js';
 import { registerDebugRoutes } from './routes/admin/debug.js';
 import { registerSettingsRoutes, loadValidationFromDb } from './routes/admin/settings.js';
 import { registerExportImportRoutes } from './routes/admin/export-import.js';
+import { registerGenericProviderRoutes } from './routes/admin/generic-providers.js';
+import { loadGenericProviders } from './providers/generic-provider-loader.js';
 import { seedDatabase } from './db/seed.js';
 import { loadPlugins } from './plugins/plugin-loader.js';
 import type { ValidationConfig } from '@star-cliproxy/shared';
@@ -98,6 +100,12 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
       queueManager.addQueue(name, providerConfig.max_concurrent);
     }
   }
+
+  // DB에서 제네릭 프로바이더 로드 및 등록
+  await loadGenericProviders(registry, queueManager, {
+    info: (msg) => console.log(msg),
+    warn: (msg) => console.warn(msg),
+  });
 
   // DB에서 프로바이더 설정 오버라이드 로드 (이전 세션에서 대시보드로 변경한 값)
   for (const provider of registry.getAll()) {
@@ -365,7 +373,9 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
     config,
     registry,
     queueManager,
+    healthChecker,
   });
+  registerGenericProviderRoutes(app, { registry, healthChecker, queueManager });
   registerDashboardRoute(app, { registry, queueManager, activeRequests });
 
   // 활성 요청 API

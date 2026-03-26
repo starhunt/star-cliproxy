@@ -2,8 +2,9 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import type { AppConfig, RateLimitConfig, ValidationConfig, ProviderConfigYaml } from '@star-cliproxy/shared';
+import type { AppConfig, RateLimitConfig, ValidationConfig, ProviderConfigYaml, GenericCliProviderConfig } from '@star-cliproxy/shared';
 import { API_KEY_PREFIX } from '@star-cliproxy/shared';
+import { GenericCliProvider } from '../../providers/generic-cli-provider.js';
 import { getDatabase } from '../../db/client.js';
 import { modelMappings, apiKeys, settings } from '../../db/schema.js';
 import { RateLimiter } from '../../middleware/rate-limiter.js';
@@ -11,10 +12,12 @@ import { hashApiKey, getKeyPrefix } from '../../middleware/auth.js';
 import { loadRateLimitsFromDb } from './rate-limits.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import type { QueueManager } from '../../services/queue.js';
+import type { HealthChecker } from '../../services/health-checker.js';
 
 const RATE_LIMITS_KEY = 'rate_limits';
 const VALIDATION_KEY = 'validation_config';
-const EXPORT_VERSION = 1;
+const GENERIC_PROVIDER_PREFIX = 'generic_provider:';
+const EXPORT_VERSION = 2;
 
 interface ExportImportDeps {
   rateLimiter: RateLimiter;
@@ -24,6 +27,7 @@ interface ExportImportDeps {
   config: AppConfig;
   registry: ProviderRegistry;
   queueManager: QueueManager;
+  healthChecker: HealthChecker;
 }
 
 interface ExportData {
@@ -54,6 +58,7 @@ interface ExportData {
     extra_args: string[];
     working_dir?: string;
   }>;
+  genericProviders?: Record<string, GenericCliProviderConfig>;
 }
 
 interface ImportResult {
@@ -165,6 +170,18 @@ export function registerExportImportRoutes(
       }
     }
 
+    // Generic 프로바이더 (DB에서 조회)
+    const genericProviders: Record<string, GenericCliProviderConfig> = {};
+    const allSettings = await db.select().from(settings);
+    for (const row of allSettings) {
+      if (row.key.startsWith(GENERIC_PROVIDER_PREFIX)) {
+        const name = row.key.replace(GENERIC_PROVIDER_PREFIX, '');
+        try {
+          genericProviders[name] = JSON.parse(row.value) as GenericCliProviderConfig;
+        } catch { /* 파싱 실패 무시 */ }
+      }
+    }
+
     const exportData: ExportData = {
       version: EXPORT_VERSION,
       exportedAt: new Date().toISOString(),
@@ -173,6 +190,7 @@ export function registerExportImportRoutes(
       validation,
       apiKeys: keys,
       providers,
+      ...(Object.keys(genericProviders).length > 0 && { genericProviders }),
     };
 
     return reply.send(exportData);
@@ -182,10 +200,10 @@ export function registerExportImportRoutes(
   app.post<{ Body: ExportData }>('/admin/import', async (request, reply) => {
     const body = request.body;
 
-    // version 검증
-    if (!body.version || body.version !== EXPORT_VERSION) {
+    // version 검증 (v1, v2 모두 허용)
+    if (!body.version || body.version > EXPORT_VERSION) {
       return reply.status(400).send({
-        error: { message: `Unsupported export version: ${body.version}. Expected: ${EXPORT_VERSION}` },
+        error: { message: `Unsupported export version: ${body.version}. Expected: ${EXPORT_VERSION} or lower.` },
       });
     }
 
@@ -340,6 +358,49 @@ export function registerExportImportRoutes(
       }
     }
 
+    // 6. Generic 프로바이더: DB 저장 + 런타임 등록
+    let genericProvidersImported = 0;
+    if (body.genericProviders && typeof body.genericProviders === 'object') {
+      const now = new Date().toISOString();
+      const BUILTIN_NAMES = ['claude', 'codex', 'gemini'];
+
+      for (const [name, genericConfig] of Object.entries(body.genericProviders)) {
+        // 빌트인 이름 충돌 방지
+        if (BUILTIN_NAMES.includes(name)) {
+          skipped.push(`generic provider "${name}" (conflicts with built-in)`);
+          continue;
+        }
+        if (!genericConfig.cli_path) {
+          skipped.push(`generic provider "${name}" (missing cli_path)`);
+          continue;
+        }
+
+        // DB 저장 (upsert)
+        const dbKey = `${GENERIC_PROVIDER_PREFIX}${name}`;
+        const value = JSON.stringify(genericConfig);
+        const existing = await db.select().from(settings).where(eq(settings.key, dbKey)).limit(1);
+
+        if (existing.length === 0) {
+          await db.insert(settings).values({ key: dbKey, value, updatedAt: now });
+        } else {
+          await db.update(settings).set({ value, updatedAt: now }).where(eq(settings.key, dbKey));
+        }
+
+        // 런타임 등록 (기존이면 교체)
+        if (deps.registry.has(name)) {
+          deps.registry.unregister(name);
+        }
+        if (genericConfig.enabled !== false) {
+          const provider = new GenericCliProvider(name, genericConfig);
+          deps.registry.register(provider);
+          deps.queueManager.addQueue(name, genericConfig.max_concurrent);
+          deps.healthChecker.checkProvider(name).catch(() => {});
+        }
+
+        genericProvidersImported++;
+      }
+    }
+
     const result: ImportResult = {
       success: true,
       imported: {
@@ -347,7 +408,7 @@ export function registerExportImportRoutes(
         rateLimits: rateLimitsImported,
         validation: validationImported,
         apiKeys: { created: keysCreated, updated: keysUpdated },
-        providers: providersImported,
+        providers: providersImported + genericProvidersImported,
       },
       skipped,
     };

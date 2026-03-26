@@ -95,6 +95,34 @@ export interface StreamChunk {
 
 export type HealthStatus = 'healthy' | 'unhealthy' | 'unknown';
 
+// Generic CLI 프로바이더 설정 (대시보드에서 커스텀 프로바이더 등록용)
+// ProviderConfigYaml과 동일 구조로 확장 (순환 참조 방지: config.ts가 provider.ts를 이미 import함)
+export interface GenericCliProviderConfig extends PluginProviderConfig {
+  // 프롬프트 전달 방식
+  prompt_mode: 'stdin' | 'arg';
+  prompt_arg_template?: string;  // arg 모드: e.g. ["--", "{prompt}"]
+
+  // CLI 인자 템플릿 - 플레이스홀더: {model}, {prompt}
+  args_template: string[];   // e.g. ["-m", "{model}", "--format", "json"]
+
+  // 출력 파싱
+  output_mode: 'plain_text' | 'json_field';
+  output_json_content_field?: string;   // json_field 모드: "result", "response", etc.
+
+  // 스트리밍
+  streaming_enabled: boolean;
+  stream_args_template?: string[];
+  stream_content_field?: string;   // ndjson content field
+  stream_done_indicator?: string;  // e.g. "[DONE]"
+
+  // 헬스 체크
+  health_check_args?: string[];   // default: ["--version"]
+
+  // 메타
+  display_name: string;
+  description?: string;
+}
+
 export interface ProviderHealthInfo {
   provider: ProviderName;
   status: HealthStatus;
