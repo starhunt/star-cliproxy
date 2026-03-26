@@ -29,6 +29,13 @@ export function convertMessages(messages: ChatMessage[]): ConvertedPrompt {
       conversationParts.push(`<|user|> ${sanitizeDelimiters(content)}`);
     } else if (msg.role === 'assistant') {
       conversationParts.push(`<|assistant|> ${sanitizeDelimiters(content)}`);
+    } else if (msg.role === 'tool') {
+      // tool 결과를 user 메시지로 변환 (CLI 프로바이더는 tool role 미지원)
+      const toolName = msg.name ?? 'tool';
+      conversationParts.push(`<|user|> [Tool result ${sanitizeDelimiters(toolName)}] ${sanitizeDelimiters(content)}`);
+    } else if (msg.role === 'developer') {
+      // developer role은 system과 동일하게 처리
+      systemPrompt = content;
     }
   }
 

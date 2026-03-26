@@ -113,6 +113,11 @@ export function registerChatCompletionsRoute(
           msg.role = 'system';
         }
 
+        // tool 메시지: content가 null/undefined이면 빈 문자열로 정규화
+        if (msg.role === 'tool' && (msg.content === null || msg.content === undefined)) {
+          msg.content = '';
+        }
+
         // content parts 배열 → string으로 정규화
         if (Array.isArray(msg.content)) {
           const textParts: string[] = [];

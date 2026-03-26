@@ -10,8 +10,10 @@ export interface ChatMessageContentPart {
 export type ChatMessageContent = string | ChatMessageContentPart[];
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant' | 'developer';
+  role: 'system' | 'user' | 'assistant' | 'developer' | 'tool';
   content: ChatMessageContent;
+  name?: string;            // tool role: 함수/도구 이름
+  tool_call_id?: string;    // tool role: 연관된 tool_call ID
 }
 
 export interface ChatCompletionRequest {
