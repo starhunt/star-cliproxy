@@ -82,7 +82,7 @@ function normalizeContentBlock(part: unknown): string {
   return stringifyUnknown(block);
 }
 
-function normalizeMessageContent(content: unknown): string | null {
+function normalizeMessageContent(content: unknown): string {
   if (typeof content === 'string') return sanitizeString(content);
   if (Array.isArray(content)) {
     return sanitizeString(content.map((part) => normalizeContentBlock(part)).filter(Boolean).join('\n'));
@@ -90,7 +90,8 @@ function normalizeMessageContent(content: unknown): string | null {
   if (content && typeof content === 'object') {
     return sanitizeString(normalizeContentBlock(content));
   }
-  return null;
+  if (content == null) return '';
+  return sanitizeString(stringifyUnknown(content));
 }
 
 // CLI 에러 메시지에서 내부 정보 제거 (파일 경로, 스택 트레이스 등)
