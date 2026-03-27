@@ -82,6 +82,7 @@ response = client.chat.completions.create(
 git clone https://github.com/starhunt/star-cliproxy.git
 cd star-cliproxy
 npm install
+npm run build
 ```
 
 ### 2. Configuration
