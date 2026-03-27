@@ -1,14 +1,44 @@
-import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } from '@star-cliproxy/shared';
+import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
 import { BaseProvider } from './base-provider.js';
 import { convertMessages } from '../utils/message-converter.js';
+import { executeSdk, executeStreamSdk, type SdkExecutorConfig, type SdkMeta } from './claude-sdk-executor.js';
+import { ClaudeSdkSessionManager } from './claude-sdk-session-manager.js';
 
 export class ClaudeProvider extends BaseProvider {
   readonly name = 'claude' as const;
 
+  // SDK 모드 전용: 세션 매니저 (lazy 초기화)
+  private sessionManager: ClaudeSdkSessionManager | null = null;
+
   constructor(config: ProviderConfigYaml) {
     super(config);
     this.initParser();
+
+    // SDK 모드일 때 세션 매니저 초기화
+    if (this.isSDKMode) {
+      const ttl = config.sdk_options?.session_ttl_ms;
+      this.sessionManager = new ClaudeSdkSessionManager(ttl);
+    }
   }
+
+  private get isSDKMode(): boolean {
+    return this.config.mode === 'sdk';
+  }
+
+  private buildSdkConfig(options: ExecuteOptions, clientKey?: string): SdkExecutorConfig {
+    return {
+      model: options.model || this.config.default_model,
+      sdkOptions: this.config.sdk_options ?? {},
+      workingDir: this.workingDir,
+      timeoutMs: this.config.timeout_ms,
+      cleanEnv: this.getCleanEnv(),
+      cliPath: this.config.cli_path,
+      sessionManager: this.sessionManager ?? undefined,
+      clientKey,
+    };
+  }
+
+  // --- CLI 모드 전용 메서드 (기존 동작 유지) ---
 
   protected override getStdinData(options: ExecuteOptions): string {
     const { userPrompt } = convertMessages(options.messages);
@@ -79,7 +109,76 @@ export class ClaudeProvider extends BaseProvider {
     }
   }
 
-  // 스트리밍: stream-json NDJSON을 readline으로 실시간 파싱
-  // BaseProvider.executeStream()이 readline + parser로 처리하므로 오버라이드 불필요
-  // (buildArgs에서 stream=true일 때 stream-json 포맷 지정)
+  // --- mode 기반 분기 ---
+
+  private sdkDebugArgs(model: string, meta?: SdkMeta): string[] {
+    const args = ['[sdk-mode]', `model=${model}`];
+    if (meta) {
+      args.push(`session=${meta.sessionId ?? 'none'}`);
+      args.push(`reused=${meta.sessionReused}`);
+      if (meta.retried) args.push('retried=true');
+    }
+    return args;
+  }
+
+  override async execute(options: ExecuteOptions): Promise<ExecuteResult> {
+    if (this.isSDKMode) {
+      const result = await executeSdk(options, this.buildSdkConfig(options, options.clientKey));
+      const model = options.model || this.config.default_model;
+      // SDK 모드에서도 onDebug 콜백 호출 (디버그 로그 PENDING 방지)
+      options.onDebug?.({
+        cliArgs: this.sdkDebugArgs(model, result.sdkMeta),
+        stdout: result.content,
+      });
+      return result;
+    }
+    return super.execute(options);
+  }
+
+  override async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
+    if (this.isSDKMode) {
+      const sdkLines: string[] = [];
+      let streamMeta: SdkMeta | undefined;
+      const sdkConfig = this.buildSdkConfig(options, options.clientKey);
+      sdkConfig.onSdkMeta = (meta) => { streamMeta = meta; };
+
+      for await (const chunk of executeStreamSdk(options, sdkConfig)) {
+        if (chunk.type === 'delta' && chunk.content) {
+          sdkLines.push(chunk.content);
+        }
+        yield chunk;
+      }
+      const model = options.model || this.config.default_model;
+      // SDK 모드에서도 onDebug 콜백 호출 (디버그 로그 PENDING 방지)
+      options.onDebug?.({
+        cliArgs: this.sdkDebugArgs(model, streamMeta),
+        streamLines: sdkLines,
+      });
+      return;
+    }
+    yield* super.executeStream(options);
+  }
+
+  override async checkHealth(): Promise<HealthStatus> {
+    // SDK 모드에서도 CLI 바이너리 존재 확인 (SDK가 내부적으로 CLI를 스폰하므로)
+    return super.checkHealth();
+  }
+
+  // 런타임 설정 변경 시 세션 매니저 재초기화
+  override updateConfig(partial: Partial<ProviderConfigYaml>): void {
+    const wasSDKMode = this.isSDKMode;
+    super.updateConfig(partial);
+
+    // CLI → SDK 전환 시 세션 매니저 생성
+    if (!wasSDKMode && this.isSDKMode && !this.sessionManager) {
+      const ttl = this.config.sdk_options?.session_ttl_ms;
+      this.sessionManager = new ClaudeSdkSessionManager(ttl);
+    }
+
+    // SDK → CLI 전환 시 세션 매니저 해제
+    if (wasSDKMode && !this.isSDKMode && this.sessionManager) {
+      this.sessionManager.destroy();
+      this.sessionManager = null;
+    }
+  }
 }

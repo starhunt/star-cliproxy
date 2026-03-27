@@ -376,6 +376,7 @@ export function registerMessagesRoute(
                 temperature: body.temperature,
                 signal: abortController.signal,
                 onDebug,
+                clientKey: apiKeyId,
               });
 
               try {
@@ -491,6 +492,7 @@ export function registerMessagesRoute(
               maxTokens: body.max_tokens,
               temperature: body.temperature,
               onDebug,
+              clientKey: apiKeyId,
             }),
           );
 

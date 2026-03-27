@@ -131,6 +131,33 @@ function buildTerminalCommand(log: { cliArgs: string; provider: string; requestM
   }
 }
 
+// ms를 가독성 좋은 단위로 변환
+function formatLatency(ms: number | null): string {
+  if (ms === null || ms === undefined) return '-';
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const min = Math.floor(ms / 60_000);
+  const sec = Math.round((ms % 60_000) / 1000);
+  return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+}
+
+// cliArgs JSON에서 session= 값 추출
+function extractSessionFromArgs(cliArgs: string | null): { sessionId: string | null; reused: boolean } {
+  if (!cliArgs) return { sessionId: null, reused: false };
+  try {
+    const args = JSON.parse(cliArgs) as string[];
+    let sessionId: string | null = null;
+    let reused = false;
+    for (const arg of args) {
+      if (arg.startsWith('session=')) sessionId = arg.slice(8);
+      if (arg === 'reused=true') reused = true;
+    }
+    return { sessionId: sessionId === 'none' ? null : sessionId, reused };
+  } catch {
+    return { sessionId: null, reused: false };
+  }
+}
+
 export default function DebugPage() {
   const { t } = useTranslation();
   const [config, setConfig] = useState<DebugConfig | null>(null);
@@ -142,6 +169,7 @@ export default function DebugPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [sessionModalId, setSessionModalId] = useState<string | null>(null);
   const PAGE_SIZE = 20;
 
   const loadConfig = useCallback(() => {
@@ -373,6 +401,7 @@ export default function DebugPage() {
             onToggle={() => setExpandedId(expandedId === log.id ? null : log.id)}
             onDelete={() => handleDelete(log.id)}
             onSelect={() => toggleSelect(log.id)}
+            onSessionClick={(sid) => setSessionModalId(sid)}
           />
         ))}
         {logs.length === 0 && (
@@ -388,6 +417,15 @@ export default function DebugPage() {
       {totalPages > 1 && (
         <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
       )}
+
+      {/* 세션 히스토리 모달 */}
+      {sessionModalId && (
+        <SessionModal
+          sessionId={sessionModalId}
+          logs={logs}
+          onClose={() => setSessionModalId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -399,6 +437,7 @@ function DebugLogEntry({
   onToggle,
   onDelete,
   onSelect,
+  onSessionClick,
 }: {
   log: DebugLog;
   expanded: boolean;
@@ -406,6 +445,7 @@ function DebugLogEntry({
   onToggle: () => void;
   onDelete: () => void;
   onSelect: () => void;
+  onSessionClick: (sessionId: string) => void;
 }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -455,10 +495,29 @@ function DebugLogEntry({
         <span className="text-sm font-mono text-blue-600 dark:text-blue-400">{log.modelAlias}</span>
         <span className="text-xs text-gray-400 dark:text-gray-600">-&gt;</span>
         <span className="text-xs font-mono text-gray-500">{log.provider}:{log.actualModel}</span>
+        {/* 세션 배지 (SDK 모드) */}
+        {(() => {
+          const { sessionId, reused } = extractSessionFromArgs(log.cliArgs);
+          if (!sessionId) return null;
+          return (
+            <button
+              onClick={(e) => { e.stopPropagation(); onSessionClick(sessionId); }}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                reused
+                  ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-500/25'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+              title={`Session: ${sessionId}`}
+            >
+              <span className={`w-1 h-1 rounded-full ${reused ? 'bg-purple-500' : 'bg-gray-400'}`} />
+              {sessionId.slice(0, 8)}
+            </button>
+          );
+        })()}
         <span className="text-xs text-gray-400 dark:text-gray-600 ml-auto">
           {log.isStream ? 'stream' : 'sync'}
         </span>
-        <span className="text-xs text-gray-400 dark:text-gray-500">{log.latencyMs}ms</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">{formatLatency(log.latencyMs)}</span>
         <span className="text-xs text-gray-400 dark:text-gray-600">{dataSize}</span>
         <span className="text-xs text-gray-400 dark:text-gray-600">{time}</span>
         {log.cliArgs && (
@@ -595,6 +654,146 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
+// 세션 히스토리 모달: 동일 세션 ID를 가진 로그를 시간순으로 표시
+function SessionModal({ sessionId, logs, onClose }: {
+  sessionId: string;
+  logs: DebugLog[];
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+
+  // 현재 페이지 로그에서 동일 세션 필터
+  const sessionLogs = logs
+    .filter((log) => {
+      const { sessionId: sid } = extractSessionFromArgs(log.cliArgs);
+      return sid === sessionId;
+    })
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  const statusColor = (status: string) =>
+    status === 'success'
+      ? 'text-green-500 dark:text-green-400'
+      : status === 'pending'
+        ? 'text-blue-500 dark:text-blue-400'
+        : status === 'timeout'
+          ? 'text-yellow-500 dark:text-yellow-400'
+          : 'text-red-500 dark:text-red-400';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 헤더 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {t('debug.sessionHistory')}
+            </h3>
+            <p className="text-[10px] font-mono text-purple-600 dark:text-purple-400 mt-0.5">
+              {sessionId}
+            </p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-0.5">
+              {t('debug.sessionRequests').replace('{count}', String(sessionLogs.length))}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* 로그 목록 */}
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+          {sessionLogs.length === 0 ? (
+            <p className="text-xs text-gray-400 dark:text-gray-600 text-center py-8">
+              현재 페이지에 이 세션의 로그가 없습니다.
+            </p>
+          ) : (
+            sessionLogs.map((log, idx) => {
+              const { reused } = extractSessionFromArgs(log.cliArgs);
+              return (
+                <div key={log.id} className="flex items-start gap-3 group">
+                  {/* 타임라인 */}
+                  <div className="flex flex-col items-center pt-1">
+                    <span className={`w-2.5 h-2.5 rounded-full border-2 ${
+                      log.status === 'success'
+                        ? 'border-green-500 bg-green-100 dark:bg-green-500/20'
+                        : log.status === 'pending'
+                          ? 'border-blue-500 bg-blue-100 dark:bg-blue-500/20 animate-pulse'
+                          : 'border-red-500 bg-red-100 dark:bg-red-500/20'
+                    }`} />
+                    {idx < sessionLogs.length - 1 && (
+                      <div className="w-px flex-1 bg-gray-200 dark:bg-gray-700 mt-1" />
+                    )}
+                  </div>
+                  {/* 내용 */}
+                  <div className="flex-1 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-bold font-mono ${statusColor(log.status)}`}>
+                        {log.status.toUpperCase()}
+                      </span>
+                      <span className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                        {log.modelAlias}
+                      </span>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-600">
+                        {log.isStream ? 'stream' : 'sync'}
+                      </span>
+                      <span className={`text-[10px] px-1 py-0.5 rounded ${
+                        reused
+                          ? 'bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {reused ? t('debug.sessionReused') : t('debug.sessionNew')}
+                      </span>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-auto">
+                        {formatLatency(log.latencyMs)}
+                      </span>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-600">
+                        {formatTime(log.createdAt)}
+                      </span>
+                    </div>
+                    {log.parsedContent && (
+                      <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                        {log.parsedContent.slice(0, 200)}{log.parsedContent.length > 200 ? '...' : ''}
+                      </p>
+                    )}
+                    {log.tokenUsage && (() => {
+                      try {
+                        const u = JSON.parse(log.tokenUsage);
+                        return (
+                          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-0.5">
+                            {u.promptTokens} in / {u.completionTokens} out
+                          </p>
+                        );
+                      } catch { return null; }
+                    })()}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* 푸터 */}
+        <div className="px-5 py-3 border-t border-gray-200 dark:border-gray-800 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded-lg text-xs text-gray-700 dark:text-gray-300 transition-colors"
+          >
+            {t('debug.closeModal')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToggleSwitch({
   enabled,
   onToggle,
@@ -658,7 +857,7 @@ function exportDebugLog(log: DebugLog): void {
   sections.push(`Model      : ${log.modelAlias} -> ${log.provider}:${log.actualModel}`);
   sections.push(`Status     : ${log.status.toUpperCase()}`);
   sections.push(`Mode       : ${log.isStream ? 'stream' : 'sync'}`);
-  sections.push(`Latency    : ${log.latencyMs}ms`);
+  sections.push(`Latency    : ${formatLatency(log.latencyMs)} (${log.latencyMs}ms)`);
   sections.push(`Time       : ${log.createdAt}`);
   if (log.errorMessage) {
     sections.push(`Error      : ${log.errorMessage}`);
