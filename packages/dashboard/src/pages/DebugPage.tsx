@@ -112,8 +112,12 @@ function buildTerminalCommand(log: { cliArgs: string; provider: string; requestM
     }
 
     if (provider === 'codex') {
-      // Codex: 프롬프트가 args에 직접 포함됨
-      return cmdArgs.map(escapeShellArg).join(' ');
+      // Codex: stdin으로 프롬프트 전달 (- 플래그)
+      const cmd = cmdArgs.map(escapeShellArg).join(' ');
+      if (messages) {
+        return wrapWithStdinPipe(rebuildSinglePrompt(messages), cmd);
+      }
+      return cmd;
     }
 
     // 기타 프로바이더
