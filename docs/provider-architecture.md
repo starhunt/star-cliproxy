@@ -8,16 +8,37 @@ star-cliproxy는 CLI 도구(Claude, Codex, Gemini)를 spawn하여 OpenAI 호환 
 
 ### Claude Provider (`claude-provider.ts`)
 
+Claude 프로바이더는 두 가지 실행 모드를 지원합니다:
+
+#### CLI 모드 (기본)
+
 | 항목 | 설명 |
 |------|------|
 | CLI | `claude` |
 | 출력 모드 | `--output-format json` (단일 JSON 객체) |
 | 파싱 | `JSON.parse(stdout)` → `data.result` 추출 |
 | 줄바꿈 | JSON 내부에 `\n`이 `\\n`으로 이스케이프 → `JSON.parse`가 자동 복원. **문제 없음** |
-| 스트리밍 | non-streaming 결과를 20자 청크로 시뮬레이트 |
+| 스트리밍 | `--output-format stream-json --verbose` → NDJSON 라인별 파싱 |
 | 특이사항 | `--max-tokens` CLI 옵션 미지원 (API 전용) |
 
 **핵심**: Claude CLI의 `json` 포맷은 전체 응답을 하나의 JSON 객체로 출력하므로 줄바꿈이 완벽히 보존됩니다.
+
+#### SDK 모드 (`mode: "sdk"`)
+
+| 항목 | 설명 |
+|------|------|
+| SDK | `@anthropic-ai/claude-agent-sdk` |
+| 실행 | `query({ prompt, options })` → `AsyncGenerator<SDKMessage>` |
+| 파싱 | `assistant` 메시지 → 텍스트 추출, `result` 메시지 → usage 추출 |
+| 스트리밍 | `stream_event` (content_block_delta) → 실시간 delta |
+| 세션 | `ClaudeSdkSessionManager`가 클라이언트별 세션 추적, TTL 기반 자동 정리 |
+| 에러 복구 | 세션 만료/크래시 시 cold-start fallback (1회 재시도) |
+
+**핵심**: SDK도 내부적으로 CLI를 서브프로세스로 스폰하지만, 세션 재사용과 세밀한 도구/예산 제어가 가능합니다.
+
+**관련 파일**:
+- `claude-sdk-executor.ts` — SDK query 호출, 메시지→StreamChunk 매핑
+- `claude-sdk-session-manager.ts` — 세션 생명주기 관리
 
 ### Codex Provider (`codex-provider.ts`)
 

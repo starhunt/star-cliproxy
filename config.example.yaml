@@ -30,6 +30,16 @@ providers:
       - "--permission-mode"
       - "bypassPermissions"
     # working_dir: "/path/to/project"  # CLI 작업 디렉토리 (기본: 시스템 temp)
+    # mode: "sdk"                      # 실행 모드: 'cli' (기본) | 'sdk' (Agent SDK 사용)
+    # sdk_options:                     # mode: 'sdk'일 때만 적용
+    #   max_turns: 5                   # 최대 에이전트 턴 수
+    #   permission_mode: "bypassPermissions"  # 권한 모드
+    #   allowed_tools: []              # 자동 승인 도구 목록
+    #   disallowed_tools: []           # 차단 도구 목록
+    #   max_budget_usd: 1.0            # 요청당 최대 비용 (USD)
+    #   session_ttl_ms: 1800000        # 세션 TTL (기본 30분)
+    #   enable_session_reuse: true     # 세션 재사용 활성화
+    #   persist_session: false         # 디스크 세션 저장
 
   codex:
     enabled: true

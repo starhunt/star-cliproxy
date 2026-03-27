@@ -186,6 +186,12 @@ export const translations: Record<Lang, Record<string, string>> = {
     'debug.requestId': 'Request ID',
     'debug.copyCommand': 'Copy command',
     'debug.copied': 'Copied!',
+    'debug.sessionHistory': 'Session History',
+    'debug.sessionId': 'Session',
+    'debug.sessionReused': 'reused',
+    'debug.sessionNew': 'new',
+    'debug.sessionRequests': '{count} requests in this session',
+    'debug.closeModal': 'Close',
 
     // 설정
     'settings.title': 'Settings',
@@ -269,6 +275,17 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.editGuideTitle': 'Custom Provider Settings',
     'providers.editGuideDesc': 'Changes to CLI arguments, prompt mode, or output mode will re-register the provider.',
     'providers.genericSettings': 'Generic CLI Settings',
+    'providers.executionMode': 'Execution Mode',
+    'providers.modeCli': 'CLI',
+    'providers.modeSdk': 'Agent SDK',
+    'providers.sdkOptions': 'Agent SDK Options',
+    'providers.sdkMaxTurns': 'Max Turns',
+    'providers.sdkPermissionMode': 'Permission Mode',
+    'providers.sdkMaxBudgetUsd': 'Max Budget (USD)',
+    'providers.sdkSessionTtl': 'Session TTL (ms)',
+    'providers.sdkSessionReuse': 'Session Reuse',
+    'providers.sdkPersistSession': 'Persist Session',
+    'providers.sdkNote': 'Requires @anthropic-ai/claude-agent-sdk package',
 
     // 플레이그라운드
     'playground.title': 'Playground',
@@ -535,6 +552,12 @@ export const translations: Record<Lang, Record<string, string>> = {
     'debug.requestId': '요청 ID',
     'debug.copyCommand': '명령 복사',
     'debug.copied': '복사됨!',
+    'debug.sessionHistory': '세션 히스토리',
+    'debug.sessionId': '세션',
+    'debug.sessionReused': '재사용',
+    'debug.sessionNew': '신규',
+    'debug.sessionRequests': '이 세션의 요청 {count}건',
+    'debug.closeModal': '닫기',
 
     // 설정
     'settings.title': '설정',
@@ -618,6 +641,17 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.editGuideTitle': '커스텀 프로바이더 설정',
     'providers.editGuideDesc': 'CLI 인자, 프롬프트 전달 방식, 출력 모드 변경 시 프로바이더가 재등록됩니다.',
     'providers.genericSettings': 'Generic CLI 설정',
+    'providers.executionMode': '실행 모드',
+    'providers.modeCli': 'CLI',
+    'providers.modeSdk': 'Agent SDK',
+    'providers.sdkOptions': 'Agent SDK 옵션',
+    'providers.sdkMaxTurns': '최대 턴 수',
+    'providers.sdkPermissionMode': '권한 모드',
+    'providers.sdkMaxBudgetUsd': '최대 비용 (USD)',
+    'providers.sdkSessionTtl': '세션 TTL (ms)',
+    'providers.sdkSessionReuse': '세션 재사용',
+    'providers.sdkPersistSession': '세션 저장',
+    'providers.sdkNote': '@anthropic-ai/claude-agent-sdk 패키지 필요',
 
     // 플레이그라운드
     'playground.title': '플레이그라운드',

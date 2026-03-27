@@ -70,6 +70,7 @@ export interface ExecuteOptions {
   temperature?: number;
   signal?: AbortSignal;
   onDebug?: (info: DebugCaptureInfo) => void;
+  clientKey?: string;  // 세션 재사용용 클라이언트 식별자 (API key ID 등)
 }
 
 export interface ExecuteResult {

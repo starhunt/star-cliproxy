@@ -260,6 +260,17 @@ export function triggerHealthCheck(name: string) {
 }
 
 // Provider Config (런타임 설정)
+export interface ClaudeSdkOptions {
+  max_turns?: number;
+  permission_mode?: string;
+  allowed_tools?: string[];
+  disallowed_tools?: string[];
+  max_budget_usd?: number;
+  session_ttl_ms?: number;
+  enable_session_reuse?: boolean;
+  persist_session?: boolean;
+}
+
 export interface ProviderConfig {
   enabled: boolean;
   cli_path: string;
@@ -268,6 +279,8 @@ export interface ProviderConfig {
   timeout_ms: number;
   extra_args: string[];
   working_dir?: string;
+  mode?: 'cli' | 'sdk';
+  sdk_options?: ClaudeSdkOptions;
 }
 
 export interface ProviderTestResult {

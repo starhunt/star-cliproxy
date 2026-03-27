@@ -33,6 +33,7 @@ response = client.chat.completions.create(
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/images/generations`, and `/v1/models` endpoints
 - **Anthropic Messages API** — `/v1/messages` endpoint for native Claude Code / Anthropic SDK support
 - **Three CLI providers** — Claude Code, Codex, Gemini CLI
+- **Claude Agent SDK mode** — optional SDK execution for Claude provider with session reuse, fine-grained tool control, and budget limits
 - **Plugin system** — extend with custom providers without modifying the main codebase (see [Plugin Guide](./plugins/README.md))
 - **Image generation API** — `/v1/images/generations` endpoint (OpenAI Images API compatible)
 - **Endpoint types** — providers declare supported types (`chat`, `images`, `tts`, `embeddings`)
@@ -272,6 +273,13 @@ providers:
       - "--no-session-persistence"
       - "--permission-mode"
       - "bypassPermissions"
+    # mode: "sdk"              # "cli" (default) or "sdk" (Agent SDK)
+    # sdk_options:             # only used when mode is "sdk"
+    #   max_turns: 5
+    #   permission_mode: "bypassPermissions"
+    #   enable_session_reuse: true
+    #   session_ttl_ms: 1800000
+    #   max_budget_usd: 1.0
   codex:
     enabled: true
     cli_path: "codex"
@@ -418,6 +426,59 @@ See [plugins/README.md](./plugins/README.md) for the full plugin development gui
 - **Schema** — no column changes to existing tables, so no migration is needed
 - **Clean start** — delete `data/cliproxy.db` and restart to start fresh
 - **Config** — `config.yaml` is in `.gitignore`, so `git pull` will never overwrite it; new config fields fall back to defaults
+
+## Claude Agent SDK Mode
+
+The Claude provider supports an optional **Agent SDK mode** (`mode: "sdk"`) as an alternative to spawning the CLI directly. This uses the [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) package.
+
+### Why use SDK mode?
+
+| | CLI mode (default) | SDK mode |
+|---|---|---|
+| **Session** | Fresh process per request | Reusable sessions (configurable TTL) |
+| **Streaming** | NDJSON line parsing | Native async generator with partial messages |
+| **Tool control** | Via `extra_args` | `allowed_tools`, `disallowed_tools`, `canUseTool` |
+| **Budget** | Not available | `max_budget_usd` per request |
+| **Overhead** | ~50-100ms spawn per request | Same for first request, reused thereafter |
+
+### Setup
+
+1. Install the SDK (already included as a dependency):
+   ```bash
+   npm install
+   ```
+
+2. Set `mode: "sdk"` in `config.yaml`:
+   ```yaml
+   providers:
+     claude:
+       enabled: true
+       cli_path: "claude"
+       mode: "sdk"
+       sdk_options:
+         max_turns: 5
+         permission_mode: "bypassPermissions"
+         enable_session_reuse: true
+         session_ttl_ms: 1800000    # 30 minutes
+         max_budget_usd: 1.0        # optional cost cap
+   ```
+
+3. Or toggle it from the **Dashboard → Providers → Claude → Execution Mode**.
+
+### SDK Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `max_turns` | `5` | Maximum agent turns per request |
+| `permission_mode` | `bypassPermissions` | Tool permission policy |
+| `allowed_tools` | `[]` | Auto-approved tool list |
+| `disallowed_tools` | `[]` | Blocked tool list |
+| `max_budget_usd` | — | Per-request cost cap (USD) |
+| `session_ttl_ms` | `1800000` | Session lifetime (30 min) |
+| `enable_session_reuse` | `true` | Reuse sessions across requests |
+| `persist_session` | `false` | Save sessions to disk |
+
+> **Note:** The SDK internally spawns the Claude Code CLI as a subprocess. The `cli_path` setting is still used to locate the binary. Both modes produce identical OpenAI-compatible API responses.
 
 ## Known Limitations
 

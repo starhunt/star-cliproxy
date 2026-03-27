@@ -170,6 +170,19 @@ function mergeProviderConfig(
   const defaults = defaultProviderConfig(cliPath, defaultModel);
   if (!raw) return defaults;
 
+  // SDK 옵션 파싱
+  const rawSdkOptions = raw.sdk_options as Record<string, unknown> | undefined;
+  const sdkOptions = rawSdkOptions ? {
+    max_turns: rawSdkOptions.max_turns as number | undefined,
+    permission_mode: rawSdkOptions.permission_mode as string | undefined,
+    allowed_tools: rawSdkOptions.allowed_tools as string[] | undefined,
+    disallowed_tools: rawSdkOptions.disallowed_tools as string[] | undefined,
+    max_budget_usd: rawSdkOptions.max_budget_usd as number | undefined,
+    session_ttl_ms: rawSdkOptions.session_ttl_ms as number | undefined,
+    enable_session_reuse: rawSdkOptions.enable_session_reuse as boolean | undefined,
+    persist_session: rawSdkOptions.persist_session as boolean | undefined,
+  } : undefined;
+
   return {
     enabled: (raw.enabled as boolean) ?? defaults.enabled,
     cli_path: (raw.cli_path as string) ?? defaults.cli_path,
@@ -178,5 +191,7 @@ function mergeProviderConfig(
     timeout_ms: (raw.timeout_ms as number) ?? defaults.timeout_ms,
     extra_args: (raw.extra_args as string[]) ?? defaults.extra_args,
     working_dir: (raw.working_dir as string) ?? undefined,
+    mode: (raw.mode as 'cli' | 'sdk') ?? undefined,
+    sdk_options: sdkOptions,
   };
 }

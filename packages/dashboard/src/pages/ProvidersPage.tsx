@@ -14,6 +14,7 @@ import {
   type ProviderConfig,
   type ProviderTestResult,
   type GenericCliProviderConfig,
+  type ClaudeSdkOptions,
 } from '../api/client';
 
 // 빌트인 프로바이더 목록
@@ -463,6 +464,11 @@ export default function ProvidersPage() {
                       placeholder="--flag1&#10;--flag2=value"
                     />
                   </div>
+
+                  {/* Claude 프로바이더 전용: SDK 모드 설정 */}
+                  {info.name === 'claude' && (
+                    <ClaudeSdkSettings draft={draft} setDraft={setDraft} setMessage={setMessage} t={t} />
+                  )}
 
                   {/* Generic 프로바이더 전용 필드 */}
                   {genericProviderNames.has(info.name) && (
@@ -972,6 +978,151 @@ function AddProviderForm({
           {t('common.cancel')}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Claude 프로바이더 전용: SDK 모드 설정 섹션
+function ClaudeSdkSettings({ draft, setDraft, setMessage, t }: {
+  draft: Partial<ProviderConfig>;
+  setDraft: React.Dispatch<React.SetStateAction<Partial<ProviderConfig>>>;
+  setMessage: React.Dispatch<React.SetStateAction<{ type: 'success' | 'error'; text: string } | null>>;
+  t: (key: string) => string;
+}) {
+  const isSDKMode = draft.mode === 'sdk';
+  const sdkOpts = draft.sdk_options ?? {};
+
+  const updateSdkOption = (key: keyof ClaudeSdkOptions, value: unknown) => {
+    setDraft((prev) => ({
+      ...prev,
+      sdk_options: { ...prev.sdk_options, [key]: value },
+    }));
+    setMessage(null);
+  };
+
+  const labelCls = 'text-xs text-gray-500 dark:text-gray-400 block mb-1.5';
+  const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200';
+
+  return (
+    <div className="space-y-4 border-t border-dashed border-gray-300 dark:border-gray-700 pt-4">
+      {/* 실행 모드 토글 */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            {t('providers.executionMode')}
+          </p>
+          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-0.5">
+            {t('providers.sdkNote')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-medium ${!isSDKMode ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-600'}`}>
+            {t('providers.modeCli')}
+          </span>
+          <button
+            onClick={() => {
+              setDraft((prev) => ({ ...prev, mode: isSDKMode ? 'cli' : 'sdk' }));
+              setMessage(null);
+            }}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              isSDKMode ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                isSDKMode ? 'translate-x-4' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+          <span className={`text-xs font-medium ${isSDKMode ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-600'}`}>
+            {t('providers.modeSdk')}
+          </span>
+        </div>
+      </div>
+
+      {/* SDK 옵션 (SDK 모드일 때만 표시) */}
+      {isSDKMode && (
+        <div className="space-y-3 pl-3 border-l-2 border-purple-300 dark:border-purple-600/40">
+          <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+            {t('providers.sdkOptions')}
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>{t('providers.sdkMaxTurns')}</label>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={sdkOpts.max_turns ?? 5}
+                onChange={(e) => updateSdkOption('max_turns', parseInt(e.target.value) || 5)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.sdkPermissionMode')}</label>
+              <select
+                value={sdkOpts.permission_mode ?? 'bypassPermissions'}
+                onChange={(e) => updateSdkOption('permission_mode', e.target.value)}
+                className={inputCls}
+              >
+                <option value="default">default</option>
+                <option value="acceptEdits">acceptEdits</option>
+                <option value="bypassPermissions">bypassPermissions</option>
+                <option value="plan">plan</option>
+                <option value="dontAsk">dontAsk</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.sdkMaxBudgetUsd')}</label>
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                value={sdkOpts.max_budget_usd ?? ''}
+                onChange={(e) => updateSdkOption('max_budget_usd', e.target.value ? parseFloat(e.target.value) : undefined)}
+                placeholder="unlimited"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>
+                {t('providers.sdkSessionTtl')}
+                {sdkOpts.session_ttl_ms ? (
+                  <span className="text-gray-400 dark:text-gray-600 ml-1">
+                    ({(sdkOpts.session_ttl_ms / 60000).toFixed(0)}min)
+                  </span>
+                ) : null}
+              </label>
+              <input
+                type="number"
+                min="60000"
+                step="60000"
+                value={sdkOpts.session_ttl_ms ?? 1800000}
+                onChange={(e) => updateSdkOption('session_ttl_ms', parseInt(e.target.value) || 1800000)}
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+              <ToggleSwitch
+                enabled={sdkOpts.enable_session_reuse !== false}
+                onToggle={() => updateSdkOption('enable_session_reuse', sdkOpts.enable_session_reuse === false)}
+              />
+              {t('providers.sdkSessionReuse')}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+              <ToggleSwitch
+                enabled={sdkOpts.persist_session === true}
+                onToggle={() => updateSdkOption('persist_session', !sdkOpts.persist_session)}
+              />
+              {t('providers.sdkPersistSession')}
+            </label>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

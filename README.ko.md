@@ -33,6 +33,7 @@ response = client.chat.completions.create(
 - **OpenAI 호환 API** — `/v1/chat/completions`, `/v1/images/generations`, `/v1/models` 엔드포인트
 - **Anthropic Messages API** — `/v1/messages` 엔드포인트로 Claude Code / Anthropic SDK 네이티브 지원
 - **3개 CLI Provider 지원** — Claude Code, Codex, Gemini CLI
+- **Claude Agent SDK 모드** — Claude 프로바이더의 선택적 SDK 실행 모드 (세션 재사용, 도구 제어, 비용 제한)
 - **플러그인 시스템** — 메인 코드 수정 없이 커스텀 프로바이더 추가 가능 ([플러그인 가이드](./plugins/README.md))
 - **이미지 생성 API** — `/v1/images/generations` 엔드포인트 (OpenAI Images API 호환)
 - **엔드포인트 타입** — 프로바이더가 지원 타입 선언 (`chat`, `images`, `tts`, `embeddings`)
@@ -272,6 +273,13 @@ providers:
       - "--no-session-persistence"
       - "--permission-mode"
       - "bypassPermissions"
+    # mode: "sdk"              # "cli" (기본) | "sdk" (Agent SDK 사용)
+    # sdk_options:             # mode: "sdk"일 때만 적용
+    #   max_turns: 5
+    #   permission_mode: "bypassPermissions"
+    #   enable_session_reuse: true
+    #   session_ttl_ms: 1800000
+    #   max_budget_usd: 1.0
   codex:
     enabled: true
     cli_path: "codex"
@@ -418,6 +426,59 @@ star-cliproxy/
 - **스키마** — 기존 테이블에 컬럼 변경이 없으므로 마이그레이션이 필요 없습니다
 - **초기화** — `data/cliproxy.db`를 삭제 후 재시작하면 깨끗하게 시작할 수 있습니다
 - **설정** — `config.yaml`은 `.gitignore`에 포함되어 `git pull` 시 덮어쓰지 않습니다. 새 설정 필드는 기본값으로 폴백됩니다
+
+## Claude Agent SDK 모드
+
+Claude 프로바이더는 CLI 직접 실행 대신 **Agent SDK 모드** (`mode: "sdk"`)를 선택할 수 있습니다. [`@anthropic-ai/claude-agent-sdk`](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) 패키지를 사용합니다.
+
+### CLI vs SDK 비교
+
+| | CLI 모드 (기본) | SDK 모드 |
+|---|---|---|
+| **세션** | 요청마다 새 프로세스 | 세션 재사용 (TTL 설정 가능) |
+| **스트리밍** | NDJSON 라인 파싱 | 네이티브 async generator + 부분 메시지 |
+| **도구 제어** | `extra_args`로 간접 전달 | `allowed_tools`, `disallowed_tools` 직접 지정 |
+| **비용 제한** | 미지원 | `max_budget_usd`로 요청당 비용 제한 |
+| **오버헤드** | 요청당 ~50-100ms 스폰 | 첫 요청만 스폰, 이후 재사용 |
+
+### 설정 방법
+
+1. 의존성은 이미 포함되어 있습니다:
+   ```bash
+   npm install
+   ```
+
+2. `config.yaml`에서 `mode: "sdk"` 설정:
+   ```yaml
+   providers:
+     claude:
+       enabled: true
+       cli_path: "claude"
+       mode: "sdk"
+       sdk_options:
+         max_turns: 5
+         permission_mode: "bypassPermissions"
+         enable_session_reuse: true
+         session_ttl_ms: 1800000    # 30분
+         max_budget_usd: 1.0        # 요청당 비용 제한 (선택)
+   ```
+
+3. 또는 **대시보드 → Providers → Claude → Execution Mode**에서 토글로 변경 가능.
+
+### SDK 옵션
+
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `max_turns` | `5` | 요청당 최대 에이전트 턴 수 |
+| `permission_mode` | `bypassPermissions` | 도구 권한 정책 |
+| `allowed_tools` | `[]` | 자동 승인 도구 목록 |
+| `disallowed_tools` | `[]` | 차단 도구 목록 |
+| `max_budget_usd` | — | 요청당 최대 비용 (USD) |
+| `session_ttl_ms` | `1800000` | 세션 유지 시간 (30분) |
+| `enable_session_reuse` | `true` | 요청 간 세션 재사용 |
+| `persist_session` | `false` | 세션을 디스크에 저장 |
+
+> **참고:** SDK도 내부적으로 Claude Code CLI를 서브프로세스로 스폰합니다. `cli_path` 설정은 그대로 사용됩니다. 두 모드 모두 동일한 OpenAI 호환 API 응답을 생성합니다.
 
 ## Known Limitations
 
