@@ -9,7 +9,7 @@
 
 ### 1.1 Problem
 
-Claude Max, ChatGPT Pro, Google AI Studio Pro 구독을 보유하고 있지만, 로컬 개발 환경에서 문서 요약/정리 등 LLM 기능이 필요할 때 별도 API 비용이 발생한다. 각 구독에는 CLI 도구(Claude Code, Codex, Gemini CLI)가 포함되어 있으므로, 이를 활용하면 추가 비용 없이 API 호출이 가능하다.
+Claude Max, ChatGPT Pro, GitHub Copilot, Google AI Studio Pro 구독을 보유하고 있지만, 로컬 개발 환경에서 문서 요약/정리 등 LLM 기능이 필요할 때 별도 API 비용이 발생한다. 각 구독에는 CLI 도구(Claude Code, Codex, Copilot CLI, Gemini CLI)가 포함되어 있으므로, 이를 활용하면 추가 비용 없이 API 호출이 가능하다.
 
 ### 1.2 Solution
 
@@ -20,7 +20,7 @@ CLI 도구를 서브프로세스로 호출하여 OpenAI-compatible API를 제공
 | 항목 | 설명 |
 |------|------|
 | **비용 절감** | 구독료 내에서 API 호출, 추가 비용 없음 |
-| **통합 인터페이스** | 3개 provider를 하나의 OpenAI-compatible API로 통합 |
+| **통합 인터페이스** | 4개 provider를 하나의 OpenAI-compatible API로 통합 |
 | **유연한 라우팅** | 모델 매핑 + 자동 폴백으로 가용성 극대화 |
 | **모니터링** | 대시보드로 사용량, 건강상태, 로그 실시간 확인 |
 
@@ -29,7 +29,7 @@ CLI 도구를 서브프로세스로 호출하여 OpenAI-compatible API를 제공
 ## 2. Target Users
 
 - 로컬 개발 환경에서 LLM API가 필요한 개인 개발자
-- AI 구독(Claude Max, ChatGPT Pro, Google AI Studio Pro)을 보유한 사용자
+- AI 구독(Claude Max, ChatGPT Pro, GitHub Copilot, Google AI Studio Pro)을 보유한 사용자
 - OpenAI SDK 기반 도구/스크립트를 사용하는 사용자
 
 ---
@@ -74,14 +74,14 @@ CLI 도구를 서브프로세스로 호출하여 OpenAI-compatible API를 제공
                     │  ┌───────────▼─────────────┐ │
                     │  │   Router (Model Mapping) │ │
                     │  │   + Fallback Logic       │ │
-                    │  └───┬───────┬─────────┬───┘ │
-                    │      │       │         │     │
-                    │  ┌───▼──┐┌───▼──┐┌─────▼──┐ │
-                    │  │Claude││Codex ││Gemini  │ │
-                    │  │Provdr││Provdr││Provider│ │
-                    │  └───┬──┘└───┬──┘└────┬───┘ │
-                    │      │       │        │      │
-                    │  ┌───▼───────▼────────▼───┐ │
+                    │  └──┬─────┬──────┬──────┬──┘ │
+                    │     │     │      │      │    │
+                    │  ┌──▼─┐┌──▼─┐┌───▼──┐┌──▼─┐ │
+                    │  │Clau││Code││Copil.││Gemi│ │
+                    │  │de  ││x   ││      ││ni  │ │
+                    │  └──┬─┘└──┬─┘└───┬──┘└──┬─┘ │
+                    │     │     │      │      │    │
+                    │  ┌──▼─────▼──────▼──────▼─┐ │
                     │  │    Queue Manager        │ │
                     │  │  (per-provider 동시성)   │ │
                     │  └────────────────────────┘ │
@@ -93,13 +93,13 @@ CLI 도구를 서브프로세스로 호출하여 OpenAI-compatible API를 제공
                     │      └─────────────┘         │
                     └──────────────────────────────┘
                                   │
-              ┌───────────────────┼───────────────────┐
-              │                   │                   │
-      ┌───────▼───────┐  ┌───────▼───────┐  ┌───────▼───────┐
-      │  claude -p     │  │  codex exec   │  │  gemini -p    │
-      │  --output-fmt  │  │               │  │  -o json      │
-      │  stream-json   │  │               │  │               │
-      └───────────────┘  └───────────────┘  └───────────────┘
+         ┌──────────────┬──────┼──────┬──────────────┐
+         │              │      │      │              │
+ ┌───────▼──────┐┌──────▼──────┐┌─────▼──────┐┌─────▼──────┐
+ │ claude -p    ││ codex exec  ││ copilot -p ││ gemini -p  │
+ │ --output-fmt ││             ││ -s         ││ -o json    │
+ │ stream-json  ││             ││            ││            │
+ └──────────────┘└─────────────┘└────────────┘└────────────┘
 
                     ┌─────────────────────────────┐
                     │   Dashboard UI (:5300)        │
@@ -345,7 +345,7 @@ CREATE TABLE api_keys (
 CREATE TABLE model_mappings (
   id TEXT PRIMARY KEY,
   alias TEXT NOT NULL,                -- 클라이언트 요청 모델명
-  provider TEXT NOT NULL,             -- "claude" | "codex" | "gemini"
+  provider TEXT NOT NULL,             -- "claude" | "codex" | "copilot" | "gemini"
   actual_model TEXT NOT NULL,         -- CLI에 전달할 실제 모델명
   display_name TEXT,
   priority INTEGER DEFAULT 0,        -- 폴백 우선순위 (낮을수록 우선)

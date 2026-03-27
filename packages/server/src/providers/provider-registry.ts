@@ -2,6 +2,7 @@ import type { ProviderConfigYaml } from '@star-cliproxy/shared';
 import type { BaseProvider } from './base-provider.js';
 import { ClaudeProvider } from './claude-provider.js';
 import { CodexProvider } from './codex-provider.js';
+import { CopilotProvider } from './copilot-provider.js';
 import { GeminiProvider } from './gemini-provider.js';
 
 export class ProviderRegistry {
@@ -75,6 +76,7 @@ type ProviderFactory = (config: ProviderConfigYaml) => BaseProvider;
 const builtinFactories: Record<string, ProviderFactory> = {
   claude: (config) => new ClaudeProvider(config),
   codex: (config) => new CodexProvider(config),
+  copilot: (config) => new CopilotProvider(config),
   gemini: (config) => new GeminiProvider(config),
 };
 

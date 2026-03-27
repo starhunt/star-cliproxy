@@ -22,7 +22,7 @@ export default function ModelMappingsPage() {
   const [testResult, setTestResult] = useState<TestModelResult | null>(null);
   const [rowTesting, setRowTesting] = useState<string | null>(null);
   const [rowTestResult, setRowTestResult] = useState<{ id: string; result: TestModelResult } | null>(null);
-  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'gemini']);
+  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini']);
 
   // AbortController refs
   const formTestAbortRef = useRef<AbortController | null>(null);

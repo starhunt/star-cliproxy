@@ -41,6 +41,7 @@ function defaultProviderConfig(cliPath: string, defaultModel: string): ProviderC
 const BUILTIN_DEFAULTS: Record<string, { cliPath: string; defaultModel: string }> = {
   claude: { cliPath: 'claude', defaultModel: 'claude-sonnet-4-6' },
   codex: { cliPath: 'codex', defaultModel: '' },
+  copilot: { cliPath: 'copilot', defaultModel: 'claude-sonnet-4-6' },
   gemini: { cliPath: 'gemini', defaultModel: 'gemini-2.5-pro' },
 };
 

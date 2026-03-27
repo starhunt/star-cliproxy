@@ -18,7 +18,7 @@ import {
 } from '../api/client';
 
 // 빌트인 프로바이더 목록
-const BUILTIN_PROVIDERS = new Set(['claude', 'codex', 'gemini']);
+const BUILTIN_PROVIDERS = new Set(['claude', 'codex', 'copilot', 'gemini']);
 
 interface ProviderState {
   info: ProviderInfo;

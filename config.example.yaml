@@ -53,6 +53,18 @@ providers:
       - "workspace-write"
     # working_dir: "/path/to/project"
 
+  copilot:
+    enabled: true
+    cli_path: "copilot"
+    default_model: "claude-sonnet-4-6"
+    max_concurrent: 10
+    timeout_ms: 300000
+    extra_args:
+      - "--deny-tool=shell"
+      - "--deny-tool=write"
+    # working_dir: "/path/to/project"
+    # 인증: COPILOT_GITHUB_TOKEN 환경변수 또는 사전 `copilot` OAuth 로그인 필요
+
   gemini:
     enabled: true
     cli_path: "gemini"
@@ -82,6 +94,8 @@ rate_limits:
     claude:
       rpm: 20
     codex:
+      rpm: 20
+    copilot:
       rpm: 20
     gemini:
       rpm: 20
@@ -119,6 +133,19 @@ model_mappings:
   - alias: "gpt-5.4-mini"
     provider: "codex"
     actual_model: "gpt-5.4-mini"
+  # Copilot models
+  - alias: "copilot-sonnet-4-5"
+    provider: "copilot"
+    actual_model: "claude-sonnet-4-5"
+  - alias: "copilot-sonnet-4-6"
+    provider: "copilot"
+    actual_model: "claude-sonnet-4-6"
+  - alias: "copilot-gpt"
+    provider: "copilot"
+    actual_model: "gpt-5.4"
+  - alias: "copilot-codex"
+    provider: "copilot"
+    actual_model: "gpt-5.3-codex"
   # Gemini models
   - alias: "gemini-pro"
     provider: "gemini"

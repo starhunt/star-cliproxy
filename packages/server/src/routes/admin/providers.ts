@@ -17,7 +17,7 @@ interface ProviderDeps {
 
 // DB 키 접두사
 const PROVIDER_CONFIG_PREFIX = 'provider_config:';
-const BUILTIN_PROVIDER_NAMES = new Set(['claude', 'codex', 'gemini']);
+const BUILTIN_PROVIDER_NAMES = new Set(['claude', 'codex', 'copilot', 'gemini']);
 const BUILTIN_RUNTIME_MUTABLE_FIELDS = new Set([
   'enabled',
   'default_model',
