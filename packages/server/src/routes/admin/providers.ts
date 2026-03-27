@@ -17,6 +17,44 @@ interface ProviderDeps {
 
 // DB 키 접두사
 const PROVIDER_CONFIG_PREFIX = 'provider_config:';
+const BUILTIN_PROVIDER_NAMES = new Set(['claude', 'codex', 'gemini']);
+const BUILTIN_RUNTIME_MUTABLE_FIELDS = new Set([
+  'enabled',
+  'default_model',
+  'max_concurrent',
+  'timeout_ms',
+  'mode',
+  'sdk_options',
+]);
+
+export function sanitizeRuntimeProviderConfig(
+  name: string,
+  partial: Partial<ProviderConfigYaml>,
+  strict = false,
+): Partial<ProviderConfigYaml> {
+  if (!BUILTIN_PROVIDER_NAMES.has(name)) {
+    return partial;
+  }
+
+  const sanitized: Partial<ProviderConfigYaml> = {};
+  const rejected: string[] = [];
+
+  for (const [key, value] of Object.entries(partial)) {
+    if (BUILTIN_RUNTIME_MUTABLE_FIELDS.has(key)) {
+      (sanitized as Record<string, unknown>)[key] = value;
+    } else {
+      rejected.push(key);
+    }
+  }
+
+  if (strict && rejected.length > 0) {
+    throw new Error(
+      `Built-in provider "${name}" only supports runtime updates for: ${Array.from(BUILTIN_RUNTIME_MUTABLE_FIELDS).join(', ')}.`,
+    );
+  }
+
+  return sanitized;
+}
 
 // DB에서 프로바이더 설정 오버라이드 로드
 export async function loadProviderConfigFromDb(
@@ -110,7 +148,13 @@ export function registerProvidersRoutes(app: FastifyInstance, deps: ProviderDeps
         return reply.status(404).send({ error: { message: `Provider "${name}" not found.` } });
       }
 
-      const partial = request.body;
+      let partial: Partial<ProviderConfigYaml>;
+      try {
+        partial = sanitizeRuntimeProviderConfig(name, request.body, true);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.status(400).send({ error: { message } });
+      }
 
       // 인메모리 반영
       const updated = deps.registry.updateProviderConfig(name, partial);

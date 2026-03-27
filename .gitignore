@@ -5,6 +5,7 @@ data/
 *.db-journal
 .env
 config.yaml
+config.backup.yaml
 .DS_Store
 *.log
 coverage/

@@ -27,7 +27,8 @@ export function registerSettingsRoutes(app: FastifyInstance, deps: SettingsDeps)
       maxMessageLength: body.maxMessageLength ?? current.maxMessageLength,
       maxPromptLength: body.maxPromptLength ?? current.maxPromptLength,
       maxResponseLength: body.maxResponseLength ?? current.maxResponseLength,
-      bodyLimitBytes: body.bodyLimitBytes ?? current.bodyLimitBytes,
+      // Fastify bodyLimit는 런타임 변경 불가 — 현재 값 유지
+      bodyLimitBytes: current.bodyLimitBytes,
     };
 
     // DB에 저장

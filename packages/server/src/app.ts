@@ -15,7 +15,7 @@ import { registerImageGenerationsRoute } from './routes/v1/images-generations.js
 import { registerModelMappingsRoutes } from './routes/admin/model-mappings.js';
 import { registerApiKeysRoutes } from './routes/admin/api-keys.js';
 import { registerStatsRoutes } from './routes/admin/stats.js';
-import { registerProvidersRoutes } from './routes/admin/providers.js';
+import { registerProvidersRoutes, sanitizeRuntimeProviderConfig } from './routes/admin/providers.js';
 import { registerTestModelRoute } from './routes/admin/test-model.js';
 import { registerRateLimitsRoutes, loadRateLimitsFromDb } from './routes/admin/rate-limits.js';
 import { loadProviderConfigFromDb } from './routes/admin/providers.js';
@@ -33,9 +33,9 @@ import { loadPlugins } from './plugins/plugin-loader.js';
 import type { ValidationConfig } from '@star-cliproxy/shared';
 
 export async function createApp(config: AppConfig, projectRoot?: string) {
-  // admin token 검증 (빈 토큰으로 시작 방지)
-  if (config.auth.enabled && !config.auth.adminToken) {
-    throw new Error('ADMIN_TOKEN must be set when auth is enabled. Set it in .env or config.yaml.');
+  // Admin API는 항상 보호
+  if (!config.auth.adminToken) {
+    throw new Error('ADMIN_TOKEN must be set. Set it in .env or config.yaml.');
   }
 
   // DB 초기화
@@ -111,9 +111,12 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
   for (const provider of registry.getAll()) {
     const override = await loadProviderConfigFromDb(provider.name);
     if (override) {
-      registry.updateProviderConfig(provider.name, override);
-      if (override.max_concurrent !== undefined) {
-        queueManager.updateConcurrency(provider.name, override.max_concurrent);
+      const sanitizedOverride = sanitizeRuntimeProviderConfig(provider.name, override);
+      if (Object.keys(sanitizedOverride).length === 0) continue;
+
+      registry.updateProviderConfig(provider.name, sanitizedOverride);
+      if (sanitizedOverride.max_concurrent !== undefined) {
+        queueManager.updateConcurrency(provider.name, sanitizedOverride.max_concurrent);
       }
     }
   }

@@ -23,14 +23,15 @@ interface FieldDef {
   labelKey: string;
   descKey: string;
   format: 'chars' | 'bytes';
+  runtimeEditable?: boolean;
 }
 
 const FIELDS: FieldDef[] = [
-  { key: 'maxMessageCount', labelKey: 'settings.maxMessageCount', descKey: 'settings.maxMessageCountDesc', format: 'chars' },
-  { key: 'maxMessageLength', labelKey: 'settings.maxMessageLength', descKey: 'settings.maxMessageLengthDesc', format: 'chars' },
-  { key: 'maxPromptLength', labelKey: 'settings.maxPromptLength', descKey: 'settings.maxPromptLengthDesc', format: 'chars' },
-  { key: 'maxResponseLength', labelKey: 'settings.maxResponseLength', descKey: 'settings.maxResponseLengthDesc', format: 'chars' },
-  { key: 'bodyLimitBytes', labelKey: 'settings.bodyLimitBytes', descKey: 'settings.bodyLimitBytesDesc', format: 'bytes' },
+  { key: 'maxMessageCount', labelKey: 'settings.maxMessageCount', descKey: 'settings.maxMessageCountDesc', format: 'chars', runtimeEditable: true },
+  { key: 'maxMessageLength', labelKey: 'settings.maxMessageLength', descKey: 'settings.maxMessageLengthDesc', format: 'chars', runtimeEditable: true },
+  { key: 'maxPromptLength', labelKey: 'settings.maxPromptLength', descKey: 'settings.maxPromptLengthDesc', format: 'chars', runtimeEditable: true },
+  { key: 'maxResponseLength', labelKey: 'settings.maxResponseLength', descKey: 'settings.maxResponseLengthDesc', format: 'chars', runtimeEditable: true },
+  { key: 'bodyLimitBytes', labelKey: 'settings.bodyLimitBytes', descKey: 'settings.bodyLimitBytesDesc', format: 'bytes', runtimeEditable: false },
 ];
 
 export default function SettingsPage() {
@@ -54,6 +55,7 @@ export default function SettingsPage() {
     try {
       const updates: Partial<ValidationSettings> = {};
       for (const field of FIELDS) {
+        if (!field.runtimeEditable) continue;
         const val = parseInt(draft[field.key], 10);
         if (!isNaN(val) && val !== settings[field.key]) {
           (updates as Record<string, number>)[field.key] = val;
@@ -73,6 +75,7 @@ export default function SettingsPage() {
   };
 
   const hasChanges = settings && FIELDS.some((f) => {
+    if (!f.runtimeEditable) return false;
     const val = parseInt(draft[f.key], 10);
     return !isNaN(val) && val !== settings[f.key];
   });
@@ -112,7 +115,7 @@ export default function SettingsPage() {
     reader.onload = (event) => {
       try {
         const data = JSON.parse(event.target?.result as string) as ExportData;
-        if (!data.version || data.version !== 1) {
+        if (!data.version || data.version > 2) {
           setError(t('settings.invalidFile'));
           return;
         }
@@ -196,15 +199,23 @@ export default function SettingsPage() {
                     type="number"
                     value={draft[field.key] ?? ''}
                     onChange={(e) => setDraft({ ...draft, [field.key]: e.target.value })}
-                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm font-mono text-gray-700 dark:text-gray-300 focus:border-blue-500 focus:outline-none"
+                    disabled={!field.runtimeEditable}
+                    className={`w-full border rounded px-3 py-2 text-sm font-mono focus:outline-none ${
+                      field.runtimeEditable
+                        ? 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 focus:border-blue-500'
+                        : 'bg-gray-100 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                    }`}
                   />
                 </div>
                 <div className="col-span-3 text-right">
                   <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
                     {formatValue(parseInt(draft[field.key], 10) || 0, field.format)}
                   </span>
-                  {parseInt(draft[field.key], 10) !== settings[field.key] && (
+                  {field.runtimeEditable && parseInt(draft[field.key], 10) !== settings[field.key] && (
                     <span className="text-xs text-yellow-500 dark:text-yellow-400 ml-2">{t('common.modified')}</span>
+                  )}
+                  {!field.runtimeEditable && (
+                    <span className="text-xs text-gray-400 dark:text-gray-600 ml-2">{t('common.restartRequired')}</span>
                   )}
                 </div>
               </div>

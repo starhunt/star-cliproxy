@@ -5,11 +5,27 @@ import { debugLogs } from '../db/schema.js';
 
 // 디버그 페이로드 최대 크기 (10KB)
 const MAX_FIELD_LENGTH = 10_000;
+const SECRET_PATTERNS: Array<[RegExp, string]> = [
+  [/\bsk-proxy-[a-zA-Z0-9]+\b/g, 'sk-proxy-[redacted]'],
+  [/\bBearer\s+[A-Za-z0-9._\-]+\b/g, 'Bearer [redacted]'],
+  [/"x-admin-token"\s*:\s*"[^"]+"/gi, '"x-admin-token":"[redacted]"'],
+  [/"authorization"\s*:\s*"[^"]+"/gi, '"authorization":"[redacted]"'],
+  [/([A-Z_]*(TOKEN|KEY|SECRET)[A-Z_]*=)[^\s"']+/g, '$1[redacted]'],
+];
+
+function redactSecrets(value: string): string {
+  let redacted = value;
+  for (const [pattern, replacement] of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, replacement);
+  }
+  return redacted;
+}
 
 function truncate(value: string | undefined, max = MAX_FIELD_LENGTH): string | undefined {
   if (!value) return undefined;
-  if (value.length <= max) return value;
-  return value.substring(0, max) + `\n...[truncated, ${value.length - max} chars omitted]`;
+  const redacted = redactSecrets(value);
+  if (redacted.length <= max) return redacted;
+  return redacted.substring(0, max) + `\n...[truncated, ${redacted.length - max} chars omitted]`;
 }
 
 export interface DebugConfig {
@@ -98,14 +114,14 @@ export class DebugService {
         ?? (entry.streamLines ? entry.streamLines.join('\n') : undefined);
 
       await db.update(debugLogs).set({
-        cliArgs: entry.cliArgs ? JSON.stringify(entry.cliArgs) : undefined,
+        cliArgs: entry.cliArgs ? JSON.stringify(entry.cliArgs.map((arg) => redactSecrets(arg))) : undefined,
         rawStdout: truncate(rawStdout),
         rawStderr: truncate(entry.rawStderr),
         parsedContent: truncate(entry.parsedContent),
         tokenUsage: entry.tokenUsage ? JSON.stringify(entry.tokenUsage) : undefined,
         status: entry.status,
         latencyMs: entry.latencyMs,
-        errorMessage: entry.errorMessage,
+        errorMessage: truncate(entry.errorMessage),
       }).where(eq(debugLogs.id, id));
     } catch (err) {
       console.error('Failed to update debug log:', err);

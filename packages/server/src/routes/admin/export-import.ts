@@ -13,6 +13,7 @@ import { loadRateLimitsFromDb } from './rate-limits.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import type { QueueManager } from '../../services/queue.js';
 import type { HealthChecker } from '../../services/health-checker.js';
+import { sanitizeRuntimeProviderConfig } from './providers.js';
 
 const RATE_LIMITS_KEY = 'rate_limits';
 const VALIDATION_KEY = 'validation_config';
@@ -264,7 +265,13 @@ export function registerExportImportRoutes(
 
     // 3. Validation: settings 테이블에 upsert
     if (body.validation) {
-      const value = JSON.stringify(body.validation);
+      const currentValidation = deps.getValidation();
+      const normalizedValidation: ValidationConfig = {
+        ...body.validation,
+        // Fastify bodyLimit는 런타임 변경 불가 — 현재 값 유지
+        bodyLimitBytes: currentValidation.bodyLimitBytes,
+      };
+      const value = JSON.stringify(normalizedValidation);
       const now = new Date().toISOString();
       const existing = await db.select().from(settings).where(eq(settings.key, VALIDATION_KEY)).limit(1);
 
@@ -275,7 +282,7 @@ export function registerExportImportRoutes(
       }
 
       // 인메모리 즉시 반영
-      deps.setValidation(body.validation);
+      deps.setValidation(normalizedValidation);
       validationImported = true;
     }
 
@@ -327,6 +334,7 @@ export function registerExportImportRoutes(
         }
 
         const override: Partial<ProviderConfigYaml> = {};
+        if (providerConfig.enabled !== undefined) override.enabled = providerConfig.enabled;
         if (providerConfig.default_model !== undefined) override.default_model = providerConfig.default_model;
         if (providerConfig.max_concurrent !== undefined) override.max_concurrent = providerConfig.max_concurrent;
         if (providerConfig.timeout_ms !== undefined) override.timeout_ms = providerConfig.timeout_ms;
@@ -334,19 +342,22 @@ export function registerExportImportRoutes(
         if (providerConfig.working_dir !== undefined) override.working_dir = providerConfig.working_dir;
         if (providerConfig.cli_path !== undefined) override.cli_path = providerConfig.cli_path;
 
-        if (Object.keys(override).length === 0) continue;
+        const sanitizedOverride = sanitizeRuntimeProviderConfig(name, override);
+        if (Object.keys(sanitizedOverride).length === 0) continue;
 
         // 인메모리 반영
-        deps.registry.updateProviderConfig(name, override);
-        if (override.max_concurrent) {
-          deps.queueManager.updateConcurrency(name, override.max_concurrent);
+        deps.registry.updateProviderConfig(name, sanitizedOverride);
+        if (sanitizedOverride.max_concurrent) {
+          deps.queueManager.updateConcurrency(name, sanitizedOverride.max_concurrent);
         }
 
         // DB 영속화
         const dbKey = `provider_config:${name}`;
         const existing = await db.select().from(settings).where(eq(settings.key, dbKey)).limit(1);
-        const existingOverride = existing.length > 0 ? JSON.parse(existing[0].value) : {};
-        const merged = { ...existingOverride, ...override };
+        const existingOverride = existing.length > 0
+          ? sanitizeRuntimeProviderConfig(name, JSON.parse(existing[0].value) as Partial<ProviderConfigYaml>)
+          : {};
+        const merged = { ...existingOverride, ...sanitizedOverride };
 
         if (existing.length === 0) {
           await db.insert(settings).values({ key: dbKey, value: JSON.stringify(merged), updatedAt: now });

@@ -117,13 +117,11 @@ export async function adminAuthMiddleware(
   reply: FastifyReply,
   adminToken: string,
 ): Promise<void> {
-  // localhost에서의 접근은 허용
-  const remoteAddress = request.ip;
-  if (remoteAddress === '127.0.0.1' || remoteAddress === '::1' || remoteAddress === '::ffff:127.0.0.1') {
-    return;
-  }
+  const headerToken = request.headers['x-admin-token'] as string | undefined;
+  const authHeader = request.headers.authorization;
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+  const token = headerToken ?? bearerToken;
 
-  const token = request.headers['x-admin-token'] as string | undefined;
   if (!token || !safeCompare(token, adminToken)) {
     return reply.status(403).send({
       error: {

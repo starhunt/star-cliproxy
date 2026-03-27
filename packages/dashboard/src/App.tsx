@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import { useTranslation } from './i18n/context';
 import { useTheme } from './theme/context';
+import { useAdminAuth } from './auth/context';
 import DashboardPage from './pages/DashboardPage';
 import ModelMappingsPage from './pages/ModelMappingsPage';
 import ApiKeysPage from './pages/ApiKeysPage';
@@ -29,6 +31,16 @@ const navItems = [
 export default function App() {
   const { t, lang, setLang } = useTranslation();
   const { theme, toggleTheme } = useTheme();
+  const { adminToken, saveAdminToken, clearAdminToken } = useAdminAuth();
+  const [tokenDraft, setTokenDraft] = useState(adminToken);
+
+  useEffect(() => {
+    setTokenDraft(adminToken);
+  }, [adminToken]);
+
+  const handleSaveAdminToken = () => {
+    saveAdminToken(tokenDraft);
+  };
 
   return (
     <div className="flex h-screen">
@@ -102,7 +114,32 @@ export default function App() {
       {/* 메인 콘텐츠 */}
       <main className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 flex flex-col">
         {/* 상단 바 */}
-        <div className="flex items-center justify-end gap-2 px-6 pt-4 pb-2">
+        <div className="flex items-center justify-between gap-4 px-6 pt-4 pb-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="password"
+              value={tokenDraft}
+              onChange={(e) => setTokenDraft(e.target.value)}
+              placeholder={t('auth.adminTokenPlaceholder')}
+              className="w-72 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-700 dark:text-gray-300"
+            />
+            <button
+              onClick={handleSaveAdminToken}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {t('auth.saveToken')}
+            </button>
+            {adminToken && (
+              <button
+                onClick={clearAdminToken}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                  bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800
+                  text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                {t('auth.clearToken')}
+              </button>
+            )}
+          </div>
           <button
             onClick={() => setLang(lang === 'ko' ? 'en' : 'ko')}
             aria-label={lang === 'ko' ? 'Switch to English' : '한국어로 전환'}
@@ -137,18 +174,43 @@ export default function App() {
           </button>
         </div>
         <div className="flex-1 px-6 pb-6">
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/playground" element={<PlaygroundPage />} />
-          <Route path="/models" element={<ModelMappingsPage />} />
-          <Route path="/keys" element={<ApiKeysPage />} />
-          <Route path="/logs" element={<LogsPage />} />
-          <Route path="/rate-limits" element={<RateLimitsPage />} />
-          <Route path="/providers" element={<ProvidersPage />} />
-          <Route path="/debug" element={<DebugPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/guide" element={<ApiGuidePage />} />
-        </Routes>
+          {adminToken ? (
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/playground" element={<PlaygroundPage />} />
+              <Route path="/models" element={<ModelMappingsPage />} />
+              <Route path="/keys" element={<ApiKeysPage />} />
+              <Route path="/logs" element={<LogsPage />} />
+              <Route path="/rate-limits" element={<RateLimitsPage />} />
+              <Route path="/providers" element={<ProvidersPage />} />
+              <Route path="/debug" element={<DebugPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/guide" element={<ApiGuidePage />} />
+            </Routes>
+          ) : (
+            <div className="h-full flex items-center justify-center">
+              <div className="w-full max-w-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-8 space-y-4">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{t('auth.title')}</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{t('auth.description')}</p>
+                <div className="space-y-2">
+                  <label className="text-xs text-gray-500 dark:text-gray-400">{t('auth.adminTokenLabel')}</label>
+                  <input
+                    type="password"
+                    value={tokenDraft}
+                    onChange={(e) => setTokenDraft(e.target.value)}
+                    placeholder={t('auth.adminTokenPlaceholder')}
+                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
+                  />
+                </div>
+                <button
+                  onClick={handleSaveAdminToken}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {t('auth.enterDashboard')}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

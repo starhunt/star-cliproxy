@@ -54,7 +54,7 @@ response = client.chat.completions.create(
 - **Content parts 지원** — OpenAI content parts 배열 형식 지원 (OpenClaw, LangChain, LiteLLM 호환)
 - **Debug 캡처** — 요청/응답 페이로드 캡처 (전체 또는 모델별 on/off, CLI args + raw stdout 확인)
 - **Debug 로그 개별 삭제** — 각 로그 항목별 개별 삭제
-- **Settings 페이지** — 런타임 validation 설정 변경 (재시작 없이 즉시 반영)
+- **Settings 페이지** — 런타임 validation 설정 변경 (HTTP 본문 크기 제한은 재시작 필요)
 - **i18n** — 영어/한국어 대시보드 다국어 지원
 - **Dark/Light 모드** — 다크/라이트 테마 전환
 - **API 키 재생성** — 이름 유지하고 키만 재생성
@@ -98,6 +98,22 @@ cp .env.example .env
 ```env
 ADMIN_TOKEN=your-secure-admin-token
 PROXY_API_KEY=sk-proxy-your-secret-key
+```
+
+`ADMIN_TOKEN`은 충분히 긴 랜덤값으로 생성하세요:
+
+```bash
+openssl rand -hex 32
+# 또는
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+`PROXY_API_KEY`는 `sk-proxy-` 접두사를 포함해 생성하세요:
+
+```bash
+echo "sk-proxy-$(openssl rand -hex 24)"
+# 또는
+node -e "console.log('sk-proxy-' + require('crypto').randomBytes(24).toString('hex'))"
 ```
 
 `config.yaml`에서 사용할 provider를 활성화/비활성화합니다:
@@ -147,7 +163,7 @@ curl http://localhost:8300/v1/chat/completions \
 
 ### 5. Dashboard
 
-브라우저에서 `http://localhost:5300` 접속:
+브라우저에서 `http://localhost:5300` 접속 후 `ADMIN_TOKEN` 입력:
 
 - **Dashboard** — 요청 통계, 시간대별 사용량, 활성 요청 실시간 표시
 - **Models** — 모델 매핑 관리 (추가/수정/삭제/테스트)
@@ -155,7 +171,7 @@ curl http://localhost:8300/v1/chat/completions \
 - **Rate Limits** — Rate Limit 설정 (즉시 반영)
 - **Logs** — 요청 로그 조회
 - **Debug** — API 요청/응답 페이로드 캡처 및 검사 (전체/모델별 토글)
-- **Settings** — validation 제한값 런타임 변경
+- **Settings** — validation 제한값 런타임 변경 (HTTP 본문 크기 제한은 재시작 필요)
 - **API Guide** — 사용 가이드 + 코드 샘플
 
 ## Usage Examples
@@ -318,11 +334,11 @@ plugins: []
   #     timeout_ms: 120000
 
 validation:
-  max_message_count: 200       # 메시지 배열 최대 수
-  max_message_length: 1000000  # 1M 글자 (~250K 토큰)
-  max_prompt_length: 4000000   # 4M 글자 (~1M 토큰)
-  max_response_length: 1000000 # 1M 글자
-  body_limit_bytes: 52428800   # 50MB
+  max_message_count: 800       # 메시지 배열 최대 수
+  max_message_length: 250000   # 약 62K 토큰
+  max_prompt_length: 1000000   # 약 250K 토큰
+  max_response_length: 300000  # 약 75K 토큰
+  body_limit_bytes: 16777216   # 16MB (변경 후 재시작 필요)
 ```
 
 ### Environment Variables
@@ -418,7 +434,7 @@ star-cliproxy/
 - 입력 null byte 제거
 - 메시지 수/길이/총 크기 제한 (설정 가능)
 - HTTP 요청 본문 크기 제한
-- Admin API는 localhost 접근 허용, 외부 접근 시 토큰 필수
+- Admin API와 대시보드 접근에는 항상 `ADMIN_TOKEN`이 필요
 
 ## Upgrading
 

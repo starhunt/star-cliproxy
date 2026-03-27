@@ -1,10 +1,16 @@
+import { getStoredAdminToken } from '../auth/token';
+
 const BASE_URL = '/admin';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { ...options?.headers as Record<string, string> };
+  const adminToken = getStoredAdminToken();
   // body가 있을 때만 Content-Type 설정 (DELETE 등 빈 body 시 Fastify 400 방지)
   if (options?.body) {
     headers['Content-Type'] = 'application/json';
+  }
+  if (adminToken) {
+    headers['x-admin-token'] = adminToken;
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -13,6 +19,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
+    if (res.status === 403) {
+      throw new Error('Admin token required or invalid.');
+    }
     const error = await res.json().catch(() => ({ error: { message: res.statusText } }));
     throw new Error(error.error?.message ?? `HTTP ${res.status}`);
   }

@@ -54,7 +54,7 @@ response = client.chat.completions.create(
 - **Content parts support** — OpenAI content parts array format (compatible with OpenClaw, LangChain, LiteLLM)
 - **Debug capture** — request/response payload capture (global or per-model toggle, view CLI args + raw stdout)
 - **Debug log deletion** — delete individual debug log entries
-- **Settings page** — change validation settings at runtime (takes effect immediately without restart)
+- **Settings page** — change validation settings at runtime (HTTP body size limit still requires restart)
 - **i18n** — English / Korean dashboard localization
 - **Dark/Light mode** — theme switching
 - **API key regeneration** — regenerate key while keeping the name
@@ -98,6 +98,22 @@ Edit `.env`:
 ```env
 ADMIN_TOKEN=your-secure-admin-token
 PROXY_API_KEY=sk-proxy-your-secret-key
+```
+
+Generate `ADMIN_TOKEN` with a strong random value:
+
+```bash
+openssl rand -hex 32
+# or
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Generate `PROXY_API_KEY` with the required `sk-proxy-` prefix:
+
+```bash
+echo "sk-proxy-$(openssl rand -hex 24)"
+# or
+node -e "console.log('sk-proxy-' + require('crypto').randomBytes(24).toString('hex'))"
 ```
 
 Enable or disable providers in `config.yaml`:
@@ -147,7 +163,7 @@ curl http://localhost:8300/v1/chat/completions \
 
 ### 5. Dashboard
 
-Open `http://localhost:5300` in your browser:
+Open `http://localhost:5300` in your browser and enter `ADMIN_TOKEN`:
 
 - **Dashboard** — request statistics, hourly usage, live active request view
 - **Models** — manage model mappings (create / edit / delete / test)
@@ -155,7 +171,7 @@ Open `http://localhost:5300` in your browser:
 - **Rate Limits** — adjust rate limit settings (takes effect immediately)
 - **Logs** — browse request logs
 - **Debug** — capture and inspect API request/response payloads (global or per-model toggle)
-- **Settings** — change validation limits at runtime
+- **Settings** — change validation limits at runtime (HTTP body size limit requires restart)
 - **API Guide** — usage guide with code samples
 
 ## Usage Examples
@@ -318,11 +334,11 @@ plugins: []
   #     timeout_ms: 120000
 
 validation:
-  max_message_count: 200       # maximum messages in array
-  max_message_length: 1000000  # 1M chars (~250K tokens)
-  max_prompt_length: 4000000   # 4M chars (~1M tokens)
-  max_response_length: 1000000 # 1M chars
-  body_limit_bytes: 52428800   # 50MB
+  max_message_count: 800       # maximum messages in array
+  max_message_length: 250000   # ~62K tokens
+  max_prompt_length: 1000000   # ~250K tokens
+  max_response_length: 300000  # ~75K tokens
+  body_limit_bytes: 16777216   # 16MB (restart required after change)
 ```
 
 ### Environment Variables
@@ -418,7 +434,7 @@ See [plugins/README.md](./plugins/README.md) for the full plugin development gui
 - Null byte stripping on all inputs
 - Configurable limits on message count, message length, total prompt size, and response size
 - HTTP request body size cap
-- Admin API restricted to localhost by default; external access requires the admin token
+- Admin API always requires `ADMIN_TOKEN` for dashboard and `/admin` access
 
 ## Upgrading
 

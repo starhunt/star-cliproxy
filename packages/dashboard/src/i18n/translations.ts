@@ -54,6 +54,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     'common.online': 'Online',
     'common.offline': 'Offline',
     'common.unknown': 'Unknown',
+    'common.restartRequired': 'restart required',
+
+    // 관리자 인증
+    'auth.title': 'Admin Token Required',
+    'auth.description': 'Enter the ADMIN_TOKEN configured on the server to use the dashboard.',
+    'auth.adminTokenLabel': 'Admin Token',
+    'auth.adminTokenPlaceholder': 'Paste ADMIN_TOKEN',
+    'auth.saveToken': 'Save Token',
+    'auth.clearToken': 'Clear Token',
+    'auth.enterDashboard': 'Open Dashboard',
 
     // 대시보드
     'dashboard.title': 'Dashboard',
@@ -196,7 +206,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     // 설정
     'settings.title': 'Settings',
     'settings.validationLimits': 'Validation Limits',
-    'settings.validationDescription': 'Changes apply immediately without restart',
+    'settings.validationDescription': 'Most changes apply immediately. HTTP body size limit still requires a restart.',
     'settings.maxMessageCount': 'Max Message Count',
     'settings.maxMessageCountDesc': 'Maximum number of messages per request',
     'settings.maxMessageLength': 'Max Message Length',
@@ -286,6 +296,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.sdkSessionReuse': 'Session Reuse',
     'providers.sdkPersistSession': 'Persist Session',
     'providers.sdkNote': 'Requires @anthropic-ai/claude-agent-sdk package',
+    'providers.runtimeRestricted': 'Built-in providers only allow runtime updates for enabled, default model, concurrency, timeout, and Claude SDK options.',
 
     // 플레이그라운드
     'playground.title': 'Playground',
@@ -420,6 +431,16 @@ export const translations: Record<Lang, Record<string, string>> = {
     'common.online': '온라인',
     'common.offline': '오프라인',
     'common.unknown': '알 수 없음',
+    'common.restartRequired': '재시작 필요',
+
+    // 관리자 인증
+    'auth.title': '관리자 토큰이 필요합니다',
+    'auth.description': '대시보드를 사용하려면 서버에 설정된 ADMIN_TOKEN을 입력하세요.',
+    'auth.adminTokenLabel': '관리자 토큰',
+    'auth.adminTokenPlaceholder': 'ADMIN_TOKEN 입력',
+    'auth.saveToken': '토큰 저장',
+    'auth.clearToken': '토큰 삭제',
+    'auth.enterDashboard': '대시보드 열기',
 
     // 대시보드
     'dashboard.title': '대시보드',
@@ -562,7 +583,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     // 설정
     'settings.title': '설정',
     'settings.validationLimits': '유효성 검사 한도',
-    'settings.validationDescription': '변경 사항은 재시작 없이 즉시 적용됩니다',
+    'settings.validationDescription': '대부분의 변경은 즉시 적용되지만, HTTP 본문 크기 제한은 재시작이 필요합니다.',
     'settings.maxMessageCount': '최대 메시지 수',
     'settings.maxMessageCountDesc': '요청당 최대 메시지 수',
     'settings.maxMessageLength': '최대 메시지 길이',
@@ -652,6 +673,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.sdkSessionReuse': '세션 재사용',
     'providers.sdkPersistSession': '세션 저장',
     'providers.sdkNote': '@anthropic-ai/claude-agent-sdk 패키지 필요',
+    'providers.runtimeRestricted': '빌트인 프로바이더는 런타임에 enabled, default model, 동시 실행 수, timeout, Claude SDK 옵션만 변경할 수 있습니다.',
 
     // 플레이그라운드
     'playground.title': '플레이그라운드',

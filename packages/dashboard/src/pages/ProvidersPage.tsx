@@ -131,8 +131,18 @@ export default function ProvidersPage() {
         ...draft,
         extra_args: extraArgsText.split('\n').filter(Boolean),
       };
+      const safePayload = BUILTIN_PROVIDERS.has(name)
+        ? {
+            enabled: payload.enabled,
+            default_model: payload.default_model,
+            max_concurrent: payload.max_concurrent,
+            timeout_ms: payload.timeout_ms,
+            mode: payload.mode,
+            sdk_options: payload.sdk_options,
+          }
+        : payload;
       // enabled는 boolean으로 전달
-      const result = await updateProviderConfig(name, payload);
+      const result = await updateProviderConfig(name, safePayload);
 
       // 로컬 상태 갱신
       setProviders((prev) =>
@@ -279,6 +289,7 @@ export default function ProvidersPage() {
         const renderProviderCard = ({ info, config, loading }: ProviderState) => {
           const isExpanded = expandedProvider === info.name;
           const isBuiltin = BUILTIN_PROVIDERS.has(info.name);
+          const isBuiltinRestricted = isBuiltin;
           const isEnabled = config?.enabled !== false;
           const statusColor =
             !isEnabled
@@ -363,6 +374,11 @@ export default function ProvidersPage() {
                       <p className="text-blue-600 dark:text-blue-400">{t('providers.editGuideDesc')}</p>
                     </div>
                   )}
+                  {isBuiltinRestricted && (
+                    <div className="px-4 py-3 rounded-lg border bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs">
+                      {t('providers.runtimeRestricted')}
+                    </div>
+                  )}
 
                   {/* 메시지 */}
                   {message && (
@@ -387,7 +403,12 @@ export default function ProvidersPage() {
                         type="text"
                         value={draft.cli_path ?? ''}
                         onChange={(e) => updateDraft('cli_path', e.target.value)}
-                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
+                        disabled={isBuiltinRestricted}
+                        className={`w-full border rounded px-3 py-2 text-sm ${
+                          isBuiltinRestricted
+                            ? 'bg-gray-100 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                            : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200'
+                        }`}
                       />
                     </div>
                     <div>
@@ -442,7 +463,12 @@ export default function ProvidersPage() {
                       value={draft.working_dir ?? ''}
                       onChange={(e) => updateDraft('working_dir', e.target.value)}
                       placeholder="/tmp"
-                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
+                      disabled={isBuiltinRestricted}
+                      className={`w-full border rounded px-3 py-2 text-sm ${
+                        isBuiltinRestricted
+                          ? 'bg-gray-100 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                          : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200'
+                      }`}
                     />
                   </div>
 
@@ -460,7 +486,12 @@ export default function ProvidersPage() {
                         setExtraArgsText(e.target.value);
                         setMessage(null);
                       }}
-                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200 font-mono"
+                      disabled={isBuiltinRestricted}
+                      className={`w-full border rounded px-3 py-2 text-sm font-mono ${
+                        isBuiltinRestricted
+                          ? 'bg-gray-100 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                          : 'bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-800 dark:text-gray-200'
+                      }`}
                       placeholder="--flag1&#10;--flag2=value"
                     />
                   </div>

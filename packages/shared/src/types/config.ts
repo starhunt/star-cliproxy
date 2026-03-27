@@ -74,11 +74,11 @@ export interface ModelMappingSeed {
 }
 
 export interface ValidationConfig {
-  maxMessageCount: number;       // 메시지 배열 최대 수 (기본 200)
-  maxMessageLength: number;      // 개별 메시지 content 최대 길이 (기본 100000)
-  maxPromptLength: number;       // 전체 프롬프트 총 길이 (기본 500000)
-  maxResponseLength: number;     // CLI 응답 최대 길이 (기본 500000)
-  bodyLimitBytes: number;        // HTTP 요청 본문 최대 크기 (기본 10MB)
+  maxMessageCount: number;       // 메시지 배열 최대 수 (기본 800)
+  maxMessageLength: number;      // 개별 메시지 content 최대 길이 (기본 250000)
+  maxPromptLength: number;       // 전체 프롬프트 총 길이 (기본 1000000)
+  maxResponseLength: number;     // CLI 응답 최대 길이 (기본 300000)
+  bodyLimitBytes: number;        // HTTP 요청 본문 최대 크기 (기본 16MB)
 }
 
 export interface PluginEntry {
