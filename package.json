@@ -10,7 +10,7 @@
     "dev": "npm run dev --workspace=packages/server",
     "dev:dashboard": "npm run dev --workspace=packages/dashboard",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:dashboard\"",
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/server && npm run build --workspace=packages/dashboard",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint packages/*/src/**/*.{ts,tsx}",
