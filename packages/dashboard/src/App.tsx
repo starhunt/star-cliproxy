@@ -92,7 +92,7 @@ export default function App() {
             </button>
           </div>
           <div className="text-xs text-gray-400 dark:text-gray-600">
-            v1.0.0 | Port 8300
+            v1.1.0 | Port 8300
           </div>
         </div>
       </nav>
