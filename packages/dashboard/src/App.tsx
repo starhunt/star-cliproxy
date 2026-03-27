@@ -10,10 +10,12 @@ import RateLimitsPage from './pages/RateLimitsPage';
 import DebugPage from './pages/DebugPage';
 import SettingsPage from './pages/SettingsPage';
 import ProvidersPage from './pages/ProvidersPage';
+import PlaygroundPage from './pages/PlaygroundPage';
 
 // 번역 키 기반 네비게이션
 const navItems = [
   { to: '/', labelKey: 'nav.dashboard', icon: '~' },
+  { to: '/playground', labelKey: 'nav.playground', icon: '^' },
   { to: '/models', labelKey: 'nav.models', icon: '#' },
   { to: '/keys', labelKey: 'nav.apiKeys', icon: '*' },
   { to: '/rate-limits', labelKey: 'nav.rateLimits', icon: '%' },
@@ -137,6 +139,7 @@ export default function App() {
         <div className="flex-1 px-6 pb-6">
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/playground" element={<PlaygroundPage />} />
           <Route path="/models" element={<ModelMappingsPage />} />
           <Route path="/keys" element={<ApiKeysPage />} />
           <Route path="/logs" element={<LogsPage />} />

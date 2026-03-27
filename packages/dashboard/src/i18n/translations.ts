@@ -12,6 +12,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.debug': 'Debug',
     'nav.settings': 'Settings',
     'nav.providers': 'Providers',
+    'nav.playground': 'Playground',
     'nav.apiGuide': 'API Guide',
     'sidebar.subtitle': 'AI CLI Proxy Dashboard',
 
@@ -269,6 +270,24 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.editGuideDesc': 'Changes to CLI arguments, prompt mode, or output mode will re-register the provider.',
     'providers.genericSettings': 'Generic CLI Settings',
 
+    // 플레이그라운드
+    'playground.title': 'Playground',
+    'playground.subtitle': 'Test API calls directly from the browser.',
+    'playground.model': 'Model',
+    'playground.apiKey': 'API Key',
+    'playground.registeredKeys': 'Select registered key...',
+    'playground.messages': 'Messages',
+    'playground.addMessage': 'Add Message',
+    'playground.systemPlaceholder': 'System prompt (optional)',
+    'playground.userPlaceholder': 'Enter your message...',
+    'playground.requestPreview': 'Request Preview',
+    'playground.send': 'Send',
+    'playground.stop': 'Stop',
+    'playground.clear': 'Clear',
+    'playground.response': 'Response',
+    'playground.waiting': 'Waiting for response...',
+    'playground.latency': 'Latency',
+
     // API 가이드
     'guide.title': 'API Guide',
     'guide.subtitle': 'star-cliproxy provides an OpenAI-compatible API. Just change the base_url of your existing OpenAI SDK to start using it.',
@@ -342,6 +361,7 @@ export const translations: Record<Lang, Record<string, string>> = {
     'nav.debug': '디버그',
     'nav.settings': '설정',
     'nav.providers': '프로바이더',
+    'nav.playground': '플레이그라운드',
     'nav.apiGuide': 'API 가이드',
     'sidebar.subtitle': 'AI CLI 프록시 대시보드',
 
@@ -598,6 +618,24 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.editGuideTitle': '커스텀 프로바이더 설정',
     'providers.editGuideDesc': 'CLI 인자, 프롬프트 전달 방식, 출력 모드 변경 시 프로바이더가 재등록됩니다.',
     'providers.genericSettings': 'Generic CLI 설정',
+
+    // 플레이그라운드
+    'playground.title': '플레이그라운드',
+    'playground.subtitle': '브라우저에서 직접 API 호출을 테스트하세요.',
+    'playground.model': '모델',
+    'playground.apiKey': 'API 키',
+    'playground.registeredKeys': '등록된 키 선택...',
+    'playground.messages': '메시지',
+    'playground.addMessage': '메시지 추가',
+    'playground.systemPlaceholder': '시스템 프롬프트 (선택)',
+    'playground.userPlaceholder': '메시지를 입력하세요...',
+    'playground.requestPreview': '요청 미리보기',
+    'playground.send': '전송',
+    'playground.stop': '중지',
+    'playground.clear': '초기화',
+    'playground.response': '응답',
+    'playground.waiting': '응답 대기 중...',
+    'playground.latency': '응답시간',
 
     // API 가이드
     'guide.title': 'API 가이드',

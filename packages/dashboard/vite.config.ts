@@ -12,6 +12,14 @@ export default defineConfig({
         target: 'http://localhost:8300',
         changeOrigin: true,
       },
+      '/v1': {
+        target: 'http://localhost:8300',
+        changeOrigin: true,
+      },
+      '/health': {
+        target: 'http://localhost:8300',
+        changeOrigin: true,
+      },
     },
   },
 });
