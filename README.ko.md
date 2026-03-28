@@ -2,7 +2,7 @@
 
 # star-cliproxy
 
-AI CLI 구독 플랜을 활용한 OpenAI 호환 API 프록시 — Claude, Codex, Gemini CLI 지원
+AI CLI 구독 플랜을 활용한 OpenAI 호환 API 프록시 — Claude, Codex, Copilot, Gemini CLI 지원
 
 ![Dashboard](docs/images/dashboard.png)
 
@@ -32,7 +32,7 @@ response = client.chat.completions.create(
 
 - **OpenAI 호환 API** — `/v1/chat/completions`, `/v1/images/generations`, `/v1/models` 엔드포인트
 - **Anthropic Messages API** — `/v1/messages` 엔드포인트로 Claude Code / Anthropic SDK 네이티브 지원
-- **3개 CLI Provider 지원** — Claude Code, Codex, Gemini CLI
+- **4개 CLI Provider 지원** — Claude Code, Codex, Copilot CLI, Gemini CLI
 - **Claude Agent SDK 모드** — Claude 프로바이더의 선택적 SDK 실행 모드 (세션 재사용, 도구 제어, 비용 제한)
 - **플러그인 시스템** — 메인 코드 수정 없이 커스텀 프로바이더 추가 가능 ([플러그인 가이드](./plugins/README.md))
 - **이미지 생성 API** — `/v1/images/generations` 엔드포인트 (OpenAI Images API 호환)

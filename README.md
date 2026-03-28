@@ -2,7 +2,7 @@
 
 # star-cliproxy
 
-An OpenAI-compatible API proxy powered by your AI CLI subscriptions — Claude, Codex, and Gemini
+An OpenAI-compatible API proxy powered by your AI CLI subscriptions — Claude, Codex, Copilot, and Gemini
 
 ![Dashboard](docs/images/dashboard.png)
 
@@ -32,7 +32,7 @@ response = client.chat.completions.create(
 
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/images/generations`, and `/v1/models` endpoints
 - **Anthropic Messages API** — `/v1/messages` endpoint for native Claude Code / Anthropic SDK support
-- **Three CLI providers** — Claude Code, Codex, Gemini CLI
+- **Four CLI providers** — Claude Code, Codex, Copilot CLI, Gemini CLI
 - **Claude Agent SDK mode** — optional SDK execution for Claude provider with session reuse, fine-grained tool control, and budget limits
 - **Plugin system** — extend with custom providers without modifying the main codebase (see [Plugin Guide](./plugins/README.md))
 - **Image generation API** — `/v1/images/generations` endpoint (OpenAI Images API compatible)
