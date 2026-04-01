@@ -473,7 +473,7 @@ function DebugLogEntry({
         : 'text-red-500 dark:text-red-400';
 
   const time = formatTime(log.createdAt);
-  const dataSize = calcLogDataSize(log);
+  const payload = calcPayloadSizes(log);
 
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
@@ -518,7 +518,11 @@ function DebugLogEntry({
           {log.isStream ? 'stream' : 'sync'}
         </span>
         <span className="text-xs text-gray-400 dark:text-gray-500">{formatLatency(log.latencyMs)}</span>
-        <span className="text-xs text-gray-400 dark:text-gray-600">{dataSize}</span>
+        <span className="text-xs font-mono text-gray-400 dark:text-gray-600" title="Request → Response payload size">
+          <span className="text-orange-400 dark:text-orange-500">↑{payload.req}</span>
+          <span className="mx-0.5">/</span>
+          <span className="text-teal-400 dark:text-teal-500">↓{payload.res}</span>
+        </span>
         <span className="text-xs text-gray-400 dark:text-gray-600">{time}</span>
         {log.cliArgs && (
           <button
@@ -821,20 +825,19 @@ function ToggleSwitch({
   );
 }
 
-// 디버그 로그의 전체 데이터 크기 계산
-function calcLogDataSize(log: DebugLog): string {
-  let bytes = 0;
-  if (log.cliArgs) bytes += log.cliArgs.length;
-  if (log.requestMessages) bytes += log.requestMessages.length;
-  if (log.rawStdout) bytes += log.rawStdout.length;
-  if (log.rawStderr) bytes += log.rawStderr.length;
-  if (log.parsedContent) bytes += log.parsedContent.length;
-  if (log.tokenUsage) bytes += log.tokenUsage.length;
-  if (log.errorMessage) bytes += log.errorMessage.length;
-
+// 바이트 수를 사람이 읽기 쉬운 단위로 변환
+function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+// LLM 요청/응답 페이로드 크기 계산
+function calcPayloadSizes(log: DebugLog): { req: string; res: string } {
+  const reqBytes = log.requestMessages?.length ?? 0;
+  // rawStdout = LLM 원본 응답, parsedContent = 파싱된 내용 (rawStdout 우선)
+  const resBytes = log.rawStdout?.length ?? log.parsedContent?.length ?? 0;
+  return { req: formatBytes(reqBytes), res: formatBytes(resBytes) };
 }
 
 function formatTime(dateStr: string): string {
