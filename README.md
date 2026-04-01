@@ -71,7 +71,10 @@ response = client.chat.completions.create(
 |-----|-------------|---------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Claude Pro / Max | `npm install -g @anthropic-ai/claude-code` |
 | [Codex](https://github.com/openai/codex) | ChatGPT Plus / Pro | `npm install -g @openai/codex` |
+| [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | GitHub Copilot | `gh extension install github/gh-copilot` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
+
+> **Plugin providers:** You can also use providers like [Ollama](https://ollama.com/) by registering them as plugins. See the [Plugin Guide](./plugins/README.md) for details.
 
 Run each CLI tool at least once on its own to complete authentication before starting the proxy.
 
@@ -239,19 +242,27 @@ curl http://localhost:8300/v1/chat/completions \
 ```bash
 # Use Claude Code directly with star-cliproxy
 ANTHROPIC_BASE_URL=http://localhost:8300 \
-ANTHROPIC_API_KEY=sk-proxy-your-secret-key \
+ANTHROPIC_AUTH_TOKEN=sk-proxy-your-secret-key \
+ANTHROPIC_MODEL="claude-opus" \
 claude "Hello!"
 ```
 
-Shell function for convenience:
+#### Using `localcc` shell function
+
+Add the following to your `.zshrc` (or `.bashrc`) to use Claude Code's full environment with any model mapped in star-cliproxy:
 
 ```bash
+export LOCAL_CLAUDE_API_KEY="sk-proxy-your-secret-key"
+
 localcc() {
   ANTHROPIC_BASE_URL=http://localhost:8300 \
-  ANTHROPIC_API_KEY=$LOCAL_CLAUDE_API_KEY \
+  ANTHROPIC_AUTH_TOKEN=$LOCAL_CLAUDE_API_KEY \
+  ANTHROPIC_MODEL="claude-opus" \
   claude "$@"
 }
 ```
+
+This lets you run `localcc` just like `claude`, but requests are routed through star-cliproxy — so you can use any subscription model (Codex, Gemini, Copilot, etc.) by changing `ANTHROPIC_MODEL` to any alias defined in your model mappings.
 
 ## Model Mapping
 

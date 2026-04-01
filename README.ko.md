@@ -71,7 +71,10 @@ response = client.chat.completions.create(
 |-----|------|------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Claude Pro / Max | `npm install -g @anthropic-ai/claude-code` |
 | [Codex](https://github.com/openai/codex) | ChatGPT Plus / Pro | `npm install -g @openai/codex` |
+| [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | GitHub Copilot | `gh extension install github/gh-copilot` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
+
+> **플러그인 프로바이더:** [Ollama](https://ollama.com/) 등 추가 프로바이더를 플러그인으로 등록하여 사용할 수 있습니다. [Plugin Guide](./plugins/README.md) 참고.
 
 각 CLI 도구를 먼저 단독으로 실행하여 인증(로그인)을 완료해 주세요.
 
@@ -239,19 +242,27 @@ curl http://localhost:8300/v1/chat/completions \
 ```bash
 # star-cliproxy를 통해 Claude Code 직접 사용
 ANTHROPIC_BASE_URL=http://localhost:8300 \
-ANTHROPIC_API_KEY=sk-proxy-your-secret-key \
+ANTHROPIC_AUTH_TOKEN=sk-proxy-your-secret-key \
+ANTHROPIC_MODEL="claude-opus" \
 claude "Hello!"
 ```
 
-편의를 위한 Shell 함수:
+#### `localcc` Shell 함수 사용법
+
+`.zshrc` (또는 `.bashrc`)에 아래를 추가하면 Claude Code 환경을 그대로 사용하면서 star-cliproxy에 매핑된 어떤 모델이든 사용할 수 있습니다:
 
 ```bash
+export LOCAL_CLAUDE_API_KEY="sk-proxy-your-secret-key"
+
 localcc() {
   ANTHROPIC_BASE_URL=http://localhost:8300 \
-  ANTHROPIC_API_KEY=$LOCAL_CLAUDE_API_KEY \
+  ANTHROPIC_AUTH_TOKEN=$LOCAL_CLAUDE_API_KEY \
+  ANTHROPIC_MODEL="claude-opus" \
   claude "$@"
 }
 ```
+
+`localcc` 명령은 `claude`와 동일하게 사용하되, 요청이 star-cliproxy를 통해 라우팅됩니다. `ANTHROPIC_MODEL`을 모델 매핑에 정의된 다른 alias로 변경하면 Codex, Gemini, Copilot 등 다른 구독 모델도 Claude Code 환경에서 바로 사용할 수 있습니다.
 
 ## Model Mapping
 
