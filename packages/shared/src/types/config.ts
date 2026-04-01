@@ -31,7 +31,7 @@ export interface AuthConfig {
 
 // Claude Agent SDK 전용 옵션 (mode: 'sdk'일 때만 사용)
 export interface ClaudeSdkOptions {
-  max_turns?: number;              // 최대 에이전트 턴 수 (기본 5)
+  max_turns?: number;              // 최대 에이전트 턴 수 (기본 50)
   permission_mode?: string;        // 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk'
   allowed_tools?: string[];        // 자동 승인 도구 목록 (Read, Write 등)
   disallowed_tools?: string[];     // 차단 도구 목록
@@ -39,6 +39,17 @@ export interface ClaudeSdkOptions {
   session_ttl_ms?: number;         // 세션 TTL (기본 1800000 = 30분)
   enable_session_reuse?: boolean;  // 세션 재사용 활성화 (기본 true)
   persist_session?: boolean;       // 디스크 세션 저장 (기본 false)
+}
+
+// Codex App Server 전용 옵션 (mode: 'app-server'일 때만 사용)
+export interface CodexAppServerOptions {
+  transport?: 'stdio' | 'websocket';     // 전송 방식 (기본 'stdio', websocket은 실험적)
+  websocket_url?: string;                 // transport: 'websocket'일 때 URL (예: ws://127.0.0.1:4500)
+  session_ttl_ms?: number;                // thread 재사용 TTL (기본 1800000 = 30분)
+  enable_session_reuse?: boolean;         // thread 재사용 활성화 (기본 true)
+  max_turns?: number;                     // 턴 제한
+  auto_restart?: boolean;                 // 크래시 시 자동 재시작 (기본 true)
+  max_restart_count?: number;             // 재시작 상한 (기본 5)
 }
 
 export interface ProviderConfigYaml {
@@ -49,8 +60,9 @@ export interface ProviderConfigYaml {
   timeout_ms: number;
   extra_args: string[];
   working_dir?: string;
-  mode?: 'cli' | 'sdk';           // 실행 모드 (기본 'cli', 하위 호환)
-  sdk_options?: ClaudeSdkOptions;  // mode: 'sdk'일 때 사용
+  mode?: 'cli' | 'sdk' | 'app-server';  // 실행 모드 (기본 'cli')
+  sdk_options?: ClaudeSdkOptions;         // mode: 'sdk'일 때 사용 (Claude)
+  app_server_options?: CodexAppServerOptions; // mode: 'app-server'일 때 사용 (Codex)
 }
 
 export interface RateLimitConfig {

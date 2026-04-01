@@ -184,6 +184,18 @@ function mergeProviderConfig(
     persist_session: rawSdkOptions.persist_session as boolean | undefined,
   } : undefined;
 
+  // App Server 옵션 파싱 (Codex app-server 모드)
+  const rawAppServerOptions = raw.app_server_options as Record<string, unknown> | undefined;
+  const appServerOptions = rawAppServerOptions ? {
+    transport: (rawAppServerOptions.transport as 'stdio' | 'websocket') ?? 'stdio',
+    websocket_url: rawAppServerOptions.websocket_url as string | undefined,
+    session_ttl_ms: rawAppServerOptions.session_ttl_ms as number | undefined,
+    enable_session_reuse: rawAppServerOptions.enable_session_reuse as boolean | undefined,
+    max_turns: rawAppServerOptions.max_turns as number | undefined,
+    auto_restart: rawAppServerOptions.auto_restart as boolean | undefined,
+    max_restart_count: rawAppServerOptions.max_restart_count as number | undefined,
+  } : undefined;
+
   return {
     enabled: (raw.enabled as boolean) ?? defaults.enabled,
     cli_path: (raw.cli_path as string) ?? defaults.cli_path,
@@ -192,7 +204,8 @@ function mergeProviderConfig(
     timeout_ms: (raw.timeout_ms as number) ?? defaults.timeout_ms,
     extra_args: (raw.extra_args as string[]) ?? defaults.extra_args,
     working_dir: (raw.working_dir as string) ?? undefined,
-    mode: (raw.mode as 'cli' | 'sdk') ?? undefined,
+    mode: (raw.mode as 'cli' | 'sdk' | 'app-server') ?? undefined,
     sdk_options: sdkOptions,
+    app_server_options: appServerOptions,
   };
 }

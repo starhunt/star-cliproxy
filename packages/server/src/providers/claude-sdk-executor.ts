@@ -95,7 +95,7 @@ function buildQueryOptions(
       ...config.cleanEnv,
       CLAUDE_AGENT_SDK_CLIENT_APP: 'star-cliproxy/1.0.0',
     },
-    maxTurns: sdkOptions.max_turns ?? 5,
+    maxTurns: sdkOptions.max_turns ?? 50,
     maxBudgetUsd: sdkOptions.max_budget_usd,
     permissionMode,
     allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',

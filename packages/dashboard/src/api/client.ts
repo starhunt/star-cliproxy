@@ -280,6 +280,16 @@ export interface ClaudeSdkOptions {
   persist_session?: boolean;
 }
 
+export interface CodexAppServerOptions {
+  transport?: 'stdio' | 'websocket';
+  websocket_url?: string;
+  session_ttl_ms?: number;
+  enable_session_reuse?: boolean;
+  max_turns?: number;
+  auto_restart?: boolean;
+  max_restart_count?: number;
+}
+
 export interface ProviderConfig {
   enabled: boolean;
   cli_path: string;
@@ -288,8 +298,9 @@ export interface ProviderConfig {
   timeout_ms: number;
   extra_args: string[];
   working_dir?: string;
-  mode?: 'cli' | 'sdk';
+  mode?: 'cli' | 'sdk' | 'app-server';
   sdk_options?: ClaudeSdkOptions;
+  app_server_options?: CodexAppServerOptions;
 }
 
 export interface ProviderTestResult {

@@ -32,7 +32,7 @@ providers:
     # working_dir: "/path/to/project"  # CLI 작업 디렉토리 (기본: 시스템 temp)
     # mode: "sdk"                      # 실행 모드: 'cli' (기본) | 'sdk' (Agent SDK 사용)
     # sdk_options:                     # mode: 'sdk'일 때만 적용
-    #   max_turns: 5                   # 최대 에이전트 턴 수
+    #   max_turns: 50                  # 최대 에이전트 턴 수
     #   permission_mode: "bypassPermissions"  # 권한 모드
     #   allowed_tools: []              # 자동 승인 도구 목록
     #   disallowed_tools: []           # 차단 도구 목록
@@ -52,6 +52,14 @@ providers:
       - "--sandbox"
       - "workspace-write"
     # working_dir: "/path/to/project"
+    # mode: "app-server"              # 실행 모드: 'cli' (기본) | 'app-server' (persistent JSON-RPC)
+    # app_server_options:             # mode: 'app-server'일 때만 적용
+    #   transport: "stdio"            # 전송 방식: 'stdio' (기본) | 'websocket' (실험적)
+    #   session_ttl_ms: 1800000       # 스레드 재사용 TTL (기본 30분)
+    #   enable_session_reuse: true    # 스레드 재사용 활성화
+    #   max_turns: 10                 # 턴 제한
+    #   auto_restart: true            # 크래시 시 자동 재시작
+    #   max_restart_count: 5          # 최대 재시작 횟수
 
   copilot:
     enabled: true

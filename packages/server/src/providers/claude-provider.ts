@@ -56,7 +56,7 @@ export class ClaudeProvider extends BaseProvider {
       '-p', '-', // stdin에서 프롬프트 읽기 (ARG_MAX 제한 우회)
       '--output-format', format,
       '--model', model,
-      '--max-turns', '5',
+      '--max-turns', '50',
     ];
 
     if (options.stream) {
