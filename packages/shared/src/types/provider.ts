@@ -60,6 +60,20 @@ export interface DebugCaptureInfo {
   stdout?: string;
   stderr?: string;
   streamLines?: string[];
+
+  // HTTP Provider 전용
+  httpRequest?: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body: unknown;
+  };
+  httpResponse?: {
+    status: number;
+    headers: Record<string, string>;
+    body?: unknown;
+  };
+  httpStreamLines?: string[];
 }
 
 export interface ExecuteOptions {
@@ -118,6 +132,21 @@ export interface GenericCliProviderConfig extends PluginProviderConfig {
 
   // 헬스 체크
   health_check_args?: string[];   // default: ["--version"]
+
+  // 메타
+  display_name: string;
+  description?: string;
+}
+
+// HTTP Provider 설정 (OpenAI 호환 API용)
+export interface HttpProviderConfig {
+  enabled: boolean;
+  base_url: string;           // e.g. "http://localhost:8080"
+  api_key?: string;           // Authorization: Bearer {api_key}
+  custom_headers?: Record<string, string>;
+  default_model: string;
+  max_concurrent: number;
+  timeout_ms: number;
 
   // 메타
   display_name: string;

@@ -100,6 +100,9 @@ async function createTables(client: Client) {
       request_messages TEXT,
       raw_stdout TEXT,
       raw_stderr TEXT,
+      http_request TEXT,
+      http_response TEXT,
+      http_stream_lines TEXT,
       parsed_content TEXT,
       token_usage TEXT,
       status TEXT NOT NULL,
@@ -122,6 +125,16 @@ async function createTables(client: Client) {
     CREATE INDEX IF NOT EXISTS idx_mappings_alias ON model_mappings(alias);
     CREATE INDEX IF NOT EXISTS idx_cache_expires ON response_cache(expires_at);
   `);
+
+  // 기존 DB 마이그레이션: debug_logs에 HTTP 컬럼 추가 (이미 존재하면 무시)
+  const httpColumns = ['http_request', 'http_response', 'http_stream_lines'];
+  for (const col of httpColumns) {
+    try {
+      await client.execute(`ALTER TABLE debug_logs ADD COLUMN ${col} TEXT`);
+    } catch {
+      // 이미 존재하면 무시
+    }
+  }
 }
 
 export function getDatabase() {

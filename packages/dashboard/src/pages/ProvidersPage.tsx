@@ -10,10 +10,17 @@ import {
   updateGenericProvider,
   deleteGenericProvider,
   testGenericProvider,
+  fetchHttpProviders,
+  createHttpProvider,
+  updateHttpProvider,
+  deleteHttpProvider,
+  testHttpProvider,
   type ProviderInfo,
   type ProviderConfig,
   type ProviderTestResult,
   type GenericCliProviderConfig,
+  type HttpProviderConfig,
+  type HttpProviderInfo,
   type ClaudeSdkOptions,
   type CodexAppServerOptions,
 } from '../api/client';
@@ -45,6 +52,19 @@ const DEFAULT_GENERIC_CONFIG: Omit<GenericCliProviderConfig, 'enabled'> & { enab
 // Generic 프로바이더 이름인지 (DB에서 로드된 커스텀)
 const genericProviderNames = new Set<string>();
 
+// HTTP 프로바이더 이름
+const httpProviderNames = new Set<string>();
+
+// HTTP 프로바이더 폼 기본값
+const DEFAULT_HTTP_CONFIG: Partial<HttpProviderConfig> = {
+  enabled: true,
+  base_url: 'http://localhost:8080/v1',
+  default_model: '',
+  max_concurrent: 5,
+  timeout_ms: 300000,
+  display_name: '',
+};
+
 export default function ProvidersPage() {
   const { t } = useTranslation();
   const [providers, setProviders] = useState<ProviderState[]>([]);
@@ -63,17 +83,29 @@ export default function ProvidersPage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [addSaving, setAddSaving] = useState(false);
 
+  // HTTP 프로바이더 상태
+  const [httpProviders, setHttpProviders] = useState<HttpProviderInfo[]>([]);
+  const [showAddHttpForm, setShowAddHttpForm] = useState(false);
+  const [httpDraft, setHttpDraft] = useState<{ name: string } & Partial<HttpProviderConfig>>({ name: '', ...DEFAULT_HTTP_CONFIG });
+  const [httpError, setHttpError] = useState<string | null>(null);
+  const [httpSaving, setHttpSaving] = useState(false);
+
   // 프로바이더 목록 + 설정 로드
   const loadAll = async () => {
     try {
-      // Generic 프로바이더 이름 목록도 로드
-      const [infos, generics] = await Promise.all([
+      // Generic/HTTP 프로바이더 이름 목록도 로드
+      const [infos, generics, https] = await Promise.all([
         fetchProviders(),
         fetchGenericProviders().catch(() => []),
+        fetchHttpProviders().catch(() => []),
       ]);
 
       genericProviderNames.clear();
       for (const g of generics) genericProviderNames.add(g.name);
+
+      httpProviderNames.clear();
+      for (const h of https) httpProviderNames.add(h.name);
+      setHttpProviders(https);
 
       const states: ProviderState[] = infos.map((info) => ({
         info,
@@ -242,6 +274,50 @@ export default function ProvidersPage() {
         extra_args: extraArgsText.split('\n').filter(Boolean),
       };
       await updateGenericProvider(name, payload);
+      setMessage({ type: 'success', text: t('providers.saved') });
+      loadAll();
+    } catch (e) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // HTTP 프로바이더 추가
+  const handleAddHttpProvider = async () => {
+    setHttpSaving(true);
+    setHttpError(null);
+    try {
+      await createHttpProvider(httpDraft as { name: string } & Partial<HttpProviderConfig>);
+      setShowAddHttpForm(false);
+      setHttpDraft({ name: '', ...DEFAULT_HTTP_CONFIG });
+      loadAll();
+    } catch (e) {
+      setHttpError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setHttpSaving(false);
+    }
+  };
+
+  // HTTP 프로바이더 삭제
+  const handleDeleteHttpProvider = async (name: string) => {
+    if (!confirm(t('providers.confirmDelete').replace('{name}', name))) return;
+    try {
+      await deleteHttpProvider(name);
+      setExpandedProvider(null);
+      loadAll();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  // HTTP 프로바이더 설정 저장
+  const handleSaveHttp = async (name: string) => {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const payload: Partial<HttpProviderConfig> = { ...draft };
+      await updateHttpProvider(name, payload);
       setMessage({ type: 'success', text: t('providers.saved') });
       loadAll();
     } catch (e) {
@@ -635,6 +711,83 @@ export default function ProvidersPage() {
               {customProviders.length === 0 && !showAddForm && (
                 <p className="text-xs text-gray-400 dark:text-gray-600 text-center py-4">
                   {t('providers.noCustom')}
+                </p>
+              )}
+            </div>
+
+            {/* HTTP 프로바이더 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+                  {t('providers.httpSection')}
+                </h3>
+                <div className="flex-1 h-px bg-purple-200 dark:bg-purple-500/20" />
+                <button
+                  onClick={() => setShowAddHttpForm(!showAddHttpForm)}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-700 rounded text-xs font-medium text-white transition-colors"
+                >
+                  + {t('providers.addHttp')}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {t('providers.httpDescription')}
+              </p>
+
+              {showAddHttpForm && (
+                <AddHttpProviderForm
+                  draft={httpDraft}
+                  setDraft={setHttpDraft}
+                  error={httpError}
+                  saving={httpSaving}
+                  onSave={handleAddHttpProvider}
+                  onCancel={() => { setShowAddHttpForm(false); setHttpError(null); }}
+                  t={t}
+                />
+              )}
+
+              {httpProviders.map((hp) => (
+                <HttpProviderCard
+                  key={hp.name}
+                  hp={hp}
+                  expanded={expandedProvider === `http:${hp.name}`}
+                  onToggle={() => {
+                    if (expandedProvider === `http:${hp.name}`) {
+                      setExpandedProvider(null);
+                      setDraft({});
+                    } else {
+                      setExpandedProvider(`http:${hp.name}`);
+                      setDraft(hp.config as unknown as Partial<ProviderConfig>);
+                    }
+                    setTestResult(null);
+                    setMessage(null);
+                  }}
+                  draft={draft}
+                  updateDraft={updateDraft}
+                  saving={saving}
+                  testing={testing}
+                  testResult={expandedProvider === `http:${hp.name}` ? testResult : null}
+                  message={expandedProvider === `http:${hp.name}` ? message : null}
+                  onSave={() => handleSaveHttp(hp.name)}
+                  onDelete={() => handleDeleteHttpProvider(hp.name)}
+                  onTest={async () => {
+                    setTesting(hp.name);
+                    setTestResult(null);
+                    try {
+                      const result = await testHttpProvider({ name: hp.name, ...hp.config });
+                      setTestResult(result);
+                    } catch (e) {
+                      setTestResult({ success: false, error: e instanceof Error ? e.message : String(e), latencyMs: 0 });
+                    } finally {
+                      setTesting(null);
+                    }
+                  }}
+                  t={t}
+                />
+              ))}
+
+              {httpProviders.length === 0 && !showAddHttpForm && (
+                <p className="text-xs text-gray-400 dark:text-gray-600 text-center py-4">
+                  {t('providers.noHttp')}
                 </p>
               )}
             </div>
@@ -1331,5 +1484,327 @@ function ToggleSwitch({
         }`}
       />
     </button>
+  );
+}
+
+// HTTP 프로바이더 카드
+function HttpProviderCard({
+  hp, expanded, onToggle, draft, updateDraft,
+  saving, testing, testResult, message,
+  onSave, onDelete, onTest, t,
+}: {
+  hp: HttpProviderInfo;
+  expanded: boolean;
+  onToggle: () => void;
+  draft: Partial<ProviderConfig>;
+  updateDraft: (field: keyof ProviderConfig, value: string | number | boolean) => void;
+  saving: boolean;
+  testing: string | null;
+  testResult: ProviderTestResult | null;
+  message: { type: 'success' | 'error'; text: string } | null;
+  onSave: () => void;
+  onDelete: () => void;
+  onTest: () => void;
+  t: (key: string) => string;
+}) {
+  const labelCls = 'text-xs text-gray-500 dark:text-gray-400 block mb-1.5';
+  const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm';
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700/50 shadow-sm overflow-hidden">
+      {/* 헤더 */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50"
+        onClick={onToggle}
+      >
+        <span className={`w-2 h-2 rounded-full ${hp.config.enabled ? 'bg-purple-500' : 'bg-gray-400'}`} />
+        <span className="font-medium text-sm text-gray-900 dark:text-gray-100">{hp.config.display_name || hp.name}</span>
+        <span className="text-xs text-purple-500 dark:text-purple-400 border border-purple-300 dark:border-purple-600 rounded px-1.5 py-0.5">
+          {t('providers.httpType')}
+        </span>
+        <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{hp.config.base_url}</span>
+        <div className="flex-1" />
+        <span className="text-xs text-gray-400">{expanded ? '▲' : '▼'}</span>
+      </div>
+
+      {/* 확장 내용 */}
+      {expanded && (
+        <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>{t('providers.baseUrl')}</label>
+              <input
+                type="text"
+                value={(draft as Record<string, unknown>).base_url as string ?? hp.config.base_url}
+                onChange={(e) => updateDraft('base_url' as keyof ProviderConfig, e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.apiKey')}</label>
+              <input
+                type="password"
+                value={(draft as Record<string, unknown>).api_key as string ?? hp.config.api_key ?? ''}
+                onChange={(e) => updateDraft('api_key' as keyof ProviderConfig, e.target.value)}
+                placeholder={t('providers.apiKeyPlaceholder')}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.defaultModel')}</label>
+              <input
+                type="text"
+                value={(draft as Record<string, unknown>).default_model as string ?? hp.config.default_model}
+                onChange={(e) => updateDraft('default_model' as keyof ProviderConfig, e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.displayName')}</label>
+              <input
+                type="text"
+                value={(draft as Record<string, unknown>).display_name as string ?? hp.config.display_name}
+                onChange={(e) => updateDraft('display_name' as keyof ProviderConfig, e.target.value)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.maxConcurrent')}</label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={(draft as Record<string, unknown>).max_concurrent as number ?? hp.config.max_concurrent}
+                onChange={(e) => updateDraft('max_concurrent' as keyof ProviderConfig, parseInt(e.target.value) || 1)}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.timeout')}</label>
+              <input
+                type="number"
+                min="1000"
+                value={(draft as Record<string, unknown>).timeout_ms as number ?? hp.config.timeout_ms}
+                onChange={(e) => updateDraft('timeout_ms' as keyof ProviderConfig, parseInt(e.target.value) || 30000)}
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          {/* 테스트 결과 */}
+          {testResult && (
+            <div className={`px-3 py-2 rounded text-xs ${
+              testResult.success
+                ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400'
+                : 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400'
+            }`}>
+              {testResult.success
+                ? `✓ ${testResult.response?.substring(0, 100)} (${testResult.latencyMs}ms)`
+                : `✗ ${testResult.error}`
+              }
+            </div>
+          )}
+
+          {message && (
+            <div className={`px-3 py-2 rounded text-xs ${
+              message.type === 'success'
+                ? 'bg-green-50 dark:bg-green-500/10 text-green-600'
+                : 'bg-red-50 dark:bg-red-500/10 text-red-600'
+            }`}>
+              {message.text}
+            </div>
+          )}
+
+          {/* 액션 버튼 */}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onSave}
+              disabled={saving}
+              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-xs font-medium text-white"
+            >
+              {saving ? t('common.saving') : t('common.save')}
+            </button>
+            <button
+              onClick={onTest}
+              disabled={!!testing}
+              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded text-xs font-medium text-white"
+            >
+              {testing === hp.name ? t('providers.testing') : t('providers.test')}
+            </button>
+            <button
+              onClick={onToggle}
+              className="px-4 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs font-medium"
+            >
+              {t('common.cancel')}
+            </button>
+            <div className="flex-1" />
+            <button
+              onClick={onDelete}
+              className="px-4 py-1.5 bg-red-600 hover:bg-red-700 rounded text-xs font-medium text-white"
+            >
+              {t('common.delete')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// HTTP 프로바이더 추가 폼
+function AddHttpProviderForm({
+  draft, setDraft, error, saving, onSave, onCancel, t,
+}: {
+  draft: { name: string } & Partial<HttpProviderConfig>;
+  setDraft: React.Dispatch<React.SetStateAction<{ name: string } & Partial<HttpProviderConfig>>>;
+  error: string | null;
+  saving: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+  t: (key: string) => string;
+}) {
+  const labelCls = 'text-xs text-gray-500 dark:text-gray-400 block mb-1.5';
+  const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm';
+  const [localTestResult, setLocalTestResult] = useState<ProviderTestResult | null>(null);
+  const [localTesting, setLocalTesting] = useState(false);
+
+  const handleTestBeforeRegister = async () => {
+    setLocalTesting(true);
+    setLocalTestResult(null);
+    try {
+      const result = await testHttpProvider(draft);
+      setLocalTestResult(result);
+    } catch (e) {
+      setLocalTestResult({ success: false, error: e instanceof Error ? e.message : String(e), latencyMs: 0 });
+    } finally {
+      setLocalTesting(false);
+    }
+  };
+
+  return (
+    <div className="bg-purple-50/50 dark:bg-purple-500/5 border border-purple-200 dark:border-purple-500/20 rounded-lg px-4 py-4 space-y-4">
+      {/* 가이드 */}
+      <div className="px-3 py-2 rounded bg-purple-100/50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20 text-xs text-purple-700 dark:text-purple-300">
+        {t('providers.httpGuide')}
+      </div>
+
+      {error && (
+        <div className="px-3 py-2 rounded bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-xs text-red-600">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>{t('providers.name')}</label>
+          <input
+            type="text"
+            value={draft.name}
+            onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+            placeholder="mlx-local"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.displayName')}</label>
+          <input
+            type="text"
+            value={draft.display_name ?? ''}
+            onChange={(e) => setDraft((p) => ({ ...p, display_name: e.target.value }))}
+            placeholder="MLX Local"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.baseUrl')}</label>
+          <input
+            type="text"
+            value={draft.base_url ?? ''}
+            onChange={(e) => setDraft((p) => ({ ...p, base_url: e.target.value }))}
+            placeholder={t('providers.baseUrlPlaceholder')}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.apiKey')}</label>
+          <input
+            type="password"
+            value={draft.api_key ?? ''}
+            onChange={(e) => setDraft((p) => ({ ...p, api_key: e.target.value }))}
+            placeholder={t('providers.apiKeyPlaceholder')}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.defaultModel')}</label>
+          <input
+            type="text"
+            value={draft.default_model ?? ''}
+            onChange={(e) => setDraft((p) => ({ ...p, default_model: e.target.value }))}
+            placeholder="llama3"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.maxConcurrent')}</label>
+          <input
+            type="number"
+            min="1"
+            max="50"
+            value={draft.max_concurrent ?? 5}
+            onChange={(e) => setDraft((p) => ({ ...p, max_concurrent: parseInt(e.target.value) || 5 }))}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.timeout')}</label>
+          <input
+            type="number"
+            min="1000"
+            value={draft.timeout_ms ?? 300000}
+            onChange={(e) => setDraft((p) => ({ ...p, timeout_ms: parseInt(e.target.value) || 300000 }))}
+            className={inputCls}
+          />
+        </div>
+      </div>
+
+      {/* 테스트 결과 */}
+      {localTestResult && (
+        <div className={`px-3 py-2 rounded text-xs ${
+          localTestResult.success
+            ? 'bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400'
+            : 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400'
+        }`}>
+          {localTestResult.success
+            ? `✓ ${localTestResult.response?.substring(0, 100)} (${localTestResult.latencyMs}ms)`
+            : `✗ ${localTestResult.error}`
+          }
+        </div>
+      )}
+
+      {/* 버튼 */}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={handleTestBeforeRegister}
+          disabled={localTesting || !draft.base_url}
+          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded text-xs font-medium text-white"
+        >
+          {localTesting ? t('providers.testing') : t('providers.testBefore')}
+        </button>
+        <button
+          onClick={onSave}
+          disabled={saving || !draft.name || !draft.base_url}
+          className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded text-xs font-medium text-white"
+        >
+          {saving ? t('common.saving') : t('providers.addHttp')}
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-4 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs font-medium"
+        >
+          {t('common.cancel')}
+        </button>
+      </div>
+    </div>
   );
 }

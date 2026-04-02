@@ -27,7 +27,9 @@ import { registerDebugRoutes } from './routes/admin/debug.js';
 import { registerSettingsRoutes, loadValidationFromDb } from './routes/admin/settings.js';
 import { registerExportImportRoutes } from './routes/admin/export-import.js';
 import { registerGenericProviderRoutes } from './routes/admin/generic-providers.js';
+import { registerHttpProviderRoutes } from './routes/admin/http-providers.js';
 import { loadGenericProviders } from './providers/generic-provider-loader.js';
+import { loadHttpProviders } from './providers/http-provider-loader.js';
 import { seedDatabase } from './db/seed.js';
 import { loadPlugins } from './plugins/plugin-loader.js';
 import type { ValidationConfig } from '@star-cliproxy/shared';
@@ -103,6 +105,12 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
 
   // DB에서 제네릭 프로바이더 로드 및 등록
   await loadGenericProviders(registry, queueManager, {
+    info: (msg) => console.log(msg),
+    warn: (msg) => console.warn(msg),
+  });
+
+  // DB에서 HTTP 프로바이더 로드 및 등록
+  await loadHttpProviders(registry, queueManager, {
     info: (msg) => console.log(msg),
     warn: (msg) => console.warn(msg),
   });
@@ -389,6 +397,7 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
     healthChecker,
   });
   registerGenericProviderRoutes(app, { registry, healthChecker, queueManager });
+  registerHttpProviderRoutes(app, { registry, healthChecker, queueManager });
   registerDashboardRoute(app, { registry, queueManager, activeRequests });
 
   // 활성 요청 API

@@ -33,6 +33,7 @@ response = client.chat.completions.create(
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/images/generations`, and `/v1/models` endpoints
 - **Anthropic Messages API** — `/v1/messages` endpoint for native Claude Code / Anthropic SDK support
 - **Four CLI providers** — Claude Code, Codex, Copilot CLI, Gemini CLI
+- **HTTP providers** — connect any OpenAI-compatible HTTP API (MLX serve, llama.cpp, vLLM, Ollama, LM Studio, etc.) with no wrapper scripts
 - **Claude Agent SDK mode** — optional SDK execution for Claude provider with session reuse, fine-grained tool control, and budget limits
 - **Plugin system** — extend with custom providers without modifying the main codebase (see [Plugin Guide](./plugins/README.md))
 - **Image generation API** — `/v1/images/generations` endpoint (OpenAI Images API compatible)
@@ -52,7 +53,7 @@ response = client.chat.completions.create(
 - **Error differentiation** — 504 on timeout, 502 on other errors
 - **X-Unsupported-Params header** — notifies callers of parameters the CLI does not support
 - **Content parts support** — OpenAI content parts array format (compatible with OpenClaw, LangChain, LiteLLM)
-- **Debug capture** — request/response payload capture (global or per-model toggle, view CLI args + raw stdout)
+- **Debug capture** — request/response payload capture (global or per-model toggle, view CLI args + raw stdout, copy as curl for HTTP providers)
 - **Debug log deletion** — delete individual debug log entries
 - **Settings page** — change validation settings at runtime (HTTP body size limit still requires restart)
 - **i18n** — English / Korean dashboard localization
@@ -74,7 +75,9 @@ response = client.chat.completions.create(
 | [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | GitHub Copilot | `gh extension install github/gh-copilot` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
 
-> **Plugin providers:** You can also use providers like [Ollama](https://ollama.com/) by registering them as plugins. See the [Plugin Guide](./plugins/README.md) for details.
+> **HTTP providers:** Any local server with an OpenAI-compatible API (MLX serve, llama.cpp, vLLM, Ollama, LM Studio) can be added directly from the dashboard — no CLI tool or plugin needed. See [HTTP Providers](#http-providers) below.
+>
+> **Plugin providers:** You can also create custom CLI-based providers as plugins. See the [Plugin Guide](./plugins/README.md) for details.
 
 Run each CLI tool at least once on its own to complete authentication before starting the proxy.
 
@@ -173,7 +176,8 @@ Open `http://localhost:5300` in your browser and enter `ADMIN_TOKEN`:
 - **API Keys** — issue and revoke API keys
 - **Rate Limits** — adjust rate limit settings (takes effect immediately)
 - **Logs** — browse request logs
-- **Debug** — capture and inspect API request/response payloads (global or per-model toggle)
+- **Providers** — manage built-in CLI, custom CLI, and HTTP providers
+- **Debug** — capture and inspect API request/response payloads (global or per-model toggle, copy as curl)
 - **Settings** — change validation limits at runtime (HTTP body size limit requires restart)
 - **API Guide** — usage guide with code samples
 
@@ -280,6 +284,63 @@ Default mappings (add or modify from the dashboard):
 
 Mapping the same alias to multiple providers enables **automatic fallback** in priority order.
 
+## HTTP Providers
+
+Connect any local OpenAI-compatible server directly — no CLI wrapper needed.
+
+### Supported servers
+
+Any server that implements `POST /v1/chat/completions` with the OpenAI API format:
+
+- [MLX serve](https://github.com/ml-explore/mlx-examples) — `mlx_lm.server`
+- [llama.cpp](https://github.com/ggml-org/llama.cpp) — `llama-server`
+- [vLLM](https://github.com/vllm-project/vllm) — `vllm serve`
+- [Ollama](https://ollama.com/) — built-in OpenAI compatibility
+- [LM Studio](https://lmstudio.ai/) — local server mode
+- [text-generation-webui](https://github.com/oobabooga/text-generation-webui) — OpenAI extension
+
+### Setup
+
+1. Start your local LLM server
+2. Open Dashboard → **Providers** → **HTTP Providers** → **+ Add HTTP Provider**
+3. Enter the base URL **including `/v1`** (e.g. `http://localhost:8080/v1`)
+4. Test connection, then register
+5. Add a model mapping (Dashboard → Models) to route requests to it
+
+### Example
+
+```bash
+# Start MLX serve
+mlx_lm.server --model mlx-community/Llama-3-8B-Instruct-4bit --port 8080
+
+# Register via API (or use the dashboard)
+curl -X POST http://localhost:8300/admin/http-providers \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "mlx-local",
+    "base_url": "http://localhost:8080/v1",
+    "default_model": "mlx-community/Llama-3-8B-Instruct-4bit",
+    "display_name": "MLX Local"
+  }'
+
+# Add a model mapping
+curl -X POST http://localhost:8300/admin/model-mappings \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "alias": "llama3",
+    "provider": "mlx-local",
+    "actualModel": "mlx-community/Llama-3-8B-Instruct-4bit"
+  }'
+
+# Use it
+curl http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer sk-proxy-your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "llama3", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
 ## Configuration
 
 ### config.yaml
@@ -384,6 +445,8 @@ validation:
 | `GET` | `/admin/active-requests` | In-flight requests |
 | `GET` | `/admin/stats` | Usage statistics |
 | `GET` | `/admin/logs` | Request logs |
+| `GET/POST/PUT/DELETE` | `/admin/http-providers` | HTTP provider CRUD |
+| `POST` | `/admin/http-providers/test` | Test HTTP provider before registering |
 | `GET/PUT` | `/admin/debug` | Debug capture configuration |
 | `GET/DELETE` | `/admin/debug-logs` | Debug log management |
 | `GET/PUT` | `/admin/settings/validation` | Validation settings |

@@ -48,6 +48,10 @@ export interface DebugLogCompleteEntry {
   rawStdout?: string;
   rawStderr?: string;
   streamLines?: string[];
+  // HTTP Provider 전용
+  httpRequest?: { method: string; url: string; headers: Record<string, string>; body: unknown };
+  httpResponse?: { status: number; headers: Record<string, string>; body?: unknown };
+  httpStreamLines?: string[];
   parsedContent?: string;
   tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   status: 'success' | 'error' | 'timeout';
@@ -117,6 +121,9 @@ export class DebugService {
         cliArgs: entry.cliArgs ? JSON.stringify(entry.cliArgs.map((arg) => redactSecrets(arg))) : undefined,
         rawStdout: truncate(rawStdout),
         rawStderr: truncate(entry.rawStderr),
+        httpRequest: entry.httpRequest ? truncate(JSON.stringify(entry.httpRequest)) : undefined,
+        httpResponse: entry.httpResponse ? truncate(JSON.stringify(entry.httpResponse)) : undefined,
+        httpStreamLines: entry.httpStreamLines ? truncate(entry.httpStreamLines.join('\n')) : undefined,
         parsedContent: truncate(entry.parsedContent),
         tokenUsage: entry.tokenUsage ? JSON.stringify(entry.tokenUsage) : undefined,
         status: entry.status,

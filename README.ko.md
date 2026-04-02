@@ -33,6 +33,7 @@ response = client.chat.completions.create(
 - **OpenAI 호환 API** — `/v1/chat/completions`, `/v1/images/generations`, `/v1/models` 엔드포인트
 - **Anthropic Messages API** — `/v1/messages` 엔드포인트로 Claude Code / Anthropic SDK 네이티브 지원
 - **4개 CLI Provider 지원** — Claude Code, Codex, Copilot CLI, Gemini CLI
+- **HTTP Provider** — OpenAI 호환 HTTP API 서버 직접 연결 (MLX serve, llama.cpp, vLLM, Ollama, LM Studio 등) — 래퍼 스크립트 불필요
 - **Claude Agent SDK 모드** — Claude 프로바이더의 선택적 SDK 실행 모드 (세션 재사용, 도구 제어, 비용 제한)
 - **플러그인 시스템** — 메인 코드 수정 없이 커스텀 프로바이더 추가 가능 ([플러그인 가이드](./plugins/README.md))
 - **이미지 생성 API** — `/v1/images/generations` 엔드포인트 (OpenAI Images API 호환)
@@ -52,7 +53,7 @@ response = client.chat.completions.create(
 - **오류 구분** — 타임아웃 504, 기타 에러 502
 - **X-Unsupported-Params 헤더** — CLI 미지원 파라미터 고지
 - **Content parts 지원** — OpenAI content parts 배열 형식 지원 (OpenClaw, LangChain, LiteLLM 호환)
-- **Debug 캡처** — 요청/응답 페이로드 캡처 (전체 또는 모델별 on/off, CLI args + raw stdout 확인)
+- **Debug 캡처** — 요청/응답 페이로드 캡처 (전체 또는 모델별 on/off, CLI args + raw stdout 확인, HTTP Provider는 curl로 복사)
 - **Debug 로그 개별 삭제** — 각 로그 항목별 개별 삭제
 - **Settings 페이지** — 런타임 validation 설정 변경 (HTTP 본문 크기 제한은 재시작 필요)
 - **i18n** — 영어/한국어 대시보드 다국어 지원
@@ -74,7 +75,9 @@ response = client.chat.completions.create(
 | [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | GitHub Copilot | `gh extension install github/gh-copilot` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
 
-> **플러그인 프로바이더:** [Ollama](https://ollama.com/) 등 추가 프로바이더를 플러그인으로 등록하여 사용할 수 있습니다. [Plugin Guide](./plugins/README.md) 참고.
+> **HTTP Provider:** OpenAI 호환 API를 제공하는 로컬 서버(MLX serve, llama.cpp, vLLM, Ollama, LM Studio)는 대시보드에서 바로 추가할 수 있습니다 — CLI 도구나 플러그인 없이 사용 가능.
+>
+> **플러그인 프로바이더:** CLI 기반 커스텀 프로바이더를 플러그인으로 등록할 수도 있습니다. [Plugin Guide](./plugins/README.md) 참고.
 
 각 CLI 도구를 먼저 단독으로 실행하여 인증(로그인)을 완료해 주세요.
 
@@ -384,6 +387,8 @@ validation:
 | `GET` | `/admin/active-requests` | 활성 요청 |
 | `GET` | `/admin/stats` | 사용 통계 |
 | `GET` | `/admin/logs` | 요청 로그 |
+| `GET/POST/PUT/DELETE` | `/admin/http-providers` | HTTP 프로바이더 CRUD |
+| `POST` | `/admin/http-providers/test` | HTTP 프로바이더 등록 전 테스트 |
 | `GET/PUT` | `/admin/debug` | Debug 캡처 설정 |
 | `GET/DELETE` | `/admin/debug-logs` | Debug 로그 관리 |
 | `GET/PUT` | `/admin/settings/validation` | Validation 설정 |

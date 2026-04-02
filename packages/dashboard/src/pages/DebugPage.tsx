@@ -81,7 +81,14 @@ function wrapWithStdinPipe(stdinData: string, cmd: string): string {
 }
 
 // 디버그 로그에서 터미널에 한 줄로 붙여넣기 가능한 실행 명령 생성
-function buildTerminalCommand(log: { cliArgs: string; provider: string; requestMessages?: string | null }): string {
+function buildTerminalCommand(log: { cliArgs: string | null; httpRequest?: string | null; provider: string; requestMessages?: string | null }): string {
+  // HTTP Provider → curl 명령
+  if (log.httpRequest) {
+    return buildCurlCommand(log.httpRequest);
+  }
+
+  if (!log.cliArgs) return '';
+
   try {
     const args = JSON.parse(log.cliArgs) as string[];
     const provider = log.provider;
@@ -129,6 +136,77 @@ function buildTerminalCommand(log: { cliArgs: string; provider: string; requestM
   } catch {
     return log.cliArgs;
   }
+}
+
+// HTTP 요청을 curl 명령으로 변환
+function buildCurlCommand(httpRequestJson: string): string {
+  try {
+    const req = JSON.parse(httpRequestJson) as {
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+      body: unknown;
+    };
+
+    if (isWindows) {
+      return buildCurlWindows(req);
+    }
+    return buildCurlUnix(req);
+  } catch {
+    return httpRequestJson;
+  }
+}
+
+interface HttpReqInfo {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+// macOS/Linux: curl -X POST 'url' -H 'header' -d 'body'
+function buildCurlUnix(req: HttpReqInfo): string {
+  const parts: string[] = ['curl'];
+
+  if (req.method !== 'GET') {
+    parts.push(`-X ${req.method}`);
+  }
+
+  parts.push(escapeShellArg(req.url));
+
+  for (const [key, value] of Object.entries(req.headers)) {
+    parts.push(`-H ${escapeShellArg(`${key}: ${value}`)}`);
+  }
+
+  if (req.body) {
+    const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    parts.push(`-d ${escapeShellArg(bodyStr)}`);
+  }
+
+  return parts.join(' \\\n  ');
+}
+
+// Windows PowerShell: curl.exe -X POST "url" -H "header" -d "body"
+function buildCurlWindows(req: HttpReqInfo): string {
+  const parts: string[] = ['curl.exe'];
+
+  if (req.method !== 'GET') {
+    parts.push(`-X ${req.method}`);
+  }
+
+  parts.push(`"${req.url}"`);
+
+  for (const [key, value] of Object.entries(req.headers)) {
+    parts.push(`-H "${key}: ${value}"`);
+  }
+
+  if (req.body) {
+    const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    const escaped = bodyStr.replace(/"/g, '\\"');
+    parts.push(`-d "${escaped}"`);
+  }
+
+  return parts.join(' `\n  ');
 }
 
 // ms를 가독성 좋은 단위로 변환
@@ -452,9 +530,10 @@ function DebugLogEntry({
 
   const handleCopyCommand = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!log.cliArgs) return;
+    if (!log.cliArgs && !log.httpRequest) return;
     const command = buildTerminalCommand({
       cliArgs: log.cliArgs,
+      httpRequest: log.httpRequest,
       provider: log.provider,
       requestMessages: log.requestMessages,
     });
@@ -524,11 +603,11 @@ function DebugLogEntry({
           <span className="text-teal-400 dark:text-teal-500">↓{payload.res}</span>
         </span>
         <span className="text-xs text-gray-400 dark:text-gray-600">{time}</span>
-        {log.cliArgs && (
+        {(log.cliArgs || log.httpRequest) && (
           <button
             onClick={handleCopyCommand}
             className={`transition-colors ${copied ? 'text-green-500 dark:text-green-400' : 'text-gray-300 dark:text-gray-700 hover:text-blue-500 dark:hover:text-blue-400'}`}
-            title={copied ? t('debug.copied') : t('debug.copyCommand')}
+            title={copied ? t('debug.copied') : log.httpRequest ? t('debug.copyCurl') : t('debug.copyCommand')}
           >
             {copied ? (
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -604,6 +683,40 @@ function DebugLogEntry({
           {log.rawStderr && (
             <DetailSection title={t('debug.rawStderr')}>
               <pre className="text-red-500 dark:text-red-300 whitespace-pre-wrap break-all">{log.rawStderr}</pre>
+            </DetailSection>
+          )}
+
+          {/* HTTP Request — curl 명령 + 원본 */}
+          {log.httpRequest && (
+            <>
+              <DetailSection title="curl">
+                <pre className="text-green-600 dark:text-green-300 whitespace-pre-wrap break-all">
+                  {buildCurlCommand(log.httpRequest)}
+                </pre>
+              </DetailSection>
+              <DetailSection title={t('debug.httpRequest')}>
+                <pre className="text-orange-600 dark:text-orange-300 whitespace-pre-wrap break-all">
+                  {formatJson(log.httpRequest)}
+                </pre>
+              </DetailSection>
+            </>
+          )}
+
+          {/* HTTP Response */}
+          {log.httpResponse && (
+            <DetailSection title={t('debug.httpResponse')}>
+              <pre className="text-purple-600 dark:text-purple-300 whitespace-pre-wrap break-all">
+                {formatJson(log.httpResponse)}
+              </pre>
+            </DetailSection>
+          )}
+
+          {/* HTTP Stream Lines */}
+          {log.httpStreamLines && (
+            <DetailSection title={t('debug.httpStreamLines')}>
+              <pre className="text-indigo-600 dark:text-indigo-300 whitespace-pre-wrap break-all">
+                {formatNdjson(log.httpStreamLines)}
+              </pre>
             </DetailSection>
           )}
 

@@ -381,6 +381,9 @@ export interface DebugLog {
   requestMessages: string | null;
   rawStdout: string | null;
   rawStderr: string | null;
+  httpRequest: string | null;
+  httpResponse: string | null;
+  httpStreamLines: string | null;
   parsedContent: string | null;
   tokenUsage: string | null;
   status: string;
@@ -582,6 +585,57 @@ export function deleteGenericProvider(name: string) {
 // 등록 전 커스텀 프로바이더 테스트 (임시 인스턴스로 실행)
 export function testGenericProvider(data: { name?: string } & GenericCliProviderConfig) {
   return request<ProviderTestResult>('/generic-providers/test', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// HTTP Providers (OpenAI 호환 HTTP API 프로바이더)
+export interface HttpProviderConfig {
+  enabled: boolean;
+  base_url: string;
+  api_key?: string;
+  custom_headers?: Record<string, string>;
+  default_model: string;
+  max_concurrent: number;
+  timeout_ms: number;
+  display_name: string;
+  description?: string;
+}
+
+export interface HttpProviderInfo {
+  name: string;
+  config: HttpProviderConfig;
+}
+
+export function fetchHttpProviders() {
+  return request<HttpProviderInfo[]>('/http-providers');
+}
+
+export function fetchHttpProvider(name: string) {
+  return request<HttpProviderInfo>(`/http-providers/${name}`);
+}
+
+export function createHttpProvider(data: { name: string } & Partial<HttpProviderConfig>) {
+  return request<HttpProviderInfo>('/http-providers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateHttpProvider(name: string, data: Partial<HttpProviderConfig>) {
+  return request<HttpProviderInfo>(`/http-providers/${name}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteHttpProvider(name: string) {
+  return request<{ success: boolean }>(`/http-providers/${name}`, { method: 'DELETE' });
+}
+
+export function testHttpProvider(data: { name?: string } & Partial<HttpProviderConfig>) {
+  return request<ProviderTestResult>('/http-providers/test', {
     method: 'POST',
     body: JSON.stringify(data),
   });
