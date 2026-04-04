@@ -4,6 +4,7 @@ import { config as dotenvConfig } from 'dotenv';
 import { loadConfig } from './config/loader.js';
 import { createApp } from './app.js';
 import { closeDatabase } from './db/client.js';
+import { killAllChildProcesses } from './providers/base-provider.js';
 
 // 프로젝트 루트 디렉토리 계산 (packages/server/src/index.ts → 3단계 상위)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +42,7 @@ async function main() {
   // 우아한 종료
   const shutdown = async () => {
     console.log('\nShutting down...');
+    killAllChildProcesses();
     await app.close();
     closeDatabase();
     process.exit(0);

@@ -1,5 +1,5 @@
 import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } from '@star-cliproxy/shared';
-import { BaseProvider, gracefulKill } from './base-provider.js';
+import { BaseProvider, gracefulKill, trackProcess } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { spawn } from 'node:child_process';
 import { readFile, unlink } from 'node:fs/promises';
@@ -56,6 +56,7 @@ export class GeminiProvider extends BaseProvider {
           env: this.getCleanEnv(),
           cwd: this.workingDir,
         });
+        trackProcess(child);
 
         // stdin으로 프롬프트 전달 후 닫기
         if (stdinData) {

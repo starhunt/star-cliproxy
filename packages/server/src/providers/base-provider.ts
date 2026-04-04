@@ -12,6 +12,28 @@ import type {
 } from '@star-cliproxy/shared';
 import { getParserForProvider } from '../utils/stream-transformer.js';
 
+// 활성 자식 프로세스 추적 — 서버 종료 시 전체 정리용
+const activeProcesses = new Set<ChildProcess>();
+
+export function trackProcess(child: ChildProcess): void {
+  activeProcesses.add(child);
+  child.on('close', () => activeProcesses.delete(child));
+  child.on('error', () => activeProcesses.delete(child));
+}
+
+/** 서버 종료 시 호출 — 모든 활성 자식 프로세스를 gracefulKill */
+export function killAllChildProcesses(): void {
+  for (const child of activeProcesses) {
+    gracefulKill(child);
+  }
+  activeProcesses.clear();
+}
+
+/** 현재 추적 중인 활성 프로세스 수 (디버그/모니터링용) */
+export function getActiveProcessCount(): number {
+  return activeProcesses.size;
+}
+
 export abstract class BaseProvider {
   abstract readonly name: string;
 
@@ -144,12 +166,14 @@ export abstract class BaseProvider {
   protected spawnProcess(args: string[]): ChildProcess {
     // Windows에서 npm global CLI(.cmd)는 shell 경유 필수
     const isWin = process.platform === 'win32';
-    return spawn(this.config.cli_path, args, {
+    const child = spawn(this.config.cli_path, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: this.getCleanEnv(),
       cwd: this.workingDir,
       shell: isWin,
     });
+    trackProcess(child);
+    return child;
   }
 
   private async runProcess(

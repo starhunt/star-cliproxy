@@ -14,6 +14,9 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 export class HealthChecker {
   private registry: ProviderRegistry;
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  // 프로바이더별 마지막 체크 시간 — 연속 체크 방지
+  private lastCheckAt = new Map<string, number>();
+  private static readonly MIN_CHECK_INTERVAL_MS = 5_000;
 
   constructor(registry: ProviderRegistry) {
     this.registry = registry;
@@ -33,7 +36,8 @@ export class HealthChecker {
   }
 
   async checkAll(): Promise<void> {
-    const providers = this.registry.getAll();
+    const providers = this.registry.getAll()
+      .filter((p) => p.getConfig().enabled !== false);
     await Promise.allSettled(
       providers.map((p) => this.checkProvider(p.name)),
     );
@@ -42,6 +46,14 @@ export class HealthChecker {
   async checkProvider(name: string): Promise<HealthStatus> {
     const provider = this.registry.get(name);
     if (!provider) return 'unknown';
+
+    // 최소 체크 간격 보호 — 동일 프로바이더 연속 체크 방지
+    const now = Date.now();
+    const lastCheck = this.lastCheckAt.get(name) ?? 0;
+    if (now - lastCheck < HealthChecker.MIN_CHECK_INTERVAL_MS) {
+      return this.getHealth(name);
+    }
+    this.lastCheckAt.set(name, now);
 
     // 1단계: CLI 체크 (--version 또는 --help)
     const cliStatus = await provider.checkHealth();
