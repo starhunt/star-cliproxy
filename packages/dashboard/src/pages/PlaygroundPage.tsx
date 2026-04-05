@@ -13,6 +13,15 @@ interface Metrics {
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
 }
 
+function formatElapsed(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  const min = Math.floor(sec / 60);
+  const s = sec % 60;
+  const tenths = Math.floor((ms % 1000) / 100);
+  if (min > 0) return `${min}:${String(s).padStart(2, '0')}.${tenths}`;
+  return `${s}.${tenths}s`;
+}
+
 const STORAGE_KEY = 'playground_state';
 
 interface PlaygroundState {
@@ -62,7 +71,9 @@ export default function PlaygroundPage() {
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(saved.current.metrics);
   const [showPreview, setShowPreview] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+  const elapsedRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const responseRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -121,6 +132,13 @@ export default function PlaygroundPage() {
     setError(null);
     setResponse('');
     setMetrics(null);
+    setElapsed(0);
+
+    // 경과 시간 타이머 (100ms 간격)
+    const timerStart = Date.now();
+    elapsedRef.current = setInterval(() => {
+      setElapsed(Date.now() - timerStart);
+    }, 100);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -176,7 +194,7 @@ export default function PlaygroundPage() {
 
             try {
               const parsed = JSON.parse(data);
-              const delta = parsed.choices?.[0]?.delta?.content;
+              const delta = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning;
               if (delta) {
                 accumulated += delta;
                 setResponse(accumulated);
@@ -215,6 +233,7 @@ export default function PlaygroundPage() {
         setError(e instanceof Error ? e.message : String(e));
       }
     } finally {
+      clearInterval(elapsedRef.current);
       setLoading(false);
       abortRef.current = null;
     }
@@ -391,14 +410,23 @@ export default function PlaygroundPage() {
       </div>
 
       {/* 버튼 */}
-      <div className="flex gap-3">
+      <div className="flex items-center gap-3">
         {loading ? (
-          <button
-            onClick={handleStop}
-            className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium text-white transition-colors"
-          >
-            {t('playground.stop')}
-          </button>
+          <>
+            <button
+              onClick={handleStop}
+              className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium text-white transition-colors"
+            >
+              {t('playground.stop')}
+            </button>
+            <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                {stream ? t('playground.streaming') : t('playground.processing')}
+              </span>
+            </span>
+          </>
         ) : (
           <button
             onClick={handleSend}
@@ -429,7 +457,10 @@ export default function PlaygroundPage() {
           <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
             <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{t('playground.response')}</span>
             {loading && (
-              <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <span className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+                <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span>
+              </span>
             )}
           </div>
           <div
