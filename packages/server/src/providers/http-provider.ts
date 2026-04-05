@@ -97,7 +97,7 @@ export class HttpProvider extends BaseProvider {
       })),
       stream,
     };
-    if (options.maxTokens !== undefined) body.max_tokens = options.maxTokens;
+    body.max_tokens = options.maxTokens ?? this.httpConfig.default_max_tokens ?? 65536;
     if (options.temperature !== undefined) body.temperature = options.temperature;
     return body;
   }
@@ -135,8 +135,22 @@ export class HttpProvider extends BaseProvider {
         signal: controller.signal,
       });
 
-      const responseBody = await response.json() as OpenAIChatCompletionResponse;
+      const rawText = await response.text();
+      let responseBody: OpenAIChatCompletionResponse;
+      try {
+        responseBody = JSON.parse(rawText) as OpenAIChatCompletionResponse;
+      } catch {
+        // JSON 파싱 실패 시 raw text를 디버그에 포함하고 에러
+        debugInfo.rawResponseText = rawText;
+        debugInfo.httpResponse = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+        };
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+        throw new Error(`${this.name}: Invalid JSON response: ${rawText.slice(0, 200)}`);
+      }
 
+      debugInfo.rawResponseText = rawText;
       debugInfo.httpResponse = {
         status: response.status,
         headers: Object.fromEntries(response.headers.entries()),
@@ -154,7 +168,8 @@ export class HttpProvider extends BaseProvider {
       options.onDebug?.(debugInfo as DebugCaptureInfo);
 
       const choice = responseBody.choices?.[0];
-      const content = choice?.message?.content ?? '';
+      // content 우선, 비어있으면 reasoning fallback (reasoning 모델 지원)
+      const content = choice?.message?.content || choice?.message?.reasoning || '';
       const usage = responseBody.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
       return {
@@ -221,6 +236,7 @@ export class HttpProvider extends BaseProvider {
 
       if (!response.ok) {
         const errorBody = await response.text();
+        debugInfo.rawResponseText = errorBody;
         debugInfo.httpResponse = {
           status: response.status,
           headers: Object.fromEntries(response.headers.entries()),
@@ -280,6 +296,7 @@ export class HttpProvider extends BaseProvider {
       clearTimeout(timeoutId);
       if (captureDebug) {
         debugInfo.httpStreamLines = streamLines;
+        debugInfo.rawResponseText = streamLines.join('\n');
         options.onDebug?.(debugInfo as DebugCaptureInfo);
       }
     }
@@ -339,10 +356,12 @@ function parseSSELine(line: string): StreamChunk | null {
       };
     }
 
-    if (delta?.content) {
+    // content 우선, 비어있으면 reasoning fallback (reasoning 모델 지원)
+    const text = delta?.content || delta?.reasoning;
+    if (text) {
       return {
         type: 'delta',
-        content: delta.content,
+        content: text,
       };
     }
 
@@ -356,7 +375,7 @@ function parseSSELine(line: string): StreamChunk | null {
 
 interface OpenAIChatCompletionResponse {
   choices?: Array<{
-    message?: { content?: string; role?: string };
+    message?: { content?: string; reasoning?: string; role?: string };
     finish_reason?: string;
   }>;
   usage?: {
@@ -368,7 +387,7 @@ interface OpenAIChatCompletionResponse {
 
 interface OpenAIChatCompletionChunk {
   choices?: Array<{
-    delta?: { content?: string; role?: string };
+    delta?: { content?: string; reasoning?: string; role?: string };
     finish_reason?: string | null;
   }>;
   usage?: {
