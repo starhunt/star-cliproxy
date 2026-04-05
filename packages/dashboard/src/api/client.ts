@@ -384,6 +384,7 @@ export interface DebugLog {
   httpRequest: string | null;
   httpResponse: string | null;
   httpStreamLines: string | null;
+  rawResponseText: string | null;
   parsedContent: string | null;
   tokenUsage: string | null;
   status: string;
@@ -403,11 +404,13 @@ export function updateDebugConfig(data: { global?: boolean; model?: string; enab
   });
 }
 
-export function fetchDebugLogs(params?: { limit?: number; offset?: number; model?: string }) {
+export function fetchDebugLogs(params?: { limit?: number; offset?: number; model?: string; search?: string; searchScope?: 'all' | 'request' | 'response' }) {
   const query = new URLSearchParams();
   if (params?.limit) query.set('limit', String(params.limit));
   if (params?.offset) query.set('offset', String(params.offset));
   if (params?.model) query.set('model', String(params.model));
+  if (params?.search) query.set('search', String(params.search));
+  if (params?.searchScope && params.searchScope !== 'all') query.set('searchScope', params.searchScope);
   const qs = query.toString();
   return request<{ data: DebugLog[]; pagination: { limit: number; offset: number; total: number } }>(
     `/debug-logs${qs ? `?${qs}` : ''}`,

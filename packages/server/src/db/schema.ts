@@ -78,6 +78,7 @@ export const debugLogs = sqliteTable('debug_logs', {
   httpRequest: text('http_request'),
   httpResponse: text('http_response'),
   httpStreamLines: text('http_stream_lines'),
+  rawResponseText: text('raw_response_text'),
   parsedContent: text('parsed_content'),
   tokenUsage: text('token_usage'),
   status: text('status').notNull(),

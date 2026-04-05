@@ -29,16 +29,21 @@ export function registerDebugRoutes(app: FastifyInstance, debug: DebugService): 
   });
 
   // 디버그 로그 조회
-  app.get<{ Querystring: { limit?: string; offset?: string; model?: string } }>(
+  app.get<{ Querystring: { limit?: string; offset?: string; model?: string; search?: string; searchScope?: string } }>(
     '/admin/debug-logs',
     async (request, reply) => {
       const limit = request.query.limit ? parseInt(request.query.limit, 10) : 50;
       const offset = request.query.offset ? parseInt(request.query.offset, 10) : 0;
       const model = request.query.model;
+      const search = request.query.search;
+      const searchScope = (['all', 'request', 'response'].includes(request.query.searchScope ?? '')
+        ? request.query.searchScope as 'all' | 'request' | 'response'
+        : 'all');
 
+      const filterOpts = { model, search, searchScope };
       const [logs, total] = await Promise.all([
-        debug.getLogs({ limit, offset, model }),
-        debug.getLogCount(model),
+        debug.getLogs({ limit, offset, ...filterOpts }),
+        debug.getLogCount(filterOpts),
       ]);
       return reply.send({ data: logs, pagination: { limit, offset, total } });
     },

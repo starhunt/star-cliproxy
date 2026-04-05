@@ -74,6 +74,9 @@ export interface DebugCaptureInfo {
     body?: unknown;
   };
   httpStreamLines?: string[];
+
+  // 파싱 이전의 raw 응답 텍스트
+  rawResponseText?: string;
 }
 
 export interface ExecuteOptions {
@@ -145,6 +148,7 @@ export interface HttpProviderConfig {
   api_key?: string;           // Authorization: Bearer {api_key}
   custom_headers?: Record<string, string>;
   default_model: string;
+  default_max_tokens?: number; // 클라이언트 미지정 시 기본 max_tokens (기본: 65536)
   max_concurrent: number;
   timeout_ms: number;
 

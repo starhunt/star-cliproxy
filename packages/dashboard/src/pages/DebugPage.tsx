@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from '../i18n/context';
 import {
   fetchDebugConfig,
@@ -242,6 +242,9 @@ export default function DebugPage() {
   const [logs, setLogs] = useState<DebugLog[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [filterModel, setFilterModel] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [searchScope, setSearchScope] = useState<'all' | 'request' | 'response'>('all');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -249,19 +252,35 @@ export default function DebugPage() {
   const [total, setTotal] = useState(0);
   const [sessionModalId, setSessionModalId] = useState<string | null>(null);
   const PAGE_SIZE = 20;
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // 검색어 debounce (400ms)
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(searchText);
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [searchText]);
 
   const loadConfig = useCallback(() => {
     fetchDebugConfig().then(setConfig).catch((e) => setError(e.message));
   }, []);
 
   const loadLogs = useCallback(() => {
-    fetchDebugLogs({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, model: filterModel || undefined })
+    fetchDebugLogs({
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+      model: filterModel || undefined,
+      search: debouncedSearch || undefined,
+      searchScope: debouncedSearch ? searchScope : undefined,
+    })
       .then((res) => {
         setLogs(res.data);
         setTotal(res.pagination.total);
       })
       .catch((e) => setError(e.message));
-  }, [filterModel, page]);
+  }, [filterModel, debouncedSearch, searchScope, page]);
 
   useEffect(() => {
     loadConfig();
@@ -352,6 +371,12 @@ export default function DebugPage() {
     setSelectedIds(new Set());
   };
 
+  const handleSearchScopeChange = (scope: 'all' | 'request' | 'response') => {
+    setSearchScope(scope);
+    setPage(0);
+    setSelectedIds(new Set());
+  };
+
   const handleRefresh = () => {
     setSelectedIds(new Set());
     loadLogs();
@@ -416,42 +441,89 @@ export default function DebugPage() {
       )}
 
       {/* 로그 헤더 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('debug.debugLogs')}</h3>
-          <span className="text-xs text-gray-400 dark:text-gray-500">{total} {t('debug.entries')}</span>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('debug.debugLogs')}</h3>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{total} {t('debug.entries')}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              className="px-3 py-1 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-xs transition-colors text-gray-600 dark:text-gray-300"
+            >
+              {t('common.refresh')}
+            </button>
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleDeleteSelected}
+                className="px-3 py-1 bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 rounded text-xs transition-colors"
+              >
+                {t('debug.deleteSelected').replace('{count}', String(selectedIds.size))}
+              </button>
+            )}
+            <button
+              onClick={handleClear}
+              className="px-3 py-1 bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 rounded text-xs transition-colors"
+            >
+              {t('common.clearAll')}
+            </button>
+          </div>
         </div>
+
+        {/* 필터 바: 검색 + 스코프 + 모델 */}
         <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-md">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder={t('debug.searchPlaceholder')}
+              className="w-full pl-8 pr-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded text-xs text-gray-700 dark:text-gray-300 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            />
+            {searchText && (
+              <button
+                onClick={() => setSearchText('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* 검색 스코프 토글 */}
+          <div className="flex rounded border border-gray-300 dark:border-gray-700 overflow-hidden">
+            {(['all', 'request', 'response'] as const).map((scope) => (
+              <button
+                key={scope}
+                onClick={() => handleSearchScopeChange(scope)}
+                className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  searchScope === scope
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {t(`debug.searchScope${scope.charAt(0).toUpperCase() + scope.slice(1)}` as keyof typeof t)}
+              </button>
+            ))}
+          </div>
+
+          {/* 모델 필터 */}
           <select
             value={filterModel}
             onChange={(e) => handleFilterChange(e.target.value)}
-            className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs text-gray-700 dark:text-gray-300"
+            className="bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1.5 text-xs text-gray-700 dark:text-gray-300"
           >
             <option value="">{t('debug.allModels')}</option>
             {models.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
           </select>
-          <button
-            onClick={handleRefresh}
-            className="px-3 py-1 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 rounded text-xs transition-colors text-gray-600 dark:text-gray-300"
-          >
-            {t('common.refresh')}
-          </button>
-          {selectedIds.size > 0 && (
-            <button
-              onClick={handleDeleteSelected}
-              className="px-3 py-1 bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 rounded text-xs transition-colors"
-            >
-              {t('debug.deleteSelected').replace('{count}', String(selectedIds.size))}
-            </button>
-          )}
-          <button
-            onClick={handleClear}
-            className="px-3 py-1 bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-800/50 text-red-600 dark:text-red-400 rounded text-xs transition-colors"
-          >
-            {t('common.clearAll')}
-          </button>
         </div>
       </div>
 
@@ -720,6 +792,13 @@ function DebugLogEntry({
             </DetailSection>
           )}
 
+          {/* Raw 응답 (파싱 전) */}
+          {log.rawResponseText && (
+            <DetailSection title={t('debug.rawResponse')}>
+              <pre className="text-amber-600 dark:text-amber-300 whitespace-pre-wrap break-all">{log.rawResponseText}</pre>
+            </DetailSection>
+          )}
+
           {/* 파싱된 콘텐츠 */}
           {log.parsedContent && (
             <DetailSection title={t('debug.parsedResponse')}>
@@ -948,8 +1027,8 @@ function formatBytes(bytes: number): string {
 // LLM 요청/응답 페이로드 크기 계산
 function calcPayloadSizes(log: DebugLog): { req: string; res: string } {
   const reqBytes = log.requestMessages?.length ?? 0;
-  // rawStdout = LLM 원본 응답, parsedContent = 파싱된 내용 (rawStdout 우선)
-  const resBytes = log.rawStdout?.length ?? log.parsedContent?.length ?? 0;
+  // rawResponseText(HTTP) > rawStdout(CLI) > parsedContent 순으로 우선
+  const resBytes = log.rawResponseText?.length ?? log.rawStdout?.length ?? log.parsedContent?.length ?? 0;
   return { req: formatBytes(reqBytes), res: formatBytes(resBytes) };
 }
 
@@ -1014,6 +1093,14 @@ function exportDebugLog(log: DebugLog): void {
     sections.push(`Raw STDERR`);
     sections.push(`${divider}`);
     sections.push(log.rawStderr);
+  }
+
+  if (log.rawResponseText) {
+    sections.push(``);
+    sections.push(`${divider}`);
+    sections.push(`Raw Response`);
+    sections.push(`${divider}`);
+    sections.push(log.rawResponseText);
   }
 
   if (log.parsedContent) {

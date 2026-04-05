@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, like, or, sql } from 'drizzle-orm';
 import { getDatabase } from '../db/client.js';
 import { debugLogs } from '../db/schema.js';
 
@@ -52,6 +52,7 @@ export interface DebugLogCompleteEntry {
   httpRequest?: { method: string; url: string; headers: Record<string, string>; body: unknown };
   httpResponse?: { status: number; headers: Record<string, string>; body?: unknown };
   httpStreamLines?: string[];
+  rawResponseText?: string;
   parsedContent?: string;
   tokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
   status: 'success' | 'error' | 'timeout';
@@ -124,6 +125,7 @@ export class DebugService {
         httpRequest: entry.httpRequest ? truncate(JSON.stringify(entry.httpRequest)) : undefined,
         httpResponse: entry.httpResponse ? truncate(JSON.stringify(entry.httpResponse)) : undefined,
         httpStreamLines: entry.httpStreamLines ? truncate(entry.httpStreamLines.join('\n')) : undefined,
+        rawResponseText: truncate(entry.rawResponseText),
         parsedContent: truncate(entry.parsedContent),
         tokenUsage: entry.tokenUsage ? JSON.stringify(entry.tokenUsage) : undefined,
         status: entry.status,
@@ -135,29 +137,57 @@ export class DebugService {
     }
   }
 
-  async getLogs(options?: { limit?: number; offset?: number; model?: string }) {
+  private buildSearchCondition(search: string, scope: 'all' | 'request' | 'response') {
+    const pattern = `%${search}%`;
+    const requestFields = [
+      like(debugLogs.requestMessages, pattern),
+    ];
+    const responseFields = [
+      like(debugLogs.rawStdout, pattern),
+      like(debugLogs.rawStderr, pattern),
+      like(debugLogs.httpResponse, pattern),
+      like(debugLogs.httpStreamLines, pattern),
+      like(debugLogs.rawResponseText, pattern),
+      like(debugLogs.parsedContent, pattern),
+    ];
+
+    if (scope === 'request') return or(...requestFields);
+    if (scope === 'response') return or(...responseFields);
+    return or(...requestFields, ...responseFields);
+  }
+
+  private buildWhereCondition(options?: { model?: string; search?: string; searchScope?: 'all' | 'request' | 'response' }) {
+    const conditions = [];
+    if (options?.model) {
+      conditions.push(like(debugLogs.modelAlias, `%${options.model}%`));
+    }
+    if (options?.search) {
+      const searchCond = this.buildSearchCondition(options.search, options.searchScope ?? 'all');
+      if (searchCond) conditions.push(searchCond);
+    }
+    return conditions.length > 0 ? and(...conditions) : undefined;
+  }
+
+  async getLogs(options?: { limit?: number; offset?: number; model?: string; search?: string; searchScope?: 'all' | 'request' | 'response' }) {
     const db = getDatabase();
     const limit = options?.limit ?? 50;
     const offset = options?.offset ?? 0;
+    const where = this.buildWhereCondition(options);
 
-    if (options?.model) {
-      return db.select().from(debugLogs)
-        .where(like(debugLogs.modelAlias, `%${options.model}%`))
-        .orderBy(desc(debugLogs.createdAt))
-        .limit(limit).offset(offset);
+    const query = db.select().from(debugLogs);
+    if (where) {
+      return query.where(where).orderBy(desc(debugLogs.createdAt)).limit(limit).offset(offset);
     }
-
-    return db.select().from(debugLogs)
-      .orderBy(desc(debugLogs.createdAt))
-      .limit(limit).offset(offset);
+    return query.orderBy(desc(debugLogs.createdAt)).limit(limit).offset(offset);
   }
 
   // 총 건수 조회 (페이징용)
-  async getLogCount(model?: string): Promise<number> {
+  async getLogCount(options?: { model?: string; search?: string; searchScope?: 'all' | 'request' | 'response' }): Promise<number> {
     const db = getDatabase();
-    if (model) {
-      const result = await db.select({ count: sql<number>`count(*)` }).from(debugLogs)
-        .where(like(debugLogs.modelAlias, `%${model}%`));
+    const where = this.buildWhereCondition(options);
+
+    if (where) {
+      const result = await db.select({ count: sql<number>`count(*)` }).from(debugLogs).where(where);
       return result[0]?.count ?? 0;
     }
     const result = await db.select({ count: sql<number>`count(*)` }).from(debugLogs);

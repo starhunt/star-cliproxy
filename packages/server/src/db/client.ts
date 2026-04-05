@@ -103,6 +103,7 @@ async function createTables(client: Client) {
       http_request TEXT,
       http_response TEXT,
       http_stream_lines TEXT,
+      raw_response_text TEXT,
       parsed_content TEXT,
       token_usage TEXT,
       status TEXT NOT NULL,
@@ -126,8 +127,8 @@ async function createTables(client: Client) {
     CREATE INDEX IF NOT EXISTS idx_cache_expires ON response_cache(expires_at);
   `);
 
-  // 기존 DB 마이그레이션: debug_logs에 HTTP 컬럼 추가 (이미 존재하면 무시)
-  const httpColumns = ['http_request', 'http_response', 'http_stream_lines'];
+  // 기존 DB 마이그레이션: debug_logs에 컬럼 추가 (이미 존재하면 무시)
+  const httpColumns = ['http_request', 'http_response', 'http_stream_lines', 'raw_response_text'];
   for (const col of httpColumns) {
     try {
       await client.execute(`ALTER TABLE debug_logs ADD COLUMN ${col} TEXT`);
