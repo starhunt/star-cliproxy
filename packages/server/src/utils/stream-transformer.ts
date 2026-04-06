@@ -1,4 +1,10 @@
-import type { ChatCompletionChunk, StreamChunk, StreamParser } from '@star-cliproxy/shared';
+import type {
+  ChatCompletionChunk,
+  StreamChunk,
+  StreamParser,
+  ProviderEvent,
+  TokenUsage,
+} from '@star-cliproxy/shared';
 import { nanoid } from 'nanoid';
 
 // StreamParser는 @star-cliproxy/shared에서 re-export
@@ -42,6 +48,64 @@ export class ClaudeStreamParser implements StreamParser {
       return null;
     } catch {
       return null;
+    }
+  }
+
+  parseEvents(line: string): ProviderEvent[] {
+    const trimmed = line.trim();
+    if (!trimmed) return [];
+
+    try {
+      const data = JSON.parse(trimmed);
+
+      // assistant 이벤트: content 배열의 각 블록을 개별 이벤트로 변환
+      if (data.type === 'assistant' && data.message) {
+        const content = data.message.content;
+        if (!Array.isArray(content)) return [];
+
+        const events: ProviderEvent[] = [];
+        for (const block of content) {
+          if (block.type === 'text' && block.text) {
+            events.push({ type: 'text_delta', text: block.text });
+          } else if (block.type === 'tool_use') {
+            events.push({
+              type: 'tool_use',
+              toolCallId: block.id ?? '',
+              toolName: block.name ?? '',
+              input: typeof block.input === 'string' ? block.input : JSON.stringify(block.input ?? {}),
+            });
+          } else if (block.type === 'thinking' && block.thinking) {
+            events.push({ type: 'thinking', text: block.thinking });
+          }
+        }
+        return events;
+      }
+
+      // result 이벤트: usage + done
+      if (data.type === 'result') {
+        const events: ProviderEvent[] = [];
+        const u = data.usage;
+        if (u) {
+          events.push({
+            type: 'usage',
+            usage: {
+              promptTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+              completionTokens: u.output_tokens ?? 0,
+              totalTokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0),
+            },
+          });
+        }
+
+        const finishReason = data.stop_reason === 'max_tokens' ? 'length' as const
+          : data.stop_reason === 'tool_use' ? 'tool_use' as const
+          : 'stop' as const;
+        events.push({ type: 'done', finishReason });
+        return events;
+      }
+
+      return [];
+    } catch {
+      return [];
     }
   }
 }
@@ -89,6 +153,50 @@ export class CodexStreamParser implements StreamParser {
       return null;
     }
   }
+
+  parseEvents(line: string): ProviderEvent[] {
+    const trimmed = line.trim();
+    if (!trimmed) return [];
+
+    try {
+      const data = JSON.parse(trimmed);
+
+      if (data.type === 'item.completed' && data.item) {
+        if (data.item.type === 'error') {
+          return [{ type: 'error', error: data.item.message ?? 'Codex item error' }];
+        }
+        const text = data.item.text ?? '';
+        if (text) return [{ type: 'text_delta', text }];
+        return [];
+      }
+
+      if (data.type === 'turn.completed') {
+        const events: ProviderEvent[] = [];
+        const u = data.usage;
+        if (u) {
+          events.push({
+            type: 'usage',
+            usage: {
+              promptTokens: u.input_tokens ?? 0,
+              completionTokens: u.output_tokens ?? 0,
+              totalTokens: (u.input_tokens ?? 0) + (u.output_tokens ?? 0),
+            },
+          });
+        }
+        events.push({ type: 'done' });
+        return events;
+      }
+
+      if (data.type === 'turn.failed' || data.type === 'error') {
+        return [{ type: 'error', error: data.error?.message ?? data.message ?? 'Codex error' }];
+      }
+
+      return [];
+    } catch {
+      if (trimmed) return [{ type: 'text_delta', text: trimmed }];
+      return [];
+    }
+  }
 }
 
 // Gemini stream-json 파서 (-o stream-json)
@@ -125,14 +233,68 @@ export class GeminiStreamParser implements StreamParser {
       return null;
     }
   }
+
+  parseEvents(line: string): ProviderEvent[] {
+    const trimmed = line.trim();
+    if (!trimmed) return [];
+
+    try {
+      const data = JSON.parse(trimmed);
+
+      if (data.type === 'message' && data.role === 'assistant' && data.delta === true) {
+        const content = data.content ?? '';
+        if (content) return [{ type: 'text_delta', text: content }];
+        return [];
+      }
+
+      if (data.type === 'result') {
+        const events: ProviderEvent[] = [];
+        const stats = data.stats;
+        if (stats) {
+          events.push({
+            type: 'usage',
+            usage: {
+              promptTokens: stats.input_tokens ?? 0,
+              completionTokens: stats.output_tokens ?? 0,
+              totalTokens: stats.total_tokens ?? ((stats.input_tokens ?? 0) + (stats.output_tokens ?? 0)),
+            },
+          });
+        }
+        events.push({ type: 'done' });
+        return events;
+      }
+
+      return [];
+    } catch {
+      return [];
+    }
+  }
 }
 
-// StreamChunk를 OpenAI SSE 형식으로 변환
+// --- SSE 변환 ---
+
+// ProviderEvent 전용 타입만 존재하는지 확인 (StreamChunk과 겹치지 않는 type)
+const PROVIDER_EVENT_ONLY_TYPES = new Set(['text_delta', 'tool_use', 'thinking', 'usage']);
+
+// StreamChunk 또는 ProviderEvent를 OpenAI SSE 형식으로 변환
 export function formatAsSSE(
-  chunk: StreamChunk,
+  event: ProviderEvent | StreamChunk,
   requestId: string,
   model: string,
 ): string | null {
+  // ProviderEvent 전용 타입이면 ProviderEvent 경로
+  if (PROVIDER_EVENT_ONLY_TYPES.has(event.type)) {
+    return formatProviderEventAsSSE(event as ProviderEvent, requestId, model);
+  }
+
+  // done/error 타입은 ProviderEvent와 StreamChunk 공통이므로 finishReason 필드로 판별
+  if ('finishReason' in event) {
+    return formatProviderEventAsSSE(event as ProviderEvent, requestId, model);
+  }
+
+  // 레거시 StreamChunk 처리
+  const chunk = event as StreamChunk;
+
   if (chunk.type === 'delta') {
     const data: ChatCompletionChunk = {
       id: requestId,
@@ -170,6 +332,67 @@ export function formatAsSSE(
   return null;
 }
 
+// ProviderEvent → OpenAI SSE 변환
+function formatProviderEventAsSSE(
+  event: ProviderEvent,
+  requestId: string,
+  model: string,
+): string | null {
+  const makeChunk = (delta: Record<string, unknown>, finishReason: string | null = null): string => {
+    const data: ChatCompletionChunk = {
+      id: requestId,
+      object: 'chat.completion.chunk',
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [{
+        index: 0,
+        delta: delta as ChatCompletionChunk['choices'][0]['delta'],
+        finish_reason: finishReason as ChatCompletionChunk['choices'][0]['finish_reason'],
+      }],
+    };
+    return `data: ${JSON.stringify(data)}\n\n`;
+  };
+
+  switch (event.type) {
+    case 'text_delta':
+      return makeChunk({ content: event.text });
+
+    case 'tool_use':
+      return makeChunk({
+        tool_calls: [{
+          index: 0,
+          id: event.isPartial ? undefined : event.toolCallId,
+          type: event.isPartial ? undefined : 'function',
+          function: {
+            name: event.isPartial ? undefined : event.toolName,
+            arguments: event.input,
+          },
+        }],
+      });
+
+    case 'thinking':
+      // OpenAI API에는 thinking 대응이 없음 → 무시
+      return null;
+
+    case 'usage':
+      // OpenAI에서는 stream_options.include_usage로 처리 → 무시
+      return null;
+
+    case 'error':
+      return null;
+
+    case 'done': {
+      const finishReason = event.finishReason === 'tool_use' ? 'stop'
+        : event.finishReason === 'length' ? 'length'
+        : 'stop';
+      return makeChunk({}, finishReason) + 'data: [DONE]\n\n';
+    }
+
+    default:
+      return null;
+  }
+}
+
 export function createRequestId(): string {
   return `chatcmpl-proxy-${nanoid(24)}`;
 }
@@ -180,6 +403,12 @@ export class PlainTextParser implements StreamParser {
     const trimmed = line.trim();
     if (!trimmed) return null;
     return { type: 'delta', content: trimmed };
+  }
+
+  parseEvents(line: string): ProviderEvent[] {
+    const trimmed = line.trim();
+    if (!trimmed) return [];
+    return [{ type: 'text_delta', text: trimmed }];
   }
 }
 

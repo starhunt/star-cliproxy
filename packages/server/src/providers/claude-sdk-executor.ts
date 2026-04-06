@@ -5,7 +5,8 @@
 import type {
   ExecuteOptions,
   ExecuteResult,
-  StreamChunk,
+  ProviderEvent,
+  TokenUsage,
   ClaudeSdkOptions,
 } from '@star-cliproxy/shared';
 import { convertMessages } from '../utils/message-converter.js';
@@ -167,7 +168,7 @@ function extractStreamDelta(msg: Record<string, unknown>): string | null {
 }
 
 // SDK result 메시지에서 usage 추출
-function extractUsage(msg: Record<string, unknown>): StreamChunk['usage'] | null {
+function extractUsage(msg: Record<string, unknown>): TokenUsage | null {
   if (msg.type !== 'result') return null;
 
   const usage = msg.usage as Record<string, unknown> | undefined;
@@ -323,11 +324,71 @@ export async function executeSdk(
   };
 }
 
+// SDK stream_event에서 thinking delta 추출
+function extractThinkingDelta(msg: Record<string, unknown>): string | null {
+  if (msg.type !== 'stream_event') return null;
+  const event = msg.event as Record<string, unknown> | undefined;
+  if (!event || event.type !== 'content_block_delta') return null;
+  const delta = event.delta as Record<string, unknown> | undefined;
+  if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+    return delta.thinking;
+  }
+  return null;
+}
+
+// SDK 메시지를 ProviderEvent[]로 변환
+function sdkMsgToEvents(msg: Record<string, unknown>, isStreamMode: boolean): ProviderEvent[] {
+  const events: ProviderEvent[] = [];
+
+  // stream_event: 실시간 delta (text 또는 thinking)
+  const textDelta = extractStreamDelta(msg);
+  if (textDelta) {
+    events.push({ type: 'text_delta', text: textDelta });
+    return events;
+  }
+
+  const thinkingDelta = extractThinkingDelta(msg);
+  if (thinkingDelta) {
+    events.push({ type: 'thinking', text: thinkingDelta });
+    return events;
+  }
+
+  // assistant 메시지: 전체 텍스트 (stream_event 미사용 시 폴백)
+  if (msg.type === 'assistant' && !isStreamMode) {
+    const text = extractAssistantText(msg);
+    if (text) {
+      events.push({ type: 'text_delta', text });
+    }
+    return events;
+  }
+
+  // result 이벤트: 완료
+  if (msg.type === 'result') {
+    if (msg.is_error === true) {
+      const errors = msg.errors as string[] | undefined;
+      events.push({ type: 'error', error: errors?.join('; ') ?? 'SDK execution error' });
+    }
+
+    const usage = extractUsage(msg);
+    if (usage) {
+      events.push({ type: 'usage', usage });
+    }
+
+    const finishReason = msg.stop_reason === 'max_tokens' ? 'length' as const
+      : msg.is_error ? 'error' as const
+      : 'stop' as const;
+    events.push({ type: 'done', finishReason });
+    return events;
+  }
+
+  return events;
+}
+
 // Streaming 실행
 export async function* executeStreamSdk(
   options: ExecuteOptions,
   config: SdkExecutorConfig,
-): AsyncGenerator<StreamChunk, void> {
+): AsyncGenerator<ProviderEvent, void> {
   const sdk = await getSDK();
 
   // 세션 재사용 시도
@@ -343,41 +404,16 @@ export async function* executeStreamSdk(
     for await (const rawMsg of sdk.query(queryParams)) {
       const msg = rawMsg as Record<string, unknown>;
 
-      // session_id 캡처
       if (!capturedSessionId) {
         capturedSessionId = extractSessionId(msg);
       }
 
-      // stream_event (partial message): 실시간 delta
-      const delta = extractStreamDelta(msg);
-      if (delta) {
-        yield { type: 'delta', content: delta };
-        continue;
+      const events = sdkMsgToEvents(msg, options.stream);
+      for (const event of events) {
+        yield event;
+        if (event.type === 'done') break;
       }
-
-      // assistant 메시지: 전체 텍스트 (stream_event 미사용 시 폴백)
-      // includePartialMessages=true이면 stream_event가 오므로 여기서는 스킵
-      // stream_event가 없는 환경을 위한 폴백
-      if (msg.type === 'assistant' && !options.stream) {
-        const text = extractAssistantText(msg);
-        if (text) {
-          yield { type: 'delta', content: text };
-        }
-      }
-
-      // result 이벤트: 완료
-      if (msg.type === 'result') {
-        const usage = extractUsage(msg);
-
-        // 에러 결과 처리
-        if (msg.is_error === true) {
-          const errors = msg.errors as string[] | undefined;
-          yield { type: 'error', error: errors?.join('; ') ?? 'SDK execution error' };
-        }
-
-        yield { type: 'done', usage: usage ?? undefined };
-        break;
-      }
+      if (events.some(e => e.type === 'done')) break;
     }
 
     // 세션 ID 저장 + 메타 콜백
@@ -405,17 +441,12 @@ export async function* executeStreamSdk(
             capturedSessionId = extractSessionId(msg);
           }
 
-          const delta = extractStreamDelta(msg);
-          if (delta) {
-            yield { type: 'delta', content: delta };
-            continue;
+          const events = sdkMsgToEvents(msg, options.stream);
+          for (const event of events) {
+            yield event;
+            if (event.type === 'done') break;
           }
-
-          if (msg.type === 'result') {
-            const usage = extractUsage(msg);
-            yield { type: 'done', usage: usage ?? undefined };
-            break;
-          }
+          if (events.some(e => e.type === 'done')) break;
         }
 
         if (capturedSessionId && config.sessionManager && config.clientKey) {

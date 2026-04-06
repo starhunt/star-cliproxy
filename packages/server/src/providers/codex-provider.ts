@@ -1,4 +1,4 @@
-import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
+import type { ExecuteOptions, ExecuteResult, ProviderEvent, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
 import { BaseProvider } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { CodexAppServerProcess, type CodexAppServerProcessConfig } from './codex-appserver-process.js';
@@ -149,7 +149,7 @@ export class CodexProvider extends BaseProvider {
     return super.execute(options);
   }
 
-  override async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
+  override async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
     if (this.isAppServerMode) {
       if (!this.appServerProcess?.isAlive()) {
         throw new Error('Codex app-server process is not running');
@@ -159,11 +159,11 @@ export class CodexProvider extends BaseProvider {
       const config = this.buildAppServerConfig(options);
       config.onAppServerMeta = (meta) => { streamMeta = meta; };
 
-      for await (const chunk of executeStreamAppServer(options, config)) {
-        if (chunk.type === 'delta' && chunk.content) {
-          streamLines.push(chunk.content);
+      for await (const event of executeStreamAppServer(options, config)) {
+        if (event.type === 'text_delta') {
+          streamLines.push(event.text);
         }
-        yield chunk;
+        yield event;
       }
       const model = options.model || this.config.default_model;
       // App Server 모드에서도 onDebug 콜백 호출 (디버그 로그 PENDING 방지)

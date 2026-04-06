@@ -48,9 +48,17 @@ export interface ChatCompletionResponse {
 }
 
 // SSE 스트리밍 타입
+export interface ChatCompletionChunkToolCall {
+  index: number;
+  id?: string;
+  type?: 'function';
+  function?: { name?: string; arguments?: string };
+}
+
 export interface ChatCompletionChunkDelta {
   role?: 'assistant';
   content?: string;
+  tool_calls?: ChatCompletionChunkToolCall[];
 }
 
 export interface ChatCompletionChunkChoice {

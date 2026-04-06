@@ -36,13 +36,17 @@ export interface CliproxyPluginProvider {
   readonly name: string;
   readonly endpointTypes?: EndpointType[];
   execute(options: ExecuteOptions): Promise<ExecuteResult>;
-  executeStream?(options: ExecuteOptions): AsyncIterable<StreamChunk>;
+  /** @deprecated ProviderEvent 기반 AsyncIterable 권장 */
+  executeStream?(options: ExecuteOptions): AsyncIterable<StreamChunk | ProviderEvent>;
   checkHealth(): Promise<HealthStatus>;
 }
 
 // StreamParser 인터페이스 (shared에서 정의하여 플러그인이 참조 가능)
 export interface StreamParser {
+  /** @deprecated parseEvents() 사용 권장 */
   parse(line: string): StreamChunk | null;
+  /** 한 줄의 CLI 출력을 0개 이상의 ProviderEvent로 변환 */
+  parseEvents?(line: string): ProviderEvent[];
 }
 
 export interface ProviderConfig {
@@ -90,25 +94,102 @@ export interface ExecuteOptions {
   clientKey?: string;  // 세션 재사용용 클라이언트 식별자 (API key ID 등)
 }
 
+// 토큰 사용량 (공통 타입)
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 export interface ExecuteResult {
   content: string;
-  usage: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  usage: TokenUsage;
   finishReason: 'stop' | 'length' | 'error';
 }
 
+// --- ProviderEvent: discriminated union 기반 스트리밍 이벤트 ---
+
+export interface ProviderTextDeltaEvent {
+  type: 'text_delta';
+  text: string;
+}
+
+export interface ProviderToolUseEvent {
+  type: 'tool_use';
+  toolCallId: string;
+  toolName: string;
+  input: string;        // JSON string (완전한 인자 또는 스트리밍 delta)
+  isPartial?: boolean;  // true = 스트리밍 JSON delta
+}
+
+export interface ProviderThinkingEvent {
+  type: 'thinking';
+  text: string;
+}
+
+export interface ProviderUsageEvent {
+  type: 'usage';
+  usage: TokenUsage;
+}
+
+export interface ProviderErrorEvent {
+  type: 'error';
+  error: string;
+  code?: string;
+}
+
+export interface ProviderDoneEvent {
+  type: 'done';
+  finishReason?: 'stop' | 'length' | 'tool_use' | 'error';
+}
+
+export type ProviderEvent =
+  | ProviderTextDeltaEvent
+  | ProviderToolUseEvent
+  | ProviderThinkingEvent
+  | ProviderUsageEvent
+  | ProviderErrorEvent
+  | ProviderDoneEvent;
+
+/** @deprecated ProviderEvent 사용 권장 */
 export interface StreamChunk {
   type: 'delta' | 'done' | 'error';
   content?: string;
   error?: string;
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  usage?: TokenUsage;
+}
+
+// --- StreamChunk ↔ ProviderEvent 어댑터 ---
+
+/** StreamChunk를 ProviderEvent[]로 변환 (레거시 파서 호환) */
+export function streamChunkToEvents(chunk: StreamChunk): ProviderEvent[] {
+  const events: ProviderEvent[] = [];
+  switch (chunk.type) {
+    case 'delta':
+      if (chunk.content) events.push({ type: 'text_delta', text: chunk.content });
+      break;
+    case 'error':
+      events.push({ type: 'error', error: chunk.error ?? 'Unknown error' });
+      break;
+    case 'done':
+      if (chunk.usage) events.push({ type: 'usage', usage: chunk.usage });
+      events.push({ type: 'done' });
+      break;
+  }
+  return events;
+}
+
+/** ProviderEvent를 StreamChunk로 변환 (레거시 소비자 호환, lossy) */
+export function eventToStreamChunk(event: ProviderEvent): StreamChunk | null {
+  switch (event.type) {
+    case 'text_delta':  return { type: 'delta', content: event.text };
+    case 'thinking':    return { type: 'delta', content: event.text };
+    case 'error':       return { type: 'error', error: event.error };
+    case 'done':        return { type: 'done' };
+    case 'tool_use':    return null;
+    case 'usage':       return null;
+    default:            return null;
+  }
 }
 
 export type HealthStatus = 'healthy' | 'unhealthy' | 'unknown';

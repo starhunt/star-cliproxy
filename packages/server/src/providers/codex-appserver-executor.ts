@@ -6,7 +6,8 @@
 import type {
   ExecuteOptions,
   ExecuteResult,
-  StreamChunk,
+  ProviderEvent,
+  TokenUsage,
   CodexAppServerOptions,
 } from '@star-cliproxy/shared';
 import type { CodexAppServerProcess } from './codex-appserver-process.js';
@@ -496,7 +497,7 @@ async function executeTurn(
 export async function* executeStreamAppServer(
   options: ExecuteOptions,
   config: AppServerExecutorConfig,
-): AsyncGenerator<StreamChunk, void> {
+): AsyncGenerator<ProviderEvent, void> {
   const { process: proc, model, sessionManager, clientKey, timeoutMs } = config;
 
   if (!proc.isAlive()) {
@@ -558,13 +559,13 @@ async function* executeStreamTurn(
   model: string,
   options: ExecuteOptions,
   config: AppServerExecutorConfig,
-): AsyncGenerator<StreamChunk, void> {
+): AsyncGenerator<ProviderEvent, void> {
   // 스레드 생성/재사용
   const { threadId: rawThreadId, reused } = await getOrCreateThread(proc, existingThreadId, timeoutMs);
   const threadId = requireThreadIdForTurn(rawThreadId, 'getOrCreateThread');
 
   // 콜백→AsyncGenerator 브릿지 채널
-  const channel = new AsyncChannel<StreamChunk>();
+  const channel = new AsyncChannel<ProviderEvent>();
   const cleanups: (() => void)[] = [];
 
   // 타임아웃 타이머
@@ -586,12 +587,12 @@ async function* executeStreamTurn(
   cleanups.push(proc.onNotification('item/agentMessage/delta', (params) => {
     const p = params as AgentMessageDeltaParams;
     if (p.threadId === threadId) {
-      channel.push({ type: 'delta', content: p.delta });
+      channel.push({ type: 'text_delta', text: p.delta });
     }
   }));
 
   // thread/tokenUsage/updated: usage 수집
-  let finalUsage: StreamChunk['usage'] | undefined;
+  let finalUsage: TokenUsage | undefined;
   cleanups.push(proc.onNotification('thread/tokenUsage/updated', (params) => {
     const p = params as TokenUsageUpdatedParams;
     if (p.threadId === threadId) {
@@ -609,7 +610,8 @@ async function* executeStreamTurn(
     const p = params as TurnCompletedParams;
     if (p.threadId === threadId) {
       clearTimeout(timer);
-      channel.push({ type: 'done', usage: finalUsage });
+      if (finalUsage) channel.push({ type: 'usage', usage: finalUsage });
+      channel.push({ type: 'done' });
       channel.end();
     }
   }));

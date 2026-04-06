@@ -1,4 +1,4 @@
-import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
+import type { ExecuteOptions, ExecuteResult, ProviderEvent, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
 import { BaseProvider } from './base-provider.js';
 import { convertMessages } from '../utils/message-converter.js';
 import { executeSdk, executeStreamSdk, type SdkExecutorConfig, type SdkMeta } from './claude-sdk-executor.js';
@@ -135,18 +135,18 @@ export class ClaudeProvider extends BaseProvider {
     return super.execute(options);
   }
 
-  override async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
+  override async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
     if (this.isSDKMode) {
       const sdkLines: string[] = [];
       let streamMeta: SdkMeta | undefined;
       const sdkConfig = this.buildSdkConfig(options, options.clientKey);
       sdkConfig.onSdkMeta = (meta) => { streamMeta = meta; };
 
-      for await (const chunk of executeStreamSdk(options, sdkConfig)) {
-        if (chunk.type === 'delta' && chunk.content) {
-          sdkLines.push(chunk.content);
+      for await (const event of executeStreamSdk(options, sdkConfig)) {
+        if (event.type === 'text_delta') {
+          sdkLines.push(event.text);
         }
-        yield chunk;
+        yield event;
       }
       const model = options.model || this.config.default_model;
       // SDK 모드에서도 onDebug 콜백 호출 (디버그 로그 PENDING 방지)

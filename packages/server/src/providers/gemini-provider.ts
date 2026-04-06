@@ -1,4 +1,4 @@
-import type { ExecuteOptions, ExecuteResult, StreamChunk, ProviderConfigYaml } from '@star-cliproxy/shared';
+import type { ExecuteOptions, ExecuteResult, ProviderConfigYaml } from '@star-cliproxy/shared';
 import { BaseProvider, gracefulKill, trackProcess } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { spawn } from 'node:child_process';

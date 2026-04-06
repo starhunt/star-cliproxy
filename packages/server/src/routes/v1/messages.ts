@@ -367,6 +367,8 @@ export function registerMessagesRoute(
               let totalContent = '';
               let ttfbMs: number | undefined;
               let streamUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
+              let blockIndex = 0;
+              let currentBlockType: 'text' | 'thinking' | 'tool_use' | null = 'text'; // 초기 text 블록 시작됨
 
               const streamIterator = provider.executeStream({
                 messages: internalMessages,
@@ -380,29 +382,79 @@ export function registerMessagesRoute(
               });
 
               try {
-                for await (const chunk of streamIterator) {
+                for await (const event of streamIterator) {
                   if (!ttfbMs) {
                     ttfbMs = Date.now() - startTime;
                   }
 
-                  if (chunk.type === 'delta' && chunk.content) {
-                    // content_block_delta 이벤트 (write 실패 = 연결 끊김 → 루프 조기 종료)
+                  if (event.type === 'text_delta') {
+                    // 현재 블록이 text가 아니면 새 text 블록 시작
+                    if (currentBlockType !== 'text') {
+                      if (currentBlockType !== null) {
+                        writeSSE(reply.raw, 'content_block_stop', { type: 'content_block_stop', index: blockIndex });
+                        blockIndex++;
+                      }
+                      writeSSE(reply.raw, 'content_block_start', {
+                        type: 'content_block_start', index: blockIndex,
+                        content_block: { type: 'text', text: '' },
+                      });
+                      currentBlockType = 'text';
+                    }
                     if (!writeSSE(reply.raw, 'content_block_delta', {
                       type: 'content_block_delta',
-                      index: 0,
-                      delta: { type: 'text_delta', text: chunk.content },
+                      index: blockIndex,
+                      delta: { type: 'text_delta', text: event.text },
                     })) break;
-                    totalContent += chunk.content;
+                    totalContent += event.text;
                   }
 
-                  if (chunk.type === 'done' && chunk.usage) {
-                    streamUsage = chunk.usage;
+                  if (event.type === 'thinking') {
+                    if (currentBlockType !== 'thinking') {
+                      if (currentBlockType !== null) {
+                        writeSSE(reply.raw, 'content_block_stop', { type: 'content_block_stop', index: blockIndex });
+                        blockIndex++;
+                      }
+                      writeSSE(reply.raw, 'content_block_start', {
+                        type: 'content_block_start', index: blockIndex,
+                        content_block: { type: 'thinking', thinking: '' },
+                      });
+                      currentBlockType = 'thinking';
+                    }
+                    writeSSE(reply.raw, 'content_block_delta', {
+                      type: 'content_block_delta',
+                      index: blockIndex,
+                      delta: { type: 'thinking_delta', thinking: event.text },
+                    });
+                  }
+
+                  if (event.type === 'tool_use') {
+                    // 각 tool_use는 별도 블록
+                    if (currentBlockType !== null) {
+                      writeSSE(reply.raw, 'content_block_stop', { type: 'content_block_stop', index: blockIndex });
+                      blockIndex++;
+                    }
+                    writeSSE(reply.raw, 'content_block_start', {
+                      type: 'content_block_start', index: blockIndex,
+                      content_block: { type: 'tool_use', id: event.toolCallId, name: event.toolName, input: {} },
+                    });
+                    writeSSE(reply.raw, 'content_block_delta', {
+                      type: 'content_block_delta',
+                      index: blockIndex,
+                      delta: { type: 'input_json_delta', partial_json: event.input },
+                    });
+                    currentBlockType = 'tool_use';
+                  }
+
+                  if (event.type === 'usage') {
+                    streamUsage = event.usage;
                   }
 
                   // 응답 크기 제한
                   if (totalContent.length > v.maxResponseLength) {
                     break;
                   }
+
+                  if (event.type === 'done') break;
                 }
               } catch (streamErr) {
                 // 헤더 전송 후 에러: 스트림 에러 이벤트 전송 후 종료

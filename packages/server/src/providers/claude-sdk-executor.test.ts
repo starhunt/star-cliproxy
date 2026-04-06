@@ -136,7 +136,7 @@ describe('claude-sdk-executor', () => {
   });
 
   describe('executeStreamSdk', () => {
-    it('stream_event delta를 StreamChunk로 변환한다', async () => {
+    it('stream_event delta를 ProviderEvent로 변환한다', async () => {
       mockMessages.push(
         {
           type: 'system',
@@ -181,13 +181,14 @@ describe('claude-sdk-executor', () => {
         chunks.push(chunk);
       }
 
-      expect(chunks).toHaveLength(3);
-      expect(chunks[0]).toEqual({ type: 'delta', content: 'Hello' });
-      expect(chunks[1]).toEqual({ type: 'delta', content: ' World' });
+      expect(chunks).toHaveLength(4);
+      expect(chunks[0]).toEqual({ type: 'text_delta', text: 'Hello' });
+      expect(chunks[1]).toEqual({ type: 'text_delta', text: ' World' });
       expect(chunks[2]).toEqual({
-        type: 'done',
+        type: 'usage',
         usage: { promptTokens: 30, completionTokens: 10, totalTokens: 40 },
       });
+      expect(chunks[3]).toEqual({ type: 'done', finishReason: 'stop' });
     });
 
     it('에러 result를 error chunk + done으로 변환한다', async () => {
@@ -215,9 +216,13 @@ describe('claude-sdk-executor', () => {
         chunks.push(chunk);
       }
 
-      expect(chunks).toHaveLength(2);
+      expect(chunks).toHaveLength(3);
       expect(chunks[0]).toEqual({ type: 'error', error: 'Something went wrong' });
-      expect(chunks[1]).toMatchObject({ type: 'done' });
+      expect(chunks[1]).toEqual({
+        type: 'usage',
+        usage: { promptTokens: 10, completionTokens: 0, totalTokens: 10 },
+      });
+      expect(chunks[2]).toEqual({ type: 'done', finishReason: 'error' });
     });
   });
 

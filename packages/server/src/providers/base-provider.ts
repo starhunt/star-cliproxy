@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os';
 import type {
   ExecuteOptions,
   ExecuteResult,
-  StreamChunk,
+  ProviderEvent,
+  TokenUsage,
   HealthStatus,
   ProviderConfigYaml,
   EndpointType,
   StreamParser,
 } from '@star-cliproxy/shared';
+import { streamChunkToEvents } from '@star-cliproxy/shared';
 import { getParserForProvider } from '../utils/stream-transformer.js';
 
 // 활성 자식 프로세스 추적 — 서버 종료 시 전체 정리용
@@ -93,7 +95,7 @@ export abstract class BaseProvider {
   }
 
   // streaming 실행
-  async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
+  async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
     const args = this.buildArgs({ ...options, stream: true });
     const stdinData = this.getStdinData({ ...options, stream: true });
     const child = this.spawnProcess(args);
@@ -121,10 +123,23 @@ export abstract class BaseProvider {
 
       for await (const line of rl) {
         if (captureDebug) debugLines.push(line);
-        const chunk = this.parser.parse(line);
-        if (chunk) {
-          yield chunk;
-          if (chunk.type === 'done') break;
+
+        // parseEvents 우선 사용, 없으면 레거시 parse → 어댑터 변환
+        if (this.parser.parseEvents) {
+          const events = this.parser.parseEvents(line);
+          for (const event of events) {
+            yield event;
+            if (event.type === 'done') return;
+          }
+        } else {
+          const chunk = this.parser.parse(line);
+          if (chunk) {
+            const events = streamChunkToEvents(chunk);
+            for (const event of events) {
+              yield event;
+            }
+            if (chunk.type === 'done') return;
+          }
         }
       }
     } finally {
@@ -229,15 +244,25 @@ export abstract class BaseProvider {
     // 기본: NDJSON 라인들에서 텍스트 추출
     const lines = stdout.trim().split('\n');
     const contentParts: string[] = [];
-    let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    let usage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
-    for (const line of lines) {
-      const chunk = this.parser.parse(line);
-      if (chunk?.type === 'delta' && chunk.content) {
-        contentParts.push(chunk.content);
+    if (this.parser.parseEvents) {
+      for (const line of lines) {
+        const events = this.parser.parseEvents(line);
+        for (const event of events) {
+          if (event.type === 'text_delta') contentParts.push(event.text);
+          if (event.type === 'usage') usage = event.usage;
+        }
       }
-      if (chunk?.type === 'done' && chunk.usage) {
-        usage = chunk.usage;
+    } else {
+      for (const line of lines) {
+        const chunk = this.parser.parse(line);
+        if (chunk?.type === 'delta' && chunk.content) {
+          contentParts.push(chunk.content);
+        }
+        if (chunk?.type === 'done' && chunk.usage) {
+          usage = chunk.usage;
+        }
       }
     }
 

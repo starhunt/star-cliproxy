@@ -352,7 +352,7 @@ export function registerChatCompletionsRoute(
 
             let totalContent = '';
             let ttfbMs: number | undefined;
-            // done 청크에서 실제 토큰 사용량 캡처 (ADD-05)
+            // usage 이벤트에서 실제 토큰 사용량 캡처
             let streamUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
 
             const streamIterator = provider.executeStream({
@@ -367,29 +367,30 @@ export function registerChatCompletionsRoute(
             });
 
             try {
-              for await (const chunk of streamIterator) {
+              for await (const event of streamIterator) {
                 if (!ttfbMs) {
                   ttfbMs = Date.now() - startTime;
                 }
 
-                const sseData = formatAsSSE(chunk, requestId, body.model);
+                const sseData = formatAsSSE(event, requestId, body.model);
                 if (sseData) {
                   // write 실패(연결 끊김)면 스트림 루프 조기 종료
                   if (!safeWrite(reply.raw, sseData)) break;
                 }
-                if (chunk.type === 'delta' && chunk.content) {
-                  totalContent += chunk.content;
+                if (event.type === 'text_delta') {
+                  totalContent += event.text;
                 }
-                if (chunk.type === 'done' && chunk.usage) {
-                  streamUsage = chunk.usage;
+                if (event.type === 'usage') {
+                  streamUsage = event.usage;
                 }
 
                 // 응답 크기 제한
                 if (totalContent.length > v.maxResponseLength) {
-                  const doneSSE = formatAsSSE({ type: 'done' }, requestId, body.model);
+                  const doneSSE = formatAsSSE({ type: 'done' as const }, requestId, body.model);
                   if (doneSSE) safeWrite(reply.raw, doneSSE);
                   break;
-              }
+                }
+                if (event.type === 'done') break;
               }
             } catch (streamErr) {
               // 헤더 전송 후 에러: 스트림 에러 이벤트 전송 후 종료 (폴백 불가)

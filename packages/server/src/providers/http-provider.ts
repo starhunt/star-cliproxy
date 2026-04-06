@@ -1,7 +1,7 @@
 import type {
   ExecuteOptions,
   ExecuteResult,
-  StreamChunk,
+  ProviderEvent,
   HealthStatus,
   ProviderConfigYaml,
   HttpProviderConfig,
@@ -201,7 +201,7 @@ export class HttpProvider extends BaseProvider {
 
   // === Streaming 실행 ===
 
-  async *executeStream(options: ExecuteOptions): AsyncIterable<StreamChunk> {
+  async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
     const url = this.buildUrl('/chat/completions');
     const headers = this.buildHeaders();
     const body = this.buildRequestBody(options, true);
@@ -275,10 +275,10 @@ export class HttpProvider extends BaseProvider {
 
             if (captureDebug) streamLines.push(trimmed);
 
-            const chunk = parseSSELine(trimmed);
-            if (chunk) {
-              yield chunk;
-              if (chunk.type === 'done') return;
+            const events = parseSSELineToEvents(trimmed);
+            for (const event of events) {
+              yield event;
+              if (event.type === 'done') return;
             }
           }
         }
@@ -286,8 +286,8 @@ export class HttpProvider extends BaseProvider {
         // 버퍼에 남은 데이터 처리
         if (buffer.trim()) {
           if (captureDebug) streamLines.push(buffer.trim());
-          const chunk = parseSSELine(buffer.trim());
-          if (chunk) yield chunk;
+          const events = parseSSELineToEvents(buffer.trim());
+          for (const event of events) yield event;
         }
       } finally {
         reader.releaseLock();
@@ -330,14 +330,14 @@ export class HttpProvider extends BaseProvider {
 
 // === SSE 파싱 ===
 
-function parseSSELine(line: string): StreamChunk | null {
+function parseSSELineToEvents(line: string): ProviderEvent[] {
   // OpenAI SSE 형식: "data: {...}" 또는 "data: [DONE]"
-  if (!line.startsWith('data: ')) return null;
+  if (!line.startsWith('data: ')) return [];
 
   const data = line.slice(6); // "data: " 제거
 
   if (data === '[DONE]') {
-    return { type: 'done' };
+    return [{ type: 'done' }];
   }
 
   try {
@@ -346,28 +346,48 @@ function parseSSELine(line: string): StreamChunk | null {
     const finishReason = json.choices?.[0]?.finish_reason;
 
     if (finishReason) {
-      return {
-        type: 'done',
-        usage: json.usage ? {
-          promptTokens: json.usage.prompt_tokens ?? 0,
-          completionTokens: json.usage.completion_tokens ?? 0,
-          totalTokens: json.usage.total_tokens ?? 0,
-        } : undefined,
-      };
+      const events: ProviderEvent[] = [];
+      if (json.usage) {
+        events.push({
+          type: 'usage',
+          usage: {
+            promptTokens: json.usage.prompt_tokens ?? 0,
+            completionTokens: json.usage.completion_tokens ?? 0,
+            totalTokens: json.usage.total_tokens ?? 0,
+          },
+        });
+      }
+      const reason = finishReason === 'length' ? 'length' as const
+        : finishReason === 'tool_calls' ? 'tool_use' as const
+        : 'stop' as const;
+      events.push({ type: 'done', finishReason: reason });
+      return events;
     }
+
+    const events: ProviderEvent[] = [];
 
     // content 우선, 비어있으면 reasoning fallback (reasoning 모델 지원)
     const text = delta?.content || delta?.reasoning;
     if (text) {
-      return {
-        type: 'delta',
-        content: text,
-      };
+      events.push({ type: 'text_delta', text });
     }
 
-    return null;
+    // tool_calls 지원
+    if (delta?.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        events.push({
+          type: 'tool_use',
+          toolCallId: tc.id ?? '',
+          toolName: tc.function?.name ?? '',
+          input: tc.function?.arguments ?? '',
+          isPartial: !tc.id, // id가 없으면 partial delta
+        });
+      }
+    }
+
+    return events;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -387,7 +407,17 @@ interface OpenAIChatCompletionResponse {
 
 interface OpenAIChatCompletionChunk {
   choices?: Array<{
-    delta?: { content?: string; reasoning?: string; role?: string };
+    delta?: {
+      content?: string;
+      reasoning?: string;
+      role?: string;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
     finish_reason?: string | null;
   }>;
   usage?: {
