@@ -1,6 +1,10 @@
 import type {
   ExecuteOptions,
   ExecuteResult,
+  EmbeddingOptions,
+  EmbeddingResult,
+  TtsOptions,
+  TtsResult,
   ProviderEvent,
   HealthStatus,
   ProviderConfigYaml,
@@ -18,6 +22,7 @@ import { BaseProvider } from './base-provider.js';
  */
 export class HttpProvider extends BaseProvider {
   readonly name: string;
+  override readonly endpointTypes = ['chat', 'embeddings', 'tts'] as const;
   private httpConfig: HttpProviderConfig;
 
   constructor(providerName: string, httpConfig: HttpProviderConfig) {
@@ -302,6 +307,181 @@ export class HttpProvider extends BaseProvider {
     }
   }
 
+  // === Embedding 실행 ===
+
+  async executeEmbedding(options: EmbeddingOptions): Promise<EmbeddingResult> {
+    const url = this.buildUrl('/embeddings');
+    const headers = this.buildHeaders();
+    const body: Record<string, unknown> = {
+      model: options.model,
+      input: options.input,
+    };
+    if (options.encodingFormat) body.encoding_format = options.encodingFormat;
+    if (options.dimensions) body.dimensions = options.dimensions;
+
+    const debugInfo: Partial<DebugCaptureInfo> = {
+      cliArgs: [],
+      httpRequest: {
+        method: 'POST',
+        url,
+        headers: maskApiKey(headers),
+        body,
+      },
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.httpConfig.timeout_ms);
+
+    if (options.signal) {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      const rawText = await response.text();
+      let responseBody: OpenAIEmbeddingResponse;
+      try {
+        responseBody = JSON.parse(rawText) as OpenAIEmbeddingResponse;
+      } catch {
+        debugInfo.rawResponseText = rawText;
+        debugInfo.httpResponse = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+        };
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+        throw new Error(`${this.name}: Invalid JSON response: ${rawText.slice(0, 200)}`);
+      }
+
+      debugInfo.rawResponseText = rawText;
+      debugInfo.httpResponse = {
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: responseBody,
+      };
+
+      if (!response.ok) {
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+        const errMsg = (responseBody as Record<string, unknown>).error
+          ? JSON.stringify((responseBody as Record<string, unknown>).error)
+          : `HTTP ${response.status}`;
+        throw new Error(`${this.name} HTTP error: ${errMsg}`);
+      }
+
+      options.onDebug?.(debugInfo as DebugCaptureInfo);
+
+      const embeddings = (responseBody.data ?? [])
+        .sort((a, b) => a.index - b.index)
+        .map(d => d.embedding);
+      const usage = responseBody.usage ?? { prompt_tokens: 0, total_tokens: 0 };
+
+      return {
+        embeddings,
+        model: responseBody.model ?? options.model,
+        usage: {
+          promptTokens: usage.prompt_tokens ?? 0,
+          totalTokens: usage.total_tokens ?? (usage.prompt_tokens ?? 0),
+        },
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        if (options.signal?.aborted) {
+          throw new Error('Request cancelled');
+        }
+        throw new Error(`${this.name} HTTP request timed out after ${this.httpConfig.timeout_ms}ms`);
+      }
+      if (!debugInfo.httpResponse) {
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  // === TTS 실행 ===
+
+  async executeTts(options: TtsOptions): Promise<TtsResult> {
+    const url = this.buildUrl('/audio/speech');
+    const headers = this.buildHeaders();
+    const body: Record<string, unknown> = {
+      model: options.model,
+      input: options.input,
+      voice: options.voice,
+    };
+    if (options.responseFormat) body.response_format = options.responseFormat;
+    if (options.speed !== undefined) body.speed = options.speed;
+
+    const debugInfo: Partial<DebugCaptureInfo> = {
+      cliArgs: [],
+      httpRequest: {
+        method: 'POST',
+        url,
+        headers: maskApiKey(headers),
+        body,
+      },
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.httpConfig.timeout_ms);
+
+    if (options.signal) {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        debugInfo.rawResponseText = errorText;
+        debugInfo.httpResponse = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+        };
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+        throw new Error(`${this.name} HTTP error: ${response.status} ${errorText.slice(0, 200)}`);
+      }
+
+      const contentType = response.headers.get('content-type') ?? 'audio/mpeg';
+      const arrayBuffer = await response.arrayBuffer();
+      const audio = Buffer.from(arrayBuffer);
+
+      debugInfo.httpResponse = {
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+      };
+      options.onDebug?.(debugInfo as DebugCaptureInfo);
+
+      return { audio, contentType };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        if (options.signal?.aborted) {
+          throw new Error('Request cancelled');
+        }
+        throw new Error(`${this.name} HTTP request timed out after ${this.httpConfig.timeout_ms}ms`);
+      }
+      if (!debugInfo.httpResponse) {
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   // === Health Check ===
 
   async checkHealth(): Promise<HealthStatus> {
@@ -423,6 +603,20 @@ interface OpenAIChatCompletionChunk {
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+interface OpenAIEmbeddingResponse {
+  object?: string;
+  data?: Array<{
+    object?: string;
+    embedding: number[];
+    index: number;
+  }>;
+  model?: string;
+  usage?: {
+    prompt_tokens?: number;
     total_tokens?: number;
   };
 }

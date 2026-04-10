@@ -106,6 +106,41 @@ export interface ImageGenerationResponse {
   }>;
 }
 
+// OpenAI Embeddings API 호환 타입
+export interface EmbeddingRequest {
+  model: string;
+  input: string | string[];
+  encoding_format?: 'float' | 'base64';
+  dimensions?: number;
+}
+
+export interface EmbeddingObject {
+  object: 'embedding';
+  embedding: number[];
+  index: number;
+}
+
+export interface EmbeddingResponse {
+  object: 'list';
+  data: EmbeddingObject[];
+  model: string;
+  usage: {
+    prompt_tokens: number;
+    total_tokens: number;
+  };
+}
+
+// OpenAI Audio Speech (TTS) API 호환 타입
+export type TtsResponseFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+
+export interface TtsRequest {
+  model: string;
+  input: string;
+  voice: string;
+  response_format?: TtsResponseFormat;
+  speed?: number;
+}
+
 // 에러 응답
 export interface ApiErrorResponse {
   error: {

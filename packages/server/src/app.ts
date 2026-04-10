@@ -12,6 +12,8 @@ import { registerChatCompletionsRoute } from './routes/v1/chat-completions.js';
 import { registerMessagesRoute } from './routes/v1/messages.js';
 import { registerModelsRoute } from './routes/v1/models.js';
 import { registerImageGenerationsRoute } from './routes/v1/images-generations.js';
+import { registerEmbeddingsRoute } from './routes/v1/embeddings.js';
+import { registerAudioSpeechRoute } from './routes/v1/audio-speech.js';
 import { registerModelMappingsRoutes } from './routes/admin/model-mappings.js';
 import { registerApiKeysRoutes } from './routes/admin/api-keys.js';
 import { registerStatsRoutes } from './routes/admin/stats.js';
@@ -357,6 +359,24 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
   });
   registerModelsRoute(app);
   registerImageGenerationsRoute(app, {
+    router,
+    queue: queueManager,
+    rateLimiter,
+    registry,
+    healthChecker,
+    activeRequests,
+    debug,
+  });
+  registerEmbeddingsRoute(app, {
+    router,
+    queue: queueManager,
+    rateLimiter,
+    registry,
+    healthChecker,
+    activeRequests,
+    debug,
+  });
+  registerAudioSpeechRoute(app, {
     router,
     queue: queueManager,
     rateLimiter,

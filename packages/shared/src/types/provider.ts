@@ -94,6 +94,41 @@ export interface ExecuteOptions {
   clientKey?: string;  // 세션 재사용용 클라이언트 식별자 (API key ID 등)
 }
 
+// 임베딩 전용 옵션/결과
+export interface EmbeddingOptions {
+  model: string;
+  input: string | string[];
+  encodingFormat?: 'float' | 'base64';
+  dimensions?: number;
+  signal?: AbortSignal;
+  onDebug?: (info: DebugCaptureInfo) => void;
+}
+
+export interface EmbeddingResult {
+  embeddings: number[][];
+  model: string;
+  usage: {
+    promptTokens: number;
+    totalTokens: number;
+  };
+}
+
+// TTS 전용 옵션/결과
+export interface TtsOptions {
+  model: string;
+  input: string;
+  voice: string;
+  responseFormat?: 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+  speed?: number;
+  signal?: AbortSignal;
+  onDebug?: (info: DebugCaptureInfo) => void;
+}
+
+export interface TtsResult {
+  audio: Buffer;
+  contentType: string;
+}
+
 // 토큰 사용량 (공통 타입)
 export interface TokenUsage {
   promptTokens: number;

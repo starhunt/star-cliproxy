@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import type {
   ExecuteOptions,
   ExecuteResult,
+  EmbeddingOptions,
+  EmbeddingResult,
+  TtsOptions,
+  TtsResult,
   ProviderEvent,
   TokenUsage,
   HealthStatus,
@@ -40,7 +44,7 @@ export abstract class BaseProvider {
   abstract readonly name: string;
 
   // 빌트인 프로바이더는 기본 chat, 서브클래스에서 오버라이드 가능
-  readonly endpointTypes: EndpointType[] = ['chat'];
+  readonly endpointTypes: readonly EndpointType[] = ['chat'];
 
   protected config: ProviderConfigYaml;
   protected parser: StreamParser;
@@ -149,6 +153,16 @@ export abstract class BaseProvider {
         options.onDebug!({ cliArgs: this.fullCommand(args), streamLines: debugLines });
       }
     }
+  }
+
+  // 임베딩 실행 (HTTP 프로바이더 등에서 오버라이드)
+  async executeEmbedding(_options: EmbeddingOptions): Promise<EmbeddingResult> {
+    throw new Error(`${this.name} does not support embeddings`);
+  }
+
+  // TTS 실행 (HTTP 프로바이더 등에서 오버라이드)
+  async executeTts(_options: TtsOptions): Promise<TtsResult> {
+    throw new Error(`${this.name} does not support text-to-speech`);
   }
 
   // 건강 체크 (--version 실행)
