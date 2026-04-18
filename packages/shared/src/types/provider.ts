@@ -92,6 +92,10 @@ export interface ExecuteOptions {
   signal?: AbortSignal;
   onDebug?: (info: DebugCaptureInfo) => void;
   clientKey?: string;  // 세션 재사용용 클라이언트 식별자 (API key ID 등)
+  // Image generation passthrough (OpenAI Images API)
+  responseFormat?: 'url' | 'b64_json';
+  n?: number;
+  size?: string;
 }
 
 // 임베딩 전용 옵션/결과

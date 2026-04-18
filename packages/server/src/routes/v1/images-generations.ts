@@ -137,6 +137,9 @@ export function registerImageGenerationsRoute(
               messages: [{ role: 'user', content: body.prompt }],
               model: route.actualModel,
               stream: false,
+              responseFormat: body.response_format,
+              n: body.n,
+              size: body.size,
               onDebug,
             }),
           );
