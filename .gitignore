@@ -11,6 +11,13 @@ config.backup.yaml
 coverage/
 .vite/
 
+# 런타임 프로세스 ID 파일
+*.pid
+
+# 백업 파일
+*.bak
+*.bak.*
+
 # 커스텀 플러그인 (개인용 프로바이더는 메인 레포에 포함하지 않음)
 plugins/*/
 !plugins/example-plugin/
