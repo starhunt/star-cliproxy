@@ -2,9 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
+  ChatMessageContent,
+  ChatMessageContentPart,
   ValidationConfig,
 } from '@star-cliproxy/shared';
 import { ALLOWED_ROLES } from '@star-cliproxy/shared';
+import { extractTextFromContent, isImagePart } from '../../utils/message-converter.js';
 import { createRequestId, formatAsSSE } from '../../utils/stream-transformer.js';
 import { logRequest } from '../../middleware/request-logger.js';
 import type { ModelRouter } from '../../services/router.js';
@@ -45,18 +48,27 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
-function normalizeContentBlock(part: unknown): string {
+// 텍스트 블록을 sanitize된 단일 문자열로 평탄화한다.
+// 이미지 블록을 만나면 null을 반환하여 호출자가 별도로 처리하도록 한다.
+function flattenTextBlock(part: unknown): string | null {
   if (typeof part === 'string') return part;
   if (!part || typeof part !== 'object') return stringifyUnknown(part);
 
   const block = part as Record<string, unknown>;
   const type = typeof block.type === 'string' ? block.type : '';
 
+  if (type === 'image_url' || type === 'input_image' || type === 'image') {
+    return null;
+  }
+
   if (typeof block.text === 'string') return block.text;
   if (typeof block.content === 'string') return block.content;
 
   if (Array.isArray(block.content)) {
-    return block.content.map((item) => normalizeContentBlock(item)).filter(Boolean).join('\n');
+    return block.content
+      .map((item) => flattenTextBlock(item))
+      .filter((s): s is string => typeof s === 'string' && s.length > 0)
+      .join('\n');
   }
 
   if (type === 'toolCall') {
@@ -75,20 +87,57 @@ function normalizeContentBlock(part: unknown): string {
     return typeof block.thinking === 'string' ? `[Thinking] ${block.thinking}` : '';
   }
 
-  if (type === 'input_text') {
+  if (type === 'input_text' || type === 'text') {
     return typeof block.text === 'string' ? block.text : stringifyUnknown(block);
   }
 
   return stringifyUnknown(block);
 }
 
-function normalizeMessageContent(content: unknown): string {
+// 멀티모달 content를 정규화한다.
+// - string: null byte 제거 후 그대로
+// - array: 텍스트 블록은 sanitize된 { type: 'text', text } 로, 이미지 블록은 원본 보존
+//   (HTTP/OpenAI 호환 vision 모델이 image_url을 그대로 받을 수 있도록)
+// - 객체: text 블록 1개로 평탄화
+// 인접한 텍스트 블록은 머지하여 LLM이 받기 좋은 형태로 정돈한다.
+function normalizeMessageContent(content: unknown): ChatMessageContent {
   if (typeof content === 'string') return sanitizeString(content);
+
   if (Array.isArray(content)) {
-    return sanitizeString(content.map((part) => normalizeContentBlock(part)).filter(Boolean).join('\n'));
+    const out: ChatMessageContentPart[] = [];
+    let textBuffer = '';
+
+    const flushText = () => {
+      if (textBuffer.length > 0) {
+        out.push({ type: 'text', text: sanitizeString(textBuffer) });
+        textBuffer = '';
+      }
+    };
+
+    for (const part of content) {
+      if (part && typeof part === 'object' && isImagePart(part as ChatMessageContentPart)) {
+        flushText();
+        out.push(part as ChatMessageContentPart);
+        continue;
+      }
+      const text = flattenTextBlock(part);
+      if (text) {
+        if (textBuffer.length > 0) textBuffer += '\n';
+        textBuffer += text;
+      }
+    }
+    flushText();
+
+    if (out.length === 0) return '';
+    if (out.length === 1 && out[0].type === 'text' && typeof out[0].text === 'string') {
+      return out[0].text;
+    }
+    return out;
   }
+
   if (content && typeof content === 'object') {
-    return sanitizeString(normalizeContentBlock(content));
+    const text = flattenTextBlock(content);
+    return sanitizeString(text ?? '');
   }
   if (content == null) return '';
   return sanitizeString(stringifyUnknown(content));
@@ -173,18 +222,18 @@ export function registerChatCompletionsRoute(
           msg.role = 'system';
         }
 
-        // content를 string으로 정규화 (OpenAI content parts + 구조화 블록 허용)
+        // content를 정규화 (OpenAI content parts + 구조화 블록 허용)
+        // 멀티모달 array는 array 형태 그대로 보존 — HTTP provider가 vision 모델로 그대로 패스스루
         const normalizedContent = normalizeMessageContent(msg.content);
-
-        // null byte 제거 포함
         msg.content = normalizedContent;
 
-        // 개별 메시지 길이 제한
-        if (msg.content.length > v.maxMessageLength) {
-          return reply.status(400).send(makeValidationError(`messages[${i}].content too long: ${msg.content.length} chars. Maximum is ${v.maxMessageLength}.`, 'messages'));
+        // 길이 제한은 텍스트 부분만으로 측정 (base64 image data는 제외 — bodyLimitBytes로 별도 제한)
+        const textLength = extractTextFromContent(normalizedContent).length;
+        if (textLength > v.maxMessageLength) {
+          return reply.status(400).send(makeValidationError(`messages[${i}].content too long: ${textLength} chars. Maximum is ${v.maxMessageLength}.`, 'messages'));
         }
 
-        totalPromptLength += msg.content.length;
+        totalPromptLength += textLength;
       }
 
       // 전체 프롬프트 총 길이 제한

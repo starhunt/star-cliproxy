@@ -1,9 +1,20 @@
 import type { ExecuteOptions, ExecuteResult, ProviderEvent, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
 import { BaseProvider } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
+import { prepareCodexPrompt } from '../utils/image-extractor.js';
 import { CodexAppServerProcess, type CodexAppServerProcessConfig } from './codex-appserver-process.js';
 import { CodexAppServerSessionManager } from './codex-appserver-session-manager.js';
 import { executeAppServer, executeStreamAppServer, type AppServerExecutorConfig, type AppServerMeta } from './codex-appserver-executor.js';
+import { unlink } from 'node:fs/promises';
+
+interface CodexExecuteContext {
+  text: string;
+  imageFiles: string[];
+}
+
+interface CodexExecuteOptions extends ExecuteOptions {
+  __codexPrompt?: CodexExecuteContext;
+}
 
 export class CodexProvider extends BaseProvider {
   readonly name = 'codex' as const;
@@ -81,17 +92,21 @@ export class CodexProvider extends BaseProvider {
 
   // stdin으로 프롬프트 전달 (Windows shell 모드에서 인자 따옴표 문제 방지)
   protected override getStdinData(options: ExecuteOptions): string {
+    const ctx = (options as CodexExecuteOptions).__codexPrompt;
+    if (ctx) return ctx.text;
     return convertMessagesToSinglePrompt(options.messages);
   }
 
   protected buildArgs(options: ExecuteOptions): string[] {
     const model = options.model || this.config.default_model;
+    const ctx = (options as CodexExecuteOptions).__codexPrompt;
 
     const args: string[] = [
       'exec',
       // --json 필수: 없으면 TUI 출력이 되어 stdout 캡처 불가
       '--json',
       ...this.config.extra_args,
+      ...((ctx?.imageFiles ?? []).flatMap((file) => ['--image', file])),
       // 모델 지정 (빈 값이면 Codex 기본 모델 사용)
       ...(model ? ['-m', model] : []),
       '-', // stdin에서 프롬프트 읽기
@@ -146,7 +161,16 @@ export class CodexProvider extends BaseProvider {
       });
       return result;
     }
-    return super.execute(options);
+    const { prompt, imageFiles, tempFiles } = await prepareCodexPrompt(options.messages);
+    const ext: CodexExecuteOptions = {
+      ...options,
+      __codexPrompt: { text: prompt, imageFiles },
+    };
+    try {
+      return await super.execute(ext);
+    } finally {
+      await Promise.allSettled(tempFiles.map((file) => unlink(file)));
+    }
   }
 
   override async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
@@ -173,7 +197,16 @@ export class CodexProvider extends BaseProvider {
       });
       return;
     }
-    yield* super.executeStream(options);
+    const { prompt, imageFiles, tempFiles } = await prepareCodexPrompt(options.messages);
+    const ext: CodexExecuteOptions = {
+      ...options,
+      __codexPrompt: { text: prompt, imageFiles },
+    };
+    try {
+      yield* super.executeStream(ext);
+    } finally {
+      await Promise.allSettled(tempFiles.map((file) => unlink(file)));
+    }
   }
 
   override async checkHealth(): Promise<HealthStatus> {

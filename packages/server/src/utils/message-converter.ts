@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@star-cliproxy/shared';
+import type { ChatMessage, ChatMessageContent, ChatMessageContentPart } from '@star-cliproxy/shared';
 
 // OpenAI messages 배열을 CLI 프롬프트 텍스트로 변환
 export interface ConvertedPrompt {
@@ -10,18 +10,49 @@ export interface ConvertedPrompt {
 // <|user|>, <|assistant|>, <|system|> 패턴을 유니코드 이스케이프 시퀀스로 치환
 export function sanitizeDelimiters(content: string): string {
   return content
-    .replace(/<\|user\|>/g, '<\u200Buser\u200B>')
-    .replace(/<\|assistant\|>/g, '<\u200Bassistant\u200B>')
-    .replace(/<\|system\|>/g, '<\u200Bsystem\u200B>');
+    .replace(/<\|user\|>/g, '<​user​>')
+    .replace(/<\|assistant\|>/g, '<​assistant​>')
+    .replace(/<\|system\|>/g, '<​system​>');
 }
 
-// chat-completions 라우트에서 content parts 배열은 string으로 정규화된 후 호출됨
+// 멀티모달 content part 중 이미지 블록 판별
+// OpenAI Chat Completions: { type: 'image_url', image_url: { url } }
+// OpenAI Responses API:   { type: 'input_image', image_url | image_url.url }
+// Anthropic 호환:          { type: 'image', source: { ... } }
+export function isImagePart(part: ChatMessageContentPart): boolean {
+  const t = part?.type;
+  return t === 'image_url' || t === 'input_image' || t === 'image';
+}
+
+// 멀티모달 content에서 텍스트만 추출 (CLI provider / 길이 검증용).
+// 이미지 블록은 [image] 마커로 대체하여 위치 정보만 보존한다.
+export function extractTextFromContent(content: ChatMessageContent | undefined | null): string {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+
+  const parts: string[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue;
+    if (isImagePart(part)) {
+      parts.push('[image]');
+      continue;
+    }
+    if (typeof part.text === 'string') {
+      parts.push(part.text);
+    }
+  }
+  return parts.join('\n');
+}
+
+// chat-completions 라우트에서 content는 string 또는 multimodal parts 배열로 들어온다.
+// CLI 프롬프트는 텍스트만 필요하므로 이미지 블록은 [image] 마커로 대체한다.
 export function convertMessages(messages: ChatMessage[]): ConvertedPrompt {
   let systemPrompt: string | null = null;
   const conversationParts: string[] = [];
 
   for (const msg of messages) {
-    const content = msg.content as string;
+    const content = extractTextFromContent(msg.content);
     if (msg.role === 'system') {
       // 마지막 system 메시지를 사용
       systemPrompt = content;
@@ -44,7 +75,7 @@ export function convertMessages(messages: ChatMessage[]): ConvertedPrompt {
   if (nonSystemMessages.length === 1 && nonSystemMessages[0].role === 'user') {
     return {
       systemPrompt,
-      userPrompt: nonSystemMessages[0].content as string,
+      userPrompt: extractTextFromContent(nonSystemMessages[0].content),
     };
   }
 

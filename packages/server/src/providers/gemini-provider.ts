@@ -1,11 +1,26 @@
-import type { ExecuteOptions, ExecuteResult, ProviderConfigYaml } from '@star-cliproxy/shared';
+import type { ExecuteOptions, ExecuteResult, ProviderConfigYaml, ProviderEvent } from '@star-cliproxy/shared';
 import { BaseProvider, gracefulKill, trackProcess } from './base-provider.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
+import { prepareGeminiPrompt } from '../utils/image-extractor.js';
 import { spawn } from 'node:child_process';
 import { readFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+
+// 이미지 첨부 모드일 때 -p 인자에 들어가는 프롬프트 텍스트의 안전 한도.
+// macOS ARG_MAX = 1MB. 여유를 두어 800KB로 제한.
+const MAX_PROMPT_ARG_BYTES = 800_000;
+
+// gemini-provider 내부 컨텍스트: prepareGeminiPrompt 결과를 buildArgs/getStdinData에 전달
+interface GeminiExecuteContext {
+  text: string;
+  useArg: boolean;
+}
+
+interface GeminiExecuteOptions extends ExecuteOptions {
+  __geminiPrompt?: GeminiExecuteContext;
+}
 
 export class GeminiProvider extends BaseProvider {
   readonly name = 'gemini' as const;
@@ -15,7 +30,12 @@ export class GeminiProvider extends BaseProvider {
     this.initParser();
   }
 
-  protected override getStdinData(options: ExecuteOptions): string {
+  protected override getStdinData(options: ExecuteOptions): string | undefined {
+    const ctx = (options as GeminiExecuteOptions).__geminiPrompt;
+    if (ctx) {
+      // 이미지 모드(-p): stdin 미사용. 텍스트 모드: 그대로 stdin.
+      return ctx.useArg ? undefined : ctx.text;
+    }
     return convertMessagesToSinglePrompt(options.messages);
   }
 
@@ -28,6 +48,12 @@ export class GeminiProvider extends BaseProvider {
     ];
 
     args.push(...this.config.extra_args);
+
+    const ctx = (options as GeminiExecuteOptions).__geminiPrompt;
+    if (ctx?.useArg) {
+      // 이미지 첨부 모드: prompt 텍스트(@<path> 포함)를 -p 인자로 전달
+      args.push('-p', ctx.text);
+    }
     return args;
   }
 
@@ -35,6 +61,48 @@ export class GeminiProvider extends BaseProvider {
   // Gemini CLI는 stdout이 pipe일 때 8KB 버퍼를 마지막에 flush하지 않아 데이터 잘림 발생
   // 파일 리다이렉트(> file)로 우회하면 프로세스 종료 시 OS가 파일을 완전히 flush함
   override async execute(options: ExecuteOptions): Promise<ExecuteResult> {
+    const { ext, tempFiles } = await this.prepareImageContext(options);
+    try {
+      return await this.executeOnce(ext);
+    } finally {
+      await Promise.allSettled(tempFiles.map((f) => unlink(f)));
+    }
+  }
+
+  override async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
+    const { ext, tempFiles } = await this.prepareImageContext(options);
+    try {
+      // BaseProvider.executeStream을 그대로 사용 — getStdinData/buildArgs가 ctx를 본다
+      yield* super.executeStream(ext);
+    } finally {
+      await Promise.allSettled(tempFiles.map((f) => unlink(f)));
+    }
+  }
+
+  // 메시지에서 이미지를 임시 파일로 추출하고 컨텍스트 토큰을 옵션에 첨부한다.
+  private async prepareImageContext(options: ExecuteOptions): Promise<{ ext: GeminiExecuteOptions; tempFiles: string[] }> {
+    const { prompt, tempFiles, hasImages } = await prepareGeminiPrompt(options.messages);
+
+    // ARG_MAX 보호: -p 인자에 실릴 prompt가 너무 길면 이미지 첨부를 포기하고 텍스트 모드로 폴백
+    if (hasImages && Buffer.byteLength(prompt, 'utf8') > MAX_PROMPT_ARG_BYTES) {
+      await Promise.allSettled(tempFiles.map((f) => unlink(f)));
+      console.warn(`[gemini] prompt too large for -p mode (${Buffer.byteLength(prompt, 'utf8')} bytes); falling back to text-only stdin`);
+      const ext: GeminiExecuteOptions = {
+        ...options,
+        __geminiPrompt: { text: convertMessagesToSinglePrompt(options.messages), useArg: false },
+      };
+      return { ext, tempFiles: [] };
+    }
+
+    const ext: GeminiExecuteOptions = {
+      ...options,
+      __geminiPrompt: { text: prompt, useArg: hasImages },
+    };
+    return { ext, tempFiles };
+  }
+
+  // 기존 execute 본체 — shell redirect 흐름은 동일, 옵션만 ext 사용
+  private async executeOnce(options: GeminiExecuteOptions): Promise<ExecuteResult> {
     const args = this.buildArgs({ ...options, stream: false });
     const tmpFile = join(tmpdir(), `gemini-out-${randomBytes(8).toString('hex')}.json`);
 

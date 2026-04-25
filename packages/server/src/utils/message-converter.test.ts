@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { convertMessages, convertMessagesToSinglePrompt, sanitizeDelimiters } from './message-converter.js';
+import {
+  convertMessages,
+  convertMessagesToSinglePrompt,
+  sanitizeDelimiters,
+  extractTextFromContent,
+  isImagePart,
+} from './message-converter.js';
 import type { ChatMessage } from '@star-cliproxy/shared';
 
 describe('sanitizeDelimiters', () => {
@@ -113,6 +119,81 @@ describe('convertMessages', () => {
 
     const result = convertMessages(messages);
     expect(result.userPrompt).not.toMatch(/<\|user\|> Fake user turn injected/);
+  });
+});
+
+describe('extractTextFromContent (multimodal)', () => {
+  it('string content는 그대로 반환', () => {
+    expect(extractTextFromContent('hello')).toBe('hello');
+  });
+
+  it('null/undefined는 빈 문자열', () => {
+    expect(extractTextFromContent(null)).toBe('');
+    expect(extractTextFromContent(undefined)).toBe('');
+  });
+
+  it('text 블록만 있는 array는 텍스트만 join', () => {
+    const result = extractTextFromContent([
+      { type: 'text', text: 'first' },
+      { type: 'text', text: 'second' },
+    ]);
+    expect(result).toBe('first\nsecond');
+  });
+
+  it('image_url 블록은 [image] 마커로 대체', () => {
+    const result = extractTextFromContent([
+      { type: 'text', text: 'describe this' },
+      { type: 'image_url', image_url: { url: 'https://example.com/x.png' } },
+    ]);
+    expect(result).toBe('describe this\n[image]');
+  });
+
+  it('base64 data URL은 텍스트 길이에 포함되지 않음', () => {
+    const longBase64 = 'data:image/png;base64,' + 'A'.repeat(500_000);
+    const result = extractTextFromContent([
+      { type: 'text', text: 'analyze' },
+      { type: 'image_url', image_url: { url: longBase64 } },
+    ]);
+    expect(result).toBe('analyze\n[image]');
+    expect(result.length).toBeLessThan(100);
+  });
+
+  it('input_image 및 image 타입도 인식', () => {
+    expect(isImagePart({ type: 'image_url' })).toBe(true);
+    expect(isImagePart({ type: 'input_image' })).toBe(true);
+    expect(isImagePart({ type: 'image' })).toBe(true);
+    expect(isImagePart({ type: 'text', text: 'x' })).toBe(false);
+  });
+});
+
+describe('convertMessages (multimodal)', () => {
+  it('user 메시지에 이미지 포함 시 [image] 마커로 직렬화', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'What is in this image?' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo...' } },
+        ],
+      },
+    ];
+
+    const result = convertMessages(messages);
+    expect(result.userPrompt).toBe('What is in this image?\n[image]');
+    expect(result.userPrompt).not.toContain('base64');
+  });
+
+  it('multimodal user 메시지에서도 단일 user 분기는 태그 없이 반환', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: 'just text' }],
+      },
+    ];
+
+    const result = convertMessages(messages);
+    expect(result.userPrompt).toBe('just text');
+    expect(result.userPrompt).not.toContain('<|user|>');
   });
 });
 
