@@ -132,6 +132,9 @@ model_mappings:
     provider: "claude"
     actual_model: "claude-haiku-4-5-20251001"
   # Codex/OpenAI models
+  - alias: "gpt-5.5"
+    provider: "codex"
+    actual_model: "gpt-5.5"
   - alias: "gpt-5.4"
     provider: "codex"
     actual_model: "gpt-5.4"
