@@ -44,7 +44,7 @@ providers:
   codex:
     enabled: true
     cli_path: "codex"
-    default_model: "gpt-5.4"
+    default_model: "gpt-5.5"
     max_concurrent: 10
     timeout_ms: 300000
     extra_args:
