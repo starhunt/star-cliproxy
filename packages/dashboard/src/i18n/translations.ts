@@ -315,6 +315,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.appServerSessionReuse': 'Thread Reuse',
     'providers.appServerAutoRestart': 'Auto Restart',
     'providers.appServerMaxRestarts': 'Max Restarts',
+    'providers.cliOptions': 'CLI Options',
+    'providers.cliEphemeral': 'Ephemeral Sessions',
+    'providers.cliEphemeralNote': 'Adds --ephemeral so codex exec does not persist session jsonl files to ~/.codex/sessions. Recommended.',
     'providers.runtimeRestricted': 'Built-in providers only allow runtime updates for enabled, default model, concurrency, timeout, and execution mode options.',
 
     // HTTP 프로바이더
@@ -727,6 +730,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'providers.appServerSessionReuse': '스레드 재사용',
     'providers.appServerAutoRestart': '자동 재시작',
     'providers.appServerMaxRestarts': '최대 재시작 횟수',
+    'providers.cliOptions': 'CLI 옵션',
+    'providers.cliEphemeral': '세션 비영속 (Ephemeral)',
+    'providers.cliEphemeralNote': '--ephemeral 플래그를 자동 추가해 codex exec 실행 시 ~/.codex/sessions에 jsonl 세션 파일을 남기지 않습니다. 권장.',
     'providers.runtimeRestricted': '빌트인 프로바이더는 런타임에 enabled, default model, 동시 실행 수, timeout, 실행 모드 옵션만 변경할 수 있습니다.',
 
     // HTTP 프로바이더

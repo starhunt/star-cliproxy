@@ -23,6 +23,7 @@ import {
   type HttpProviderInfo,
   type ClaudeSdkOptions,
   type CodexAppServerOptions,
+  type CodexCliOptions,
 } from '../api/client';
 
 // 빌트인 프로바이더 목록
@@ -173,6 +174,7 @@ export default function ProvidersPage() {
             mode: payload.mode,
             sdk_options: payload.sdk_options,
             app_server_options: payload.app_server_options,
+            cli_options: payload.cli_options,
           }
         : payload;
       // enabled는 boolean으로 전달
@@ -1318,7 +1320,7 @@ function ClaudeSdkSettings({ draft, setDraft, setMessage, t }: {
   );
 }
 
-// Codex 프로바이더 전용: App Server 모드 설정 섹션
+// Codex 프로바이더 전용: 실행 모드 + 모드별 옵션 섹션
 function CodexAppServerSettings({ draft, setDraft, setMessage, t }: {
   draft: Partial<ProviderConfig>;
   setDraft: React.Dispatch<React.SetStateAction<Partial<ProviderConfig>>>;
@@ -1327,11 +1329,20 @@ function CodexAppServerSettings({ draft, setDraft, setMessage, t }: {
 }) {
   const isAppServerMode = draft.mode === 'app-server';
   const opts = draft.app_server_options ?? {};
+  const cliOpts = draft.cli_options ?? {};
 
   const updateOption = (key: keyof CodexAppServerOptions, value: unknown) => {
     setDraft((prev) => ({
       ...prev,
       app_server_options: { ...prev.app_server_options, [key]: value },
+    }));
+    setMessage(null);
+  };
+
+  const updateCliOption = <K extends keyof CodexCliOptions>(key: K, value: CodexCliOptions[K]) => {
+    setDraft((prev) => ({
+      ...prev,
+      cli_options: { ...prev.cli_options, [key]: value },
     }));
     setMessage(null);
   };
@@ -1375,6 +1386,29 @@ function CodexAppServerSettings({ draft, setDraft, setMessage, t }: {
           </span>
         </div>
       </div>
+
+      {/* CLI 옵션 (CLI 모드일 때만 표시) */}
+      {!isAppServerMode && (
+        <div className="space-y-3 pl-3 border-l-2 border-blue-300 dark:border-blue-600/40">
+          <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+            {t('providers.cliOptions')}
+          </p>
+          <div className="flex items-center gap-3">
+            <ToggleSwitch
+              enabled={cliOpts.ephemeral !== false}
+              onToggle={() => updateCliOption('ephemeral', cliOpts.ephemeral === false)}
+            />
+            <div className="flex-1">
+              <label className="text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                {t('providers.cliEphemeral')}
+              </label>
+              <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-0.5">
+                {t('providers.cliEphemeralNote')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* App Server 옵션 (App Server 모드일 때만 표시) */}
       {isAppServerMode && (

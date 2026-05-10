@@ -51,6 +51,9 @@ providers:
       - "--skip-git-repo-check"
       - "--sandbox"
       - "workspace-write"
+    cli_options:                     # mode: 'cli'(기본)일 때만 적용
+      ephemeral: true                # codex exec --ephemeral 자동 주입 (기본 true)
+                                     # ~/.codex/sessions/*.jsonl 누적 차단. false면 기본 동작 유지.
     # working_dir: "/path/to/project"
     # mode: "app-server"              # 실행 모드: 'cli' (기본) | 'app-server' (persistent JSON-RPC)
     # app_server_options:             # mode: 'app-server'일 때만 적용

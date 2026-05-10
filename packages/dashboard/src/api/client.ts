@@ -290,6 +290,10 @@ export interface CodexAppServerOptions {
   max_restart_count?: number;
 }
 
+export interface CodexCliOptions {
+  ephemeral?: boolean;
+}
+
 export interface ProviderConfig {
   enabled: boolean;
   cli_path: string;
@@ -301,6 +305,7 @@ export interface ProviderConfig {
   mode?: 'cli' | 'sdk' | 'app-server';
   sdk_options?: ClaudeSdkOptions;
   app_server_options?: CodexAppServerOptions;
+  cli_options?: CodexCliOptions;
 }
 
 export interface ProviderTestResult {

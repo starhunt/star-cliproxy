@@ -101,10 +101,18 @@ export class CodexProvider extends BaseProvider {
     const model = options.model || this.config.default_model;
     const ctx = (options as CodexExecuteOptions).__codexPrompt;
 
+    // --ephemeral 기본 활성화: 세션 jsonl이 ~/.codex/sessions에 누적되는 것을 차단.
+    // cli_options.ephemeral === false일 때만 비활성. extra_args에 사용자가 직접
+    // 추가했으면 중복 주입 방지.
+    const ephemeralEnabled = this.config.cli_options?.ephemeral !== false;
+    const userHasEphemeral = this.config.extra_args.includes('--ephemeral');
+    const injectEphemeral = ephemeralEnabled && !userHasEphemeral;
+
     const args: string[] = [
       'exec',
       // --json 필수: 없으면 TUI 출력이 되어 stdout 캡처 불가
       '--json',
+      ...(injectEphemeral ? ['--ephemeral'] : []),
       ...this.config.extra_args,
       ...((ctx?.imageFiles ?? []).flatMap((file) => ['--image', file])),
       // 모델 지정 (빈 값이면 Codex 기본 모델 사용)

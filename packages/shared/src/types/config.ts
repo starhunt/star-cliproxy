@@ -52,6 +52,11 @@ export interface CodexAppServerOptions {
   max_restart_count?: number;             // 재시작 상한 (기본 5)
 }
 
+// Codex CLI 모드 전용 옵션 (mode: 'cli' 또는 미지정 시 적용)
+export interface CodexCliOptions {
+  ephemeral?: boolean;                    // codex exec --ephemeral 자동 주입 (기본 true) — 세션 jsonl 디스크 기록 차단
+}
+
 export interface ProviderConfigYaml {
   enabled: boolean;
   cli_path: string;
@@ -63,6 +68,7 @@ export interface ProviderConfigYaml {
   mode?: 'cli' | 'sdk' | 'app-server';  // 실행 모드 (기본 'cli')
   sdk_options?: ClaudeSdkOptions;         // mode: 'sdk'일 때 사용 (Claude)
   app_server_options?: CodexAppServerOptions; // mode: 'app-server'일 때 사용 (Codex)
+  cli_options?: CodexCliOptions;          // mode: 'cli'일 때 사용 (Codex)
 }
 
 export interface RateLimitConfig {

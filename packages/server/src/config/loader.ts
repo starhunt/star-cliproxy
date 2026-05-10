@@ -196,6 +196,12 @@ function mergeProviderConfig(
     max_restart_count: rawAppServerOptions.max_restart_count as number | undefined,
   } : undefined;
 
+  // CLI 옵션 파싱 (Codex CLI 모드)
+  const rawCliOptions = raw.cli_options as Record<string, unknown> | undefined;
+  const cliOptions = rawCliOptions ? {
+    ephemeral: rawCliOptions.ephemeral as boolean | undefined,
+  } : undefined;
+
   return {
     enabled: (raw.enabled as boolean) ?? defaults.enabled,
     cli_path: (raw.cli_path as string) ?? defaults.cli_path,
@@ -207,5 +213,6 @@ function mergeProviderConfig(
     mode: (raw.mode as 'cli' | 'sdk' | 'app-server') ?? undefined,
     sdk_options: sdkOptions,
     app_server_options: appServerOptions,
+    cli_options: cliOptions,
   };
 }

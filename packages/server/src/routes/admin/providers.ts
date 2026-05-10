@@ -26,6 +26,7 @@ const BUILTIN_RUNTIME_MUTABLE_FIELDS = new Set([
   'mode',
   'sdk_options',
   'app_server_options',
+  'cli_options',
 ]);
 
 export function sanitizeRuntimeProviderConfig(
