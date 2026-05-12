@@ -54,6 +54,10 @@ providers:
     cli_options:                     # mode: 'cli'(기본)일 때만 적용
       ephemeral: true                # codex exec --ephemeral 자동 주입 (기본 true)
                                      # ~/.codex/sessions/*.jsonl 누적 차단. false면 기본 동작 유지.
+      # enable_session_reuse: false  # codex exec resume <thread_id> 기반 세션 재사용 (기본 false)
+                                     # true 시 ephemeral은 강제 false로 전환되고 세션 jsonl이 디스크에 누적됨.
+                                     # clientKey(X-Cliproxy-Session-Id 헤더 또는 API 키)별로 thread 1개 자동 유지.
+      # session_ttl_ms: 1800000      # 세션 TTL (기본 30분). enable_session_reuse=true일 때만 유효.
     # working_dir: "/path/to/project"
     # mode: "app-server"              # 실행 모드: 'cli' (기본) | 'app-server' (persistent JSON-RPC)
     # app_server_options:             # mode: 'app-server'일 때만 적용
@@ -132,6 +136,17 @@ model_mappings:
   #   - Copilot : --effort <level>           (low/medium/high/xhigh 지원, max는 xhigh로 폴백)
   #   - Gemini  : 미지원 (필드 무시)
   # 생략하면 각 CLI의 기본 동작을 따른다. CLI 모드에서만 적용 (App Server / SDK 모드 제외).
+  #
+  # provider_overrides 필드 (선택, codex CLI 모드 1차 지원):
+  #   동일 프로바이더를 공유하는 매핑마다 옵션을 다르게 적용. 화이트리스트 키만 허용.
+  #   허용: extra_args, timeout_ms, working_dir, cli_options.{ephemeral, enable_session_reuse, session_ttl_ms}
+  #   금지: cli_path, enabled, mode, default_model, max_concurrent, sdk_options, app_server_options
+  #   예시:
+  #     provider_overrides:
+  #       cli_options:
+  #         enable_session_reuse: true   # 이 매핑만 세션 재사용
+  #         session_ttl_ms: 3600000      # 1시간 TTL
+  #       extra_args: ["--skip-git-repo-check"]  # 기본 extra_args를 교체 (-s 정책은 첫 호출에만 적용됨)
 
   # Claude models
   - alias: "claude-opus"
@@ -155,6 +170,18 @@ model_mappings:
   - alias: "gpt-5.5"
     provider: "codex"
     actual_model: "gpt-5.5"
+  # 채팅용 별칭: 세션 재사용 활성화 — 동일 X-Cliproxy-Session-Id로 호출하면 컨텍스트 누적
+  # 🚨 중요: enable_session_reuse: true를 사용하려면 클라이언트가 사용자/방별로 다른
+  #         X-Cliproxy-Session-Id 헤더를 보내도록 반드시 수정해야 합니다.
+  #         헤더를 보내지 않으면 같은 API 키 사용자 전원이 하나의 thread를 공유합니다.
+  #         자세한 통합 가이드: docs/client-integration-session-reuse.md
+  - alias: "gpt-5.5-chat"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    provider_overrides:
+      cli_options:
+        enable_session_reuse: true
+        session_ttl_ms: 1800000
   - alias: "gpt-5.5-medium"
     provider: "codex"
     actual_model: "gpt-5.5"

@@ -158,6 +158,13 @@ async function createTables(client: Client) {
   } catch {
     // 이미 존재하면 무시
   }
+
+  // 기존 DB 마이그레이션: model_mappings.provider_overrides (JSON 직렬화 문자열)
+  try {
+    await client.execute('ALTER TABLE model_mappings ADD COLUMN provider_overrides TEXT');
+  } catch {
+    // 이미 존재하면 무시
+  }
 }
 
 export function getDatabase() {

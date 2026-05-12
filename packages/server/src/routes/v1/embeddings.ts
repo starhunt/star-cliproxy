@@ -158,6 +158,8 @@ export function registerEmbeddingsRoute(
               dimensions: body.dimensions,
               signal: request.raw.destroyed ? AbortSignal.abort() : undefined,
               onDebug,
+              // 임베딩은 stateless이나 일관성을 위해 overrides 전달 (HTTP provider extra_args 등에 활용 가능)
+              providerOverrides: route.providerOverrides,
             }),
           );
 

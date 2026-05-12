@@ -55,6 +55,8 @@ export interface CodexAppServerOptions {
 // Codex CLI 모드 전용 옵션 (mode: 'cli' 또는 미지정 시 적용)
 export interface CodexCliOptions {
   ephemeral?: boolean;                    // codex exec --ephemeral 자동 주입 (기본 true) — 세션 jsonl 디스크 기록 차단
+  enable_session_reuse?: boolean;         // codex exec resume <thread_id> 기반 세션 재사용 (기본 false). true 시 ephemeral은 강제 false
+  session_ttl_ms?: number;                // 세션 TTL (기본 1800000 = 30분). enable_session_reuse=true일 때만 유효
 }
 
 export interface ProviderConfigYaml {
@@ -90,7 +92,29 @@ export interface ModelMappingSeed {
   provider: string;
   actual_model: string;
   reasoning_effort?: ReasoningEffort;
+  provider_overrides?: ProviderOverrides;  // 모델 레벨 옵션 오버라이드 (화이트리스트 기반)
 }
+
+// 모델 매핑 단위 오버라이드. ProviderConfigYaml의 화이트리스트 키만 허용
+// (mergeProviderConfig에서 검증). yaml/DB 모두 동일 구조 사용.
+export interface ProviderOverrides {
+  extra_args?: string[];
+  timeout_ms?: number;
+  working_dir?: string;
+  cli_options?: Partial<CodexCliOptions>;
+}
+
+// 오버라이드 화이트리스트 (codex 한정 1차). 화이트리스트 외 키는 silent drop.
+// 다른 프로바이더 추가 시 별도 화이트리스트 정의 + mergeProviderConfig에 provider별 분기.
+export const CODEX_OVERRIDE_ALLOWED_KEYS = [
+  'extra_args',
+  'timeout_ms',
+  'working_dir',
+  'cli_options.ephemeral',
+  'cli_options.enable_session_reuse',
+  'cli_options.session_ttl_ms',
+] as const;
+export type CodexOverrideKey = typeof CODEX_OVERRIDE_ALLOWED_KEYS[number];
 
 export interface ValidationConfig {
   maxMessageCount: number;       // 메시지 배열 최대 수 (기본 800)

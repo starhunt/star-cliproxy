@@ -333,6 +333,92 @@ Notes:
 - Applies in **CLI mode** only. Codex App Server / Claude SDK modes use their own config channels (`~/.codex/config.toml`, `sdk_options`).
 - The Playground has a Reasoning selector (auto-disabled for unsupported providers); Logs / Debug / Dashboard show the active level as a badge.
 
+### Codex CLI Session Reuse (`exec resume`)
+
+Codex CLI's `exec resume <thread_id>` lets a session keep its context between calls. Set `enable_session_reuse: true` on a mapping or in the provider yaml and CLIProxy will:
+
+1. Capture `thread_id` from the first `codex exec --json` response (`{"type":"thread.started","thread_id":"..."}`).
+2. Store it in an in-memory `SessionManager` keyed by `clientKey` + model with a TTL (default 30 min).
+3. For subsequent requests with the same `clientKey`, swap the command to `codex exec resume <thread_id> --json -`.
+
+```yaml
+codex:
+  cli_options:
+    enable_session_reuse: true   # capture thread_id and resume
+    session_ttl_ms: 1800000      # 30 minutes
+    # ephemeral is forced to false when enable_session_reuse is true (jsonl must persist for resume)
+```
+
+**Session identity (`clientKey`) is resolved as:**
+1. `X-Cliproxy-Session-Id` request header (validated `^[A-Za-z0-9._:-]{1,128}$`)
+2. API key id (fallback)
+3. `"anonymous"`
+
+**Multi-user chat apps must send a distinct `X-Cliproxy-Session-Id` per room/conversation** — same value = same Codex thread = shared context.
+
+> ## 🚨 Operational warning — client changes are required
+>
+> Enabling `enable_session_reuse: true` on a mapping changes the **wire contract** between your client app and CLIProxy. **You must update the client** to send a unique `X-Cliproxy-Session-Id` per conversation. If you skip this step:
+>
+> - All requests from the same API key share **one Codex thread** → users see each other's messages
+> - You won't notice immediately in dev (single user works fine), but **production multi-user traffic will leak context**
+> - This is a **security and quality bug**, not a config typo
+>
+> Treat this as a deployment checklist item, not an opt-in toggle. The mapping is only the server half; the matching client header is mandatory. See **[docs/client-integration-session-reuse.md](docs/client-integration-session-reuse.md)** for the full checklist (Python/TypeScript examples, multi-user patterns, security caveats, and a hand-off note you can pass to an AI coding agent).
+
+```bash
+# First call: cliproxy captures thread_id and returns it in X-Cliproxy-Thread-Id (non-stream only)
+curl -i http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -H "X-Cliproxy-Session-Id: chat-room-42" \
+  -d '{"model":"gpt-5.5-chat","messages":[{"role":"user","content":"My favourite number is 42."}]}'
+
+# Second call: same Session-Id → cliproxy auto-routes to exec resume
+curl http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -H "X-Cliproxy-Session-Id: chat-room-42" \
+  -d '{"model":"gpt-5.5-chat","messages":[{"role":"user","content":"What number did I say?"}]}'
+```
+
+**Mode comparison**:
+
+| Mode | Context retention | Per-request cost | Stability | Multi-room |
+|------|-------------------|------------------|-----------|------------|
+| `cli` (default) | ❌ stateless | spawn ~300ms | high | n/a |
+| `cli` + `enable_session_reuse` | ✅ via thread_id | spawn ~300ms + jsonl disk | high (resume is stable) | `X-Cliproxy-Session-Id` |
+| `app-server` (experimental) | ✅ via long-lived process | low (JSON-RPC) | medium (single process) | per `clientKey` |
+
+### Model-Level Provider Overrides (Codex CLI only — 1st-party)
+
+Override provider yaml options on a per-mapping basis. The same `codex` provider instance can host both a "chat" alias with sessions enabled and a "one-shot" alias that stays ephemeral.
+
+**Whitelist (other keys are dropped with a warning):**
+- `cli_options.ephemeral`
+- `cli_options.enable_session_reuse`
+- `cli_options.session_ttl_ms`
+- `extra_args` (replaces — does not append)
+- `timeout_ms`
+- `working_dir`
+
+```yaml
+model_mappings:
+  # one-shot alias — uses provider defaults (ephemeral=true, no session reuse)
+  - alias: "gpt-5.5"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+
+  # chat alias — same provider, but session reuse enabled
+  - alias: "gpt-5.5-chat"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    provider_overrides:
+      cli_options:
+        enable_session_reuse: true
+        session_ttl_ms: 3600000   # 1 hour
+```
+
+In the Dashboard the form exposes the whitelisted fields under **Provider Overrides** (visible only when the provider is `codex`); leave a field blank to inherit the provider default. Other providers (`claude`, `gemini`, `copilot`, `http`) currently ignore `provider_overrides`.
+
 ## HTTP Providers
 
 Connect any local OpenAI-compatible server directly — no CLI wrapper needed.

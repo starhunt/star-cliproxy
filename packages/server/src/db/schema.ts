@@ -20,6 +20,7 @@ export const modelMappings = sqliteTable('model_mappings', {
   actualModel: text('actual_model').notNull(),
   displayName: text('display_name'),
   reasoningEffort: text('reasoning_effort'),
+  providerOverrides: text('provider_overrides'),  // JSON string, 화이트리스트 기반 옵션 오버라이드
   priority: integer('priority').notNull().default(0),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull().default('(datetime(\'now\'))'),

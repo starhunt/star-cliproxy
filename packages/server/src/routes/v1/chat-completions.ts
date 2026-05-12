@@ -9,6 +9,7 @@ import type {
 import { ALLOWED_ROLES, isReasoningEffort, type ReasoningEffort } from '@star-cliproxy/shared';
 import { extractTextFromContent, isImagePart } from '../../utils/message-converter.js';
 import { createRequestId, formatAsSSE } from '../../utils/stream-transformer.js';
+import { extractClientKey } from '../../utils/client-key.js';
 import { logRequest } from '../../middleware/request-logger.js';
 import type { ModelRouter } from '../../services/router.js';
 import type { QueueManager } from '../../services/queue.js';
@@ -287,6 +288,7 @@ export function registerChatCompletionsRoute(
 
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
+      const clientKey = extractClientKey(request, apiKeyId);
 
       // === 캐시 조회 (non-streaming만) ===
       const requestHash = !body.stream
@@ -434,8 +436,9 @@ export function registerChatCompletionsRoute(
               temperature: body.temperature,
               signal: abortController.signal,
               onDebug,
-              clientKey: apiKeyId,
+              clientKey,
               reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
+              providerOverrides: route.providerOverrides,
             });
 
             try {
@@ -543,8 +546,9 @@ export function registerChatCompletionsRoute(
               maxTokens: body.max_tokens,
               temperature: body.temperature,
               onDebug,
-              clientKey: apiKeyId,
+              clientKey,
               reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
+              providerOverrides: route.providerOverrides,
             }),
           );
 
@@ -578,6 +582,10 @@ export function registerChatCompletionsRoute(
           reply.header('X-Cache', 'MISS');
           if (unsupportedParams.length > 0) {
             reply.header('X-Unsupported-Params', unsupportedParams.join(','));
+          }
+          // codex CLI 세션 재사용 시 thread_id 노출 (참고용). 자동 재사용은 X-Cliproxy-Session-Id 기반.
+          if (result.meta?.threadId) {
+            reply.header('X-Cliproxy-Thread-Id', result.meta.threadId);
           }
 
           // 캐시에 응답 저장

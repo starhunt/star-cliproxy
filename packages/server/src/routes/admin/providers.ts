@@ -7,6 +7,7 @@ import { providerHealth, settings } from '../../db/schema.js';
 import type { HealthChecker } from '../../services/health-checker.js';
 import type { QueueManager } from '../../services/queue.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
+import { readCodexCliDefaults } from '../../providers/codex-toml-defaults.js';
 
 interface ProviderDeps {
   registry: ProviderRegistry;
@@ -138,6 +139,12 @@ export function registerProvidersRoutes(app: FastifyInstance, deps: ProviderDeps
     }
 
     return reply.send(config);
+  });
+
+  // Codex 한정: ~/.codex/config.toml에 명시된 글로벌 기본값.
+  // 매핑에서 reasoning_effort를 비워둘 때 실제로 어떤 값이 적용되는지 UI에 표시하기 위함.
+  app.get('/admin/providers/codex/cli-defaults', async (_request, reply) => {
+    return reply.send(readCodexCliDefaults());
   });
 
   // 프로바이더 설정 변경 (인메모리 + DB 영속화)

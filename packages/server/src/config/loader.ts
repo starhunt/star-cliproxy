@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { AppConfig, ProviderConfigYaml, PluginEntry, ReasoningEffort } from '@star-cliproxy/shared';
+import type { AppConfig, ProviderConfigYaml, PluginEntry, ProviderOverrides, ReasoningEffort } from '@star-cliproxy/shared';
 import {
   DEFAULT_SERVER_PORT,
   DEFAULT_DASHBOARD_PORT,
@@ -27,6 +27,33 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort | undefined {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return undefined;
   return isReasoningEffort(normalized) ? normalized : undefined;
+}
+
+// model_mappings.provider_overrides 정규화: 화이트리스트 키만 통과.
+// 화이트리스트 검증과 deep merge는 런타임에서 mergeProviderConfig가 수행하지만,
+// 여기서는 명확한 타입/구조만 보장한다 (잘못된 타입 자체는 silently drop).
+function normalizeProviderOverrides(value: unknown): ProviderOverrides | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const out: ProviderOverrides = {};
+  if (Array.isArray(raw.extra_args)) {
+    out.extra_args = raw.extra_args.filter((a): a is string => typeof a === 'string');
+  }
+  if (typeof raw.timeout_ms === 'number' && raw.timeout_ms > 0) {
+    out.timeout_ms = raw.timeout_ms;
+  }
+  if (typeof raw.working_dir === 'string' && raw.working_dir.trim()) {
+    out.working_dir = raw.working_dir;
+  }
+  if (raw.cli_options && typeof raw.cli_options === 'object' && !Array.isArray(raw.cli_options)) {
+    const rawCli = raw.cli_options as Record<string, unknown>;
+    const cli: NonNullable<ProviderOverrides['cli_options']> = {};
+    if (typeof rawCli.ephemeral === 'boolean') cli.ephemeral = rawCli.ephemeral;
+    if (typeof rawCli.enable_session_reuse === 'boolean') cli.enable_session_reuse = rawCli.enable_session_reuse;
+    if (typeof rawCli.session_ttl_ms === 'number' && rawCli.session_ttl_ms > 0) cli.session_ttl_ms = rawCli.session_ttl_ms;
+    if (Object.keys(cli).length > 0) out.cli_options = cli;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 // 환경변수 치환: "${VAR_NAME}" → process.env.VAR_NAME
@@ -161,6 +188,7 @@ export function loadConfig(configPath?: string): AppConfig {
       provider: m.provider as string,
       actual_model: (m.actual_model as string | undefined) ?? '',
       reasoning_effort: normalizeReasoningEffort(m.reasoning_effort),
+      provider_overrides: normalizeProviderOverrides(m.provider_overrides),
     })) ?? [
       { alias: 'claude-opus', provider: 'claude', actual_model: 'claude-opus-4-6' },
       { alias: 'claude-sonnet', provider: 'claude', actual_model: 'claude-sonnet-4-6' },
@@ -211,6 +239,8 @@ function mergeProviderConfig(
   const rawCliOptions = raw.cli_options as Record<string, unknown> | undefined;
   const cliOptions = rawCliOptions ? {
     ephemeral: rawCliOptions.ephemeral as boolean | undefined,
+    enable_session_reuse: rawCliOptions.enable_session_reuse as boolean | undefined,
+    session_ttl_ms: rawCliOptions.session_ttl_ms as number | undefined,
   } : undefined;
 
   return {

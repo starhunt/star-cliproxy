@@ -7,7 +7,12 @@ import {
   deleteModelMapping,
   testModel,
   fetchProviders,
+  fetchProviderConfig,
+  fetchCodexCliDefaults,
+  type CodexCliDefaults,
   type ModelMapping,
+  type ProviderConfig,
+  type ProviderOverrides,
   type ReasoningEffort,
   type TestModelResult,
 } from '../api/client';
@@ -16,13 +21,34 @@ type ReasoningEffortValue = ReasoningEffort | '';
 
 const REASONING_EFFORT_OPTIONS: ReasoningEffortValue[] = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 
+// 빈/기본값 표시: '' = 프로바이더 기본값 사용, 'true'/'false' = 명시적 오버라이드
+type TriState = '' | 'true' | 'false';
+
 interface MappingFormState {
   alias: string;
   provider: string;
   actual_model: string;
   reasoning_effort: ReasoningEffortValue;
   priority: number;
+  // codex provider 한정 오버라이드 — 다른 provider 선택 시 무시
+  override_ephemeral: TriState;
+  override_enable_session_reuse: TriState;
+  override_session_ttl_ms: string;       // 빈 문자열 = 기본값 따름
+  override_extra_args: string;            // 줄바꿈 구분
+  override_timeout_ms: string;
+  override_working_dir: string;
 }
+
+// codex 프로바이더가 admin API에서 응답하지 않을 때 사용할 폴백 기본값.
+// 서버 상수와 동기 유지: cli_options.ephemeral=true (DEFAULT in codex-provider),
+// enable_session_reuse=false, session_ttl_ms=1800000 (CodexCliSessionManager DEFAULT_SESSION_TTL_MS).
+const KNOWN_CODEX_DEFAULTS = {
+  cli_options: {
+    ephemeral: true,
+    enable_session_reuse: false,
+    session_ttl_ms: 1800000,
+  },
+} as const;
 
 const EMPTY_FORM: MappingFormState = {
   alias: '',
@@ -30,7 +56,51 @@ const EMPTY_FORM: MappingFormState = {
   actual_model: '',
   reasoning_effort: '',
   priority: 0,
+  override_ephemeral: '',
+  override_enable_session_reuse: '',
+  override_session_ttl_ms: '',
+  override_extra_args: '',
+  override_timeout_ms: '',
+  override_working_dir: '',
 };
+
+// 폼 상태 → API payload용 ProviderOverrides | null 빌더.
+// 빈/미설정 필드는 omit, 모든 필드가 비어있으면 null 반환.
+function buildOverridesPayload(form: MappingFormState): ProviderOverrides | null {
+  // codex가 아니면 overrides 미적용
+  if (form.provider !== 'codex') return null;
+  const out: ProviderOverrides = {};
+  const cli: NonNullable<ProviderOverrides['cli_options']> = {};
+  if (form.override_ephemeral) cli.ephemeral = form.override_ephemeral === 'true';
+  if (form.override_enable_session_reuse) cli.enable_session_reuse = form.override_enable_session_reuse === 'true';
+  if (form.override_session_ttl_ms.trim()) {
+    const n = Number(form.override_session_ttl_ms);
+    if (Number.isFinite(n) && n > 0) cli.session_ttl_ms = n;
+  }
+  if (Object.keys(cli).length > 0) out.cli_options = cli;
+  const args = form.override_extra_args.split('\n').map((a) => a.trim()).filter(Boolean);
+  if (args.length > 0) out.extra_args = args;
+  if (form.override_timeout_ms.trim()) {
+    const n = Number(form.override_timeout_ms);
+    if (Number.isFinite(n) && n > 0) out.timeout_ms = n;
+  }
+  if (form.override_working_dir.trim()) out.working_dir = form.override_working_dir.trim();
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+// DB에서 받은 ProviderOverrides → 폼 상태로 복원
+function applyOverridesToForm(overrides: ProviderOverrides | null): Partial<MappingFormState> {
+  if (!overrides) return {};
+  const cli = overrides.cli_options;
+  return {
+    override_ephemeral: cli?.ephemeral === undefined ? '' : (cli.ephemeral ? 'true' : 'false'),
+    override_enable_session_reuse: cli?.enable_session_reuse === undefined ? '' : (cli.enable_session_reuse ? 'true' : 'false'),
+    override_session_ttl_ms: cli?.session_ttl_ms !== undefined ? String(cli.session_ttl_ms) : '',
+    override_extra_args: overrides.extra_args ? overrides.extra_args.join('\n') : '',
+    override_timeout_ms: overrides.timeout_ms !== undefined ? String(overrides.timeout_ms) : '',
+    override_working_dir: overrides.working_dir ?? '',
+  };
+}
 
 export default function ModelMappingsPage() {
   const { t } = useTranslation();
@@ -44,6 +114,13 @@ export default function ModelMappingsPage() {
   const [rowTesting, setRowTesting] = useState<string | null>(null);
   const [rowTestResult, setRowTestResult] = useState<{ id: string; result: TestModelResult } | null>(null);
   const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini']);
+  // ephemeral ↔ enable_session_reuse 자동 조정 알림 (3초 후 자동 해제)
+  const [overrideMutexNotice, setOverrideMutexNotice] = useState(false);
+  const mutexNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // codex 프로바이더의 현재 yaml effective 설정값 (폼 placeholder에 '(기본값: ...)' 표시용)
+  const [codexDefaults, setCodexDefaults] = useState<ProviderConfig | null>(null);
+  // ~/.codex/config.toml에서 읽은 글로벌 기본값 (reasoning_effort effective 표시용)
+  const [codexCliDefaults, setCodexCliDefaults] = useState<CodexCliDefaults | null>(null);
 
   // 검색/필터
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,13 +171,102 @@ export default function ModelMappingsPage() {
       .catch(() => { /* 실패 시 기본값 유지 */ });
   }, []);
 
+  // codex 프로바이더의 effective 기본값 — Provider Overrides 폼 placeholder/배지에 사용.
+  // codex 미등록/404 시에는 서버 상수와 동일한 폴백 사용 (DEFAULT 정의는 아래 KNOWN_CODEX_DEFAULTS).
+  useEffect(() => {
+    fetchProviderConfig('codex')
+      .then(setCodexDefaults)
+      .catch(() => setCodexDefaults(null));
+    fetchCodexCliDefaults()
+      .then(setCodexCliDefaults)
+      .catch(() => setCodexCliDefaults(null));
+  }, []);  // mount 시 1회 + 폼 열릴 때 별도 refresh는 아래 effect로 처리
+
+  useEffect(() => {
+    if (showForm) {
+      fetchProviderConfig('codex').then(setCodexDefaults).catch(() => { /* keep last */ });
+      fetchCodexCliDefaults().then(setCodexCliDefaults).catch(() => { /* keep last */ });
+    }
+  }, [showForm]);
+
+  // placeholder 빌더: 실값 있으면 '(기본값: X)' 형태, 없으면 일반 '(기본값 사용)' 사용
+  const defaultLabel = useCallback((value: unknown): string => {
+    if (value === undefined || value === null || value === '') return t('models.overrides.useDefault');
+    if (typeof value === 'boolean') return `${t('models.overrides.defaultPrefix')}: ${value ? 'true' : 'false'}`;
+    if (Array.isArray(value)) {
+      return value.length === 0
+        ? t('models.overrides.useDefault')
+        : `${t('models.overrides.defaultPrefix')}: ${value.join(' ')}`;
+    }
+    return `${t('models.overrides.defaultPrefix')}: ${String(value)}`;
+  }, [t]);
+
+  // 폼/기본값을 합쳐 실효값 계산. 폼 명시값 > yaml 기본값 > undefined 순.
+  // ephemeral의 경우 session_reuse가 true(실효 기준)면 강제 false.
+  const resolveEffectiveBool = (formVal: TriState, baseVal: boolean | undefined): boolean | undefined => {
+    if (formVal === 'true') return true;
+    if (formVal === 'false') return false;
+    return baseVal;
+  };
+
+  // yaml fetch 실패 시 폴백 기본값 사용 (KNOWN_CODEX_DEFAULTS).
+  const effectiveSessionReuseBase =
+    codexDefaults?.cli_options?.enable_session_reuse ?? KNOWN_CODEX_DEFAULTS.cli_options.enable_session_reuse;
+  const effectiveEphemeralBase =
+    codexDefaults?.cli_options?.ephemeral ?? KNOWN_CODEX_DEFAULTS.cli_options.ephemeral;
+  const effectiveSessionTtlBase =
+    codexDefaults?.cli_options?.session_ttl_ms ?? KNOWN_CODEX_DEFAULTS.cli_options.session_ttl_ms;
+
+  const effectiveSessionReuse = resolveEffectiveBool(
+    form.override_enable_session_reuse,
+    effectiveSessionReuseBase,
+  );
+
+  const baseEphemeral = resolveEffectiveBool(form.override_ephemeral, effectiveEphemeralBase);
+
+  // session_reuse가 true면 서버에서 ephemeral을 자동으로 false로 강제 (codex-provider.getEffectiveConfig)
+  const effectiveEphemeral = effectiveSessionReuse === true ? false : baseEphemeral;
+  const ephemeralIsForced = effectiveSessionReuse === true && baseEphemeral !== false;
+
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
       formTestAbortRef.current?.abort();
       rowTestAbortRef.current?.abort();
+      if (mutexNoticeTimerRef.current) clearTimeout(mutexNoticeTimerRef.current);
     };
   }, []);
+
+  // ephemeral ↔ enable_session_reuse 상호 배제 자동 조정 핸들러.
+  // 한쪽을 'true'로 바꾸면 다른 쪽이 'true'면 'false'로 자동 변경 + 알림 표시.
+  // 사용자가 의도적으로 'false'/'(기본값)'를 고를 때는 알림 없음.
+  const handleEphemeralChange = (next: TriState) => {
+    let nextReuse = form.override_enable_session_reuse;
+    let triggered = false;
+    if (next === 'true' && form.override_enable_session_reuse === 'true') {
+      nextReuse = 'false';
+      triggered = true;
+    }
+    setForm({ ...form, override_ephemeral: next, override_enable_session_reuse: nextReuse });
+    if (triggered) showMutexNotice();
+  };
+
+  const handleSessionReuseChange = (next: TriState) => {
+    let nextEphemeral = form.override_ephemeral;
+    let triggered = false;
+    if (next === 'true' && form.override_ephemeral === 'true') {
+      nextEphemeral = 'false';
+      triggered = true;
+    }
+    setForm({ ...form, override_enable_session_reuse: next, override_ephemeral: nextEphemeral });
+    if (triggered) showMutexNotice();
+  };
+
+  const showMutexNotice = () => {
+    setOverrideMutexNotice(true);
+    if (mutexNoticeTimerRef.current) clearTimeout(mutexNoticeTimerRef.current);
+    mutexNoticeTimerRef.current = setTimeout(() => setOverrideMutexNotice(false), 5000);
+  };
 
   // 폼 테스트 취소
   const cancelFormTest = useCallback(() => {
@@ -141,6 +307,7 @@ export default function ModelMappingsPage() {
       provider: form.provider,
       actual_model: form.actual_model,
       reasoning_effort: reasoningEffort,
+      provider_overrides: buildOverridesPayload(form),
       priority: form.priority,
     };
     try {
@@ -160,11 +327,13 @@ export default function ModelMappingsPage() {
     cancelFormTest();
     setEditingId(m.id);
     setForm({
+      ...EMPTY_FORM,
       alias: m.alias,
       provider: m.provider,
       actual_model: m.actualModel,
       reasoning_effort: m.reasoningEffort ?? '',
       priority: m.priority,
+      ...applyOverridesToForm(m.providerOverrides),
     });
     setShowForm(true);
     setTestResult(null);
@@ -301,17 +470,49 @@ export default function ModelMappingsPage() {
               <div>
                 <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
                   {t('models.reasoningEffortLabel')}
+                  {(() => {
+                    // 추론 수준 effective 결정:
+                    //   1) 매핑에 명시값 있으면 그 값
+                    //   2) codex 프로바이더 + ~/.codex/config.toml의 model_reasoning_effort 있으면 그 값 (출처 표시)
+                    //   3) 그 외에는 "CLI default"
+                    if (form.reasoning_effort) {
+                      return (
+                        <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700">
+                          {t('models.overrides.effectiveLabel')}: {form.reasoning_effort}
+                        </span>
+                      );
+                    }
+                    if (form.provider === 'codex' && codexCliDefaults?.modelReasoningEffort) {
+                      return (
+                        <span
+                          className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700"
+                          title={`from ${codexCliDefaults.configPath}`}
+                        >
+                          {t('models.overrides.effectiveLabel')}: {codexCliDefaults.modelReasoningEffort} <span className="opacity-70">(~/.codex/config.toml)</span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700">
+                        {t('models.overrides.effectiveLabel')}: CLI default
+                      </span>
+                    );
+                  })()}
                 </label>
                 <select
                   value={form.reasoning_effort}
                   onChange={(e) => setForm({ ...form, reasoning_effort: e.target.value as ReasoningEffortValue })}
                   disabled={form.provider === 'gemini'}
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={form.provider === 'gemini' ? t('models.reasoningEffortUnsupported') : undefined}
+                  title={form.provider === 'gemini' ? t('models.reasoningEffortUnsupported') : t('models.reasoningEffortHelp')}
                 >
                   {REASONING_EFFORT_OPTIONS.map((value) => (
                     <option key={value || 'default'} value={value}>
-                      {value === '' ? t('models.reasoningEffortDefault') : value}
+                      {value === ''
+                        ? (form.provider === 'codex' && codexCliDefaults?.modelReasoningEffort
+                            ? `${t('models.reasoningEffortDefault')} → ${codexCliDefaults.modelReasoningEffort}`
+                            : t('models.reasoningEffortDefault'))
+                        : value}
                     </option>
                   ))}
                 </select>
@@ -326,6 +527,213 @@ export default function ModelMappingsPage() {
                 />
               </div>
             </div>
+
+            {/* Provider Overrides (codex CLI 1차 지원) — 매핑 단위로 프로바이더 옵션을 덮어씀.
+                빈 상태(공란/'기본값') = 프로바이더 yaml 설정 따름, 명시값 = 매핑에서 우선. */}
+            {form.provider === 'codex' && (
+              <details className="mt-4 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900/60">
+                <summary className="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-100 cursor-pointer select-none hover:bg-gray-50 dark:hover:bg-gray-800/60 rounded-t-lg">
+                  {t('models.overrides.title')}
+                </summary>
+                <div className="px-4 py-4 border-t border-gray-300 dark:border-gray-600 space-y-4">
+                  <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                    {t('models.overrides.help')}
+                  </p>
+                  {overrideMutexNotice && (
+                    <div
+                      role="alert"
+                      className="px-3 py-2 bg-amber-50 dark:bg-amber-900/30 border-l-4 border-amber-500 dark:border-amber-400 rounded text-sm text-amber-900 dark:text-amber-100 flex items-start gap-2"
+                    >
+                      <span aria-hidden className="text-base leading-none">⚠️</span>
+                      <span className="font-medium">{t('models.overrides.mutexNotice')}</span>
+                    </div>
+                  )}
+
+                  {/* 세션 재사용이 effective true가 되면 클라이언트 통합 책임을 강조한다.
+                      잘못 설정하면 다른 사용자의 컨텍스트가 섞일 수 있어 보안/품질 모두에 영향. */}
+                  {effectiveSessionReuse === true && (
+                    <div
+                      role="alert"
+                      className="px-4 py-3 bg-rose-50 dark:bg-rose-900/30 border-l-4 border-rose-500 dark:border-rose-400 rounded text-sm text-rose-900 dark:text-rose-100"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span aria-hidden className="text-base leading-none">🚨</span>
+                        <div className="flex-1">
+                          <div className="font-bold mb-1">{t('models.overrides.sessionReuseClientWarningTitle')}</div>
+                          <p className="leading-relaxed">{t('models.overrides.sessionReuseClientWarningBody')}</p>
+                          <p className="mt-2 text-xs">
+                            <a
+                              href="https://github.com/Starhunter-9/star-cliproxy/blob/main/docs/client-integration-session-reuse.md"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="underline font-semibold hover:text-rose-700 dark:hover:text-rose-50"
+                            >
+                              {t('models.overrides.sessionReuseClientWarningCta')}
+                            </a>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 세션 동작 그룹 — ephemeral/session_reuse/session_ttl_ms */}
+                  <fieldset className="border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50/60 dark:bg-gray-800/40 px-4 py-3">
+                    <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300">
+                      {t('models.overrides.groupSession')}
+                    </legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                      <div>
+                        <label className="text-sm font-semibold text-gray-800 dark:text-gray-100 block mb-1.5">
+                          {t('models.overrides.ephemeralLabel')}
+                          <span className="ml-1.5 text-[11px] font-mono text-gray-500 dark:text-gray-400 font-normal">ephemeral</span>
+                          {/* 실효값 배지 — 폼 명시 또는 yaml 기본 또는 강제 결과 */}
+                          {effectiveEphemeral !== undefined && (
+                            <span
+                              className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                                ephemeralIsForced
+                                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                                  : 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700'
+                              }`}
+                            >
+                              {ephemeralIsForced ? t('models.overrides.autoLabel') : t('models.overrides.effectiveLabel')}: {String(effectiveEphemeral)}
+                            </span>
+                          )}
+                        </label>
+                        <select
+                          value={form.override_ephemeral}
+                          onChange={(e) => handleEphemeralChange(e.target.value as TriState)}
+                          disabled={ephemeralIsForced}
+                          className={`w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-gray-50 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none ${
+                            ephemeralIsForced ? 'opacity-60 cursor-not-allowed' : ''
+                          }`}
+                        >
+                          <option value="">{defaultLabel(effectiveEphemeralBase)}</option>
+                          <option value="true">true</option>
+                          <option value="false">false</option>
+                        </select>
+                        {ephemeralIsForced ? (
+                          <p
+                            role="note"
+                            className="mt-1.5 px-2 py-1.5 rounded border-l-4 border-amber-500 dark:border-amber-400 bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-900 dark:text-amber-100 leading-relaxed"
+                          >
+                            ⚠️ {t('models.overrides.ephemeralForcedNote')}
+                          </p>
+                        ) : (
+                          <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                            {t('models.overrides.ephemeralHelp')}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-sm font-semibold text-gray-800 dark:text-gray-100 block mb-1.5">
+                          {t('models.overrides.sessionReuseLabel')}
+                          <span className="ml-1.5 text-[11px] font-mono text-gray-500 dark:text-gray-400 font-normal">enable_session_reuse</span>
+                          {effectiveSessionReuse !== undefined && (
+                            <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700">
+                              {t('models.overrides.effectiveLabel')}: {String(effectiveSessionReuse)}
+                            </span>
+                          )}
+                        </label>
+                        <select
+                          value={form.override_enable_session_reuse}
+                          onChange={(e) => handleSessionReuseChange(e.target.value as TriState)}
+                          className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-gray-50 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                        >
+                          <option value="">{defaultLabel(effectiveSessionReuseBase)}</option>
+                          <option value="true">true</option>
+                          <option value="false">false</option>
+                        </select>
+                        <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                          {t('models.overrides.sessionReuseHelp')}
+                        </p>
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-sm font-semibold text-gray-800 dark:text-gray-100 block mb-1.5">
+                          {t('models.overrides.sessionTtlLabel')}
+                          <span className="ml-1.5 text-[11px] font-mono text-gray-500 dark:text-gray-400 font-normal">session_ttl_ms</span>
+                        </label>
+                        <input
+                          type="number"
+                          placeholder={defaultLabel(effectiveSessionTtlBase)}
+                          value={form.override_session_ttl_ms}
+                          onChange={(e) => setForm({ ...form, override_session_ttl_ms: e.target.value })}
+                          className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-gray-50 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                        <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                          {t('models.overrides.sessionTtlHelp')}
+                        </p>
+                      </div>
+                    </div>
+                  </fieldset>
+
+                  {/* 실행 설정 그룹 — timeout_ms / working_dir */}
+                  <fieldset className="border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50/60 dark:bg-gray-800/40 px-4 py-3">
+                    <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                      {t('models.overrides.groupExecution')}
+                    </legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                      <div>
+                        <label className="text-sm font-semibold text-gray-800 dark:text-gray-100 block mb-1.5">
+                          {t('models.overrides.timeoutLabel')}
+                          <span className="ml-1.5 text-[11px] font-mono text-gray-500 dark:text-gray-400 font-normal">timeout_ms</span>
+                        </label>
+                        <input
+                          type="number"
+                          placeholder={defaultLabel(codexDefaults?.timeout_ms)}
+                          value={form.override_timeout_ms}
+                          onChange={(e) => setForm({ ...form, override_timeout_ms: e.target.value })}
+                          className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-gray-50 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                        <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                          {t('models.overrides.timeoutHelp')}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-semibold text-gray-800 dark:text-gray-100 block mb-1.5">
+                          {t('models.overrides.workingDirLabel')}
+                          <span className="ml-1.5 text-[11px] font-mono text-gray-500 dark:text-gray-400 font-normal">working_dir</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={defaultLabel(codexDefaults?.working_dir)}
+                          value={form.override_working_dir}
+                          onChange={(e) => setForm({ ...form, override_working_dir: e.target.value })}
+                          className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-gray-50 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                        <p className="mt-1.5 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                          {t('models.overrides.workingDirHelp')}
+                        </p>
+                      </div>
+                    </div>
+                  </fieldset>
+
+                  {/* 추가 인자 그룹 — extra_args */}
+                  <fieldset className="border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50/60 dark:bg-gray-800/40 px-4 py-3">
+                    <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                      {t('models.overrides.groupArgs')}
+                    </legend>
+                    <div className="mt-2">
+                      <label className="text-sm font-semibold text-gray-800 dark:text-gray-100 block mb-1.5">
+                        {t('models.overrides.extraArgsLabel')}
+                        <span className="ml-1.5 text-[11px] font-mono text-gray-500 dark:text-gray-400 font-normal">extra_args</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        placeholder={
+                          codexDefaults?.extra_args && codexDefaults.extra_args.length > 0
+                            ? `${t('models.overrides.defaultPrefix')}:\n${codexDefaults.extra_args.join('\n')}`
+                            : t('models.overrides.extraArgsPlaceholder')
+                        }
+                        value={form.override_extra_args}
+                        onChange={(e) => setForm({ ...form, override_extra_args: e.target.value })}
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-400 dark:border-gray-600 rounded px-3 py-2 text-sm text-gray-900 dark:text-gray-50 placeholder:text-gray-400 dark:placeholder:text-gray-500 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </fieldset>
+                </div>
+              </details>
+            )}
+
             <div className="flex gap-2 mt-3">
               {testing ? (
                 <button

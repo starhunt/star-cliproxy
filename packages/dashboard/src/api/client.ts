@@ -165,6 +165,18 @@ export function deleteLogsByAge(days: number) {
 // Model Mappings
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+// 화이트리스트 기반 provider 옵션 오버라이드 (현재 codex CLI 모드 1차 지원)
+export interface ProviderOverrides {
+  extra_args?: string[];
+  timeout_ms?: number;
+  working_dir?: string;
+  cli_options?: {
+    ephemeral?: boolean;
+    enable_session_reuse?: boolean;
+    session_ttl_ms?: number;
+  };
+}
+
 export interface ModelMapping {
   id: string;
   alias: string;
@@ -172,6 +184,7 @@ export interface ModelMapping {
   actualModel: string;
   displayName: string | null;
   reasoningEffort: ReasoningEffort | null;
+  providerOverrides: ProviderOverrides | null;
   priority: number;
   enabled: boolean;
   createdAt: string;
@@ -188,6 +201,7 @@ export function createModelMapping(data: {
   actual_model: string;
   display_name?: string;
   reasoning_effort?: ReasoningEffort | null;
+  provider_overrides?: ProviderOverrides | null;
   priority?: number;
 }) {
   return request<ModelMapping>('/model-mappings', {
@@ -202,6 +216,7 @@ export function updateModelMapping(id: string, data: Partial<{
   actual_model: string;
   display_name: string;
   reasoning_effort: ReasoningEffort | null;
+  provider_overrides: ProviderOverrides | null;
   priority: number;
   enabled: boolean;
 }>) {
@@ -300,6 +315,8 @@ export interface CodexAppServerOptions {
 
 export interface CodexCliOptions {
   ephemeral?: boolean;
+  enable_session_reuse?: boolean;
+  session_ttl_ms?: number;
 }
 
 export interface ProviderConfig {
@@ -326,6 +343,19 @@ export interface ProviderTestResult {
 
 export function fetchProviderConfig(name: string) {
   return request<ProviderConfig>(`/providers/${name}/config`);
+}
+
+// Codex 한정: ~/.codex/config.toml에서 추출한 글로벌 기본값.
+// 매핑에 reasoning_effort를 비워두면 codex CLI가 이 값을 사용한다.
+export interface CodexCliDefaults {
+  configPath: string;
+  exists: boolean;
+  model: string | null;
+  modelReasoningEffort: ReasoningEffort | null;
+}
+
+export function fetchCodexCliDefaults() {
+  return request<CodexCliDefaults>('/providers/codex/cli-defaults');
 }
 
 export function updateProviderConfig(name: string, config: Partial<ProviderConfig>) {

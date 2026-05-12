@@ -110,6 +110,12 @@ export class ClaudeStreamParser implements StreamParser {
   }
 }
 
+// thread_id 형식 검증 — codex는 UUID(8-4-4-4-12) 또는 그 변형(접두/접미) 사용.
+// 보안: stdout에서 추출한 임의 문자열을 SessionManager 키로 쓰기 전 형식 검증으로 인젝션 방어.
+function isLikelyUuid(value: string): boolean {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value);
+}
+
 // Codex JSONL 파서 (--json 플래그)
 // 실제 출력: thread.started → turn.started → item.completed(텍스트) → turn.completed(usage)
 export class CodexStreamParser implements StreamParser {
@@ -160,6 +166,19 @@ export class CodexStreamParser implements StreamParser {
 
     try {
       const data = JSON.parse(trimmed);
+
+      // thread.started: 첫 라인에서 thread_id 노출. CodexProvider wrapper가 가로채 SessionManager.set 수행.
+      // thread_id / threadId / thread.id 3가지 키 경로 모두 처리 (codex 버전별 차이 대응).
+      if (data.type === 'thread.started') {
+        const tid = typeof data.thread_id === 'string' ? data.thread_id
+          : typeof data.threadId === 'string' ? data.threadId
+          : (data.thread && typeof data.thread.id === 'string') ? data.thread.id
+          : null;
+        if (tid && isLikelyUuid(tid)) {
+          return [{ type: 'thread_started', threadId: tid }];
+        }
+        return [];
+      }
 
       if (data.type === 'item.completed' && data.item) {
         if (data.item.type === 'error') {

@@ -105,13 +105,21 @@ export interface ExecuteOptions {
   temperature?: number;
   signal?: AbortSignal;
   onDebug?: (info: DebugCaptureInfo) => void;
-  clientKey?: string;  // 세션 재사용용 클라이언트 식별자 (API key ID 등)
+  clientKey?: string;  // 세션 재사용용 클라이언트 식별자 (API key ID 또는 X-Cliproxy-Session-Id 헤더)
   // 모델 매핑에서 지정한 CLI 추론 수준 (provider별 옵션으로 변환)
   reasoningEffort?: ReasoningEffort;
+  // 모델 매핑에서 지정한 provider 옵션 오버라이드 (화이트리스트 기반 deep merge)
+  providerOverrides?: import('./config.js').ProviderOverrides;
   // Image generation passthrough (OpenAI Images API)
   responseFormat?: 'url' | 'b64_json';
   n?: number;
   size?: string;
+}
+
+// Provider 실행 결과 메타데이터 (codex CLI thread_id 등)
+export interface ExecuteMeta {
+  threadId?: string;       // codex CLI: thread.started에서 추출한 UUID
+  threadReused?: boolean;  // resume args로 호출되었는지 여부
 }
 
 // 임베딩 전용 옵션/결과
@@ -121,6 +129,7 @@ export interface EmbeddingOptions {
   encodingFormat?: 'float' | 'base64';
   dimensions?: number;
   signal?: AbortSignal;
+  providerOverrides?: import('./config.js').ProviderOverrides;
   onDebug?: (info: DebugCaptureInfo) => void;
 }
 
@@ -160,6 +169,7 @@ export interface ExecuteResult {
   content: string;
   usage: TokenUsage;
   finishReason: 'stop' | 'length' | 'error';
+  meta?: ExecuteMeta;  // provider별 부가 메타데이터 (codex thread_id 등)
 }
 
 // --- ProviderEvent: discriminated union 기반 스트리밍 이벤트 ---
@@ -198,13 +208,21 @@ export interface ProviderDoneEvent {
   finishReason?: 'stop' | 'length' | 'tool_use' | 'error';
 }
 
+// codex CLI thread.started 이벤트 — provider 내부에서 SessionManager 갱신용으로 가로챔.
+// HTTP 라우트 SSE 변환기는 default 분기로 무시 (외부 노출 없음 — 응답 헤더로만 노출).
+export interface ProviderThreadStartedEvent {
+  type: 'thread_started';
+  threadId: string;
+}
+
 export type ProviderEvent =
   | ProviderTextDeltaEvent
   | ProviderToolUseEvent
   | ProviderThinkingEvent
   | ProviderUsageEvent
   | ProviderErrorEvent
-  | ProviderDoneEvent;
+  | ProviderDoneEvent
+  | ProviderThreadStartedEvent;
 
 /** @deprecated ProviderEvent 사용 권장 */
 export interface StreamChunk {
@@ -237,13 +255,14 @@ export function streamChunkToEvents(chunk: StreamChunk): ProviderEvent[] {
 /** ProviderEvent를 StreamChunk로 변환 (레거시 소비자 호환, lossy) */
 export function eventToStreamChunk(event: ProviderEvent): StreamChunk | null {
   switch (event.type) {
-    case 'text_delta':  return { type: 'delta', content: event.text };
-    case 'thinking':    return { type: 'delta', content: event.text };
-    case 'error':       return { type: 'error', error: event.error };
-    case 'done':        return { type: 'done' };
-    case 'tool_use':    return null;
-    case 'usage':       return null;
-    default:            return null;
+    case 'text_delta':     return { type: 'delta', content: event.text };
+    case 'thinking':       return { type: 'delta', content: event.text };
+    case 'error':          return { type: 'error', error: event.error };
+    case 'done':           return { type: 'done' };
+    case 'tool_use':       return null;
+    case 'usage':          return null;
+    case 'thread_started': return null;  // 내부 이벤트, 외부 SSE 변환 대상 아님
+    default:               return null;
   }
 }
 

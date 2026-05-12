@@ -332,6 +332,92 @@ curl http://localhost:8300/v1/chat/completions \
 - **CLI 모드 전용**입니다. Codex App Server / Claude SDK 모드는 각자 설정 채널(`~/.codex/config.toml`, `sdk_options`)을 사용하세요.
 - 플레이그라운드에 Reasoning 셀렉트가 있고(비지원 provider 자동 비활성), 로그 / 디버그 / 대시보드 최근·진행 요청에 추론 수준 배지가 표시됩니다.
 
+### Codex CLI 세션 재사용 (`exec resume`)
+
+Codex CLI의 `exec resume <thread_id>`를 활용해 호출 간 컨텍스트를 유지합니다. 매핑이나 프로바이더 yaml에서 `enable_session_reuse: true`로 켜면 CLIProxy가 다음 작업을 자동으로 수행합니다.
+
+1. 첫 `codex exec --json` 응답에서 `{"type":"thread.started","thread_id":"..."}`를 캡처.
+2. `clientKey + 모델`을 키로 in-memory `SessionManager`에 저장 (TTL 기본 30분).
+3. 같은 `clientKey`로 후속 요청이 오면 `codex exec resume <thread_id> --json -`로 자동 전환.
+
+```yaml
+codex:
+  cli_options:
+    enable_session_reuse: true   # thread_id 캡처 + resume 사용
+    session_ttl_ms: 1800000      # 30분
+    # enable_session_reuse=true면 ephemeral은 강제 false (jsonl이 디스크에 남아 있어야 resume 가능)
+```
+
+**`clientKey` 결정 우선순위:**
+1. `X-Cliproxy-Session-Id` 요청 헤더 (정규식 `^[A-Za-z0-9._:-]{1,128}$`)
+2. API 키 ID (fallback)
+3. `"anonymous"`
+
+**멀티유저 채팅 앱은 채팅방/대화별로 다른 `X-Cliproxy-Session-Id`를 보내야 합니다** — 같은 값 = 같은 Codex thread = 공유 컨텍스트.
+
+> ## 🚨 운영 경고 — 클라이언트 측 수정이 반드시 필요
+>
+> 매핑에 `enable_session_reuse: true`를 켜면 클라이언트 ↔ CLIProxy 사이의 **호출 규약이 바뀝니다**. **클라이언트 앱을 반드시 수정**해서 대화별로 다른 `X-Cliproxy-Session-Id` 헤더를 보내야 합니다. 이 단계를 빼먹으면:
+>
+> - 같은 API 키의 모든 요청이 **하나의 Codex thread를 공유** → 사용자끼리 서로의 대화 내용을 보게 됨
+> - 개발 환경(단일 사용자)에서는 정상으로 보이고, **프로덕션 멀티유저 트래픽에서만 컨텍스트가 누설**됨
+> - 이는 설정 오타가 아니라 **보안·품질 결함**입니다.
+>
+> 단순 토글이 아니라 **배포 체크리스트 항목**으로 다뤄야 합니다. 매핑은 서버 쪽 절반일 뿐이고, 짝이 되는 클라이언트 헤더가 필수입니다. 전체 체크리스트(Python/TypeScript 예시, 멀티유저 분리 패턴, 보안 주의사항, AI 코딩 에이전트에게 그대로 전달할 수 있는 인계 노트)는 **[docs/client-integration-session-reuse.md](docs/client-integration-session-reuse.md)** 를 참고하세요.
+
+```bash
+# 첫 호출: cliproxy가 thread_id를 캡처하고 응답 헤더 X-Cliproxy-Thread-Id로 노출 (non-stream 한정)
+curl -i http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -H "X-Cliproxy-Session-Id: chat-room-42" \
+  -d '{"model":"gpt-5.5-chat","messages":[{"role":"user","content":"내 좋아하는 숫자는 42야."}]}'
+
+# 두 번째 호출: 같은 Session-Id → cliproxy가 자동으로 exec resume으로 라우팅
+curl http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -H "X-Cliproxy-Session-Id: chat-room-42" \
+  -d '{"model":"gpt-5.5-chat","messages":[{"role":"user","content":"내가 어떤 숫자라고 했지?"}]}'
+```
+
+**모드 비교**:
+
+| 모드 | 컨텍스트 유지 | 요청당 비용 | 안정성 | 다중 채팅방 |
+|------|---------------|------------|--------|-------------|
+| `cli` (기본) | ❌ stateless | spawn ~300ms | 높음 | 해당 없음 |
+| `cli` + `enable_session_reuse` | ✅ thread_id 기반 | spawn ~300ms + jsonl 디스크 | 높음 (resume은 안정 명령) | `X-Cliproxy-Session-Id` |
+| `app-server` (experimental) | ✅ 상주 프로세스 | 낮음 (JSON-RPC) | 중간 (단일 프로세스 SPOF) | `clientKey`별 thread |
+
+### 모델 레벨 프로바이더 옵션 오버라이드 (현재 Codex CLI 1차 지원)
+
+매핑 단위로 프로바이더 yaml 옵션을 덮어씁니다. 같은 `codex` 프로바이더에서 "채팅용(세션 유지)" 별칭과 "1회용(ephemeral)" 별칭을 동시에 운영할 수 있습니다.
+
+**화이트리스트 (외 키는 silent drop + 경고):**
+- `cli_options.ephemeral`
+- `cli_options.enable_session_reuse`
+- `cli_options.session_ttl_ms`
+- `extra_args` (교체 — append 아님)
+- `timeout_ms`
+- `working_dir`
+
+```yaml
+model_mappings:
+  # 1회용 별칭 — 프로바이더 기본값 사용 (ephemeral=true, 세션 미유지)
+  - alias: "gpt-5.5"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+
+  # 채팅용 별칭 — 같은 프로바이더지만 세션 재사용 활성화
+  - alias: "gpt-5.5-chat"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    provider_overrides:
+      cli_options:
+        enable_session_reuse: true
+        session_ttl_ms: 3600000   # 1시간
+```
+
+대시보드 모델 매핑 편집 화면의 **Provider Overrides** 섹션에서 화이트리스트 필드를 폼으로 설정할 수 있습니다 (`codex` provider 선택 시에만 표시). 빈 칸으로 두면 프로바이더 기본값을 따릅니다. 다른 프로바이더(`claude`, `gemini`, `copilot`, `http`)는 현재 `provider_overrides`를 무시합니다.
+
 ## Configuration
 
 ### config.yaml

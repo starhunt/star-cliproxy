@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { isReasoningEffort, type ReasoningEffort } from '@star-cliproxy/shared';
+import { isReasoningEffort, type ProviderOverrides, type ReasoningEffort } from '@star-cliproxy/shared';
 import { getDatabase } from '../../db/client.js';
 import { modelMappings } from '../../db/schema.js';
 
@@ -11,6 +11,7 @@ interface CreateMappingBody {
   actual_model: string;
   display_name?: string;
   reasoning_effort?: string | null;
+  provider_overrides?: ProviderOverrides | null;
   priority?: number;
   enabled?: boolean;
 }
@@ -21,8 +22,76 @@ interface UpdateMappingBody {
   actual_model?: string;
   display_name?: string;
   reasoning_effort?: string | null;
+  provider_overrides?: ProviderOverrides | null;
   priority?: number;
   enabled?: boolean;
+}
+
+// provider_overrides 입력 검증.
+// null → 명시적 unset, 화이트리스트 외 키 → silently drop, 잘못된 타입 → 400 트리거.
+// 깊이 제한: 최대 2단계 (cli_options 1단계 + 그 안의 필드).
+function parseProviderOverridesInput(value: unknown): { ok: true; value: ProviderOverrides | null | undefined } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, reason: 'provider_overrides must be an object or null.' };
+  }
+  const raw = value as Record<string, unknown>;
+  const out: ProviderOverrides = {};
+  if (raw.extra_args !== undefined) {
+    if (!Array.isArray(raw.extra_args) || !raw.extra_args.every((a) => typeof a === 'string')) {
+      return { ok: false, reason: 'provider_overrides.extra_args must be string[].' };
+    }
+    out.extra_args = raw.extra_args as string[];
+  }
+  if (raw.timeout_ms !== undefined) {
+    if (typeof raw.timeout_ms !== 'number' || raw.timeout_ms <= 0) {
+      return { ok: false, reason: 'provider_overrides.timeout_ms must be a positive number.' };
+    }
+    out.timeout_ms = raw.timeout_ms;
+  }
+  if (raw.working_dir !== undefined) {
+    if (typeof raw.working_dir !== 'string' || raw.working_dir.trim() === '') {
+      return { ok: false, reason: 'provider_overrides.working_dir must be a non-empty string.' };
+    }
+    out.working_dir = raw.working_dir;
+  }
+  if (raw.cli_options !== undefined) {
+    if (typeof raw.cli_options !== 'object' || raw.cli_options === null || Array.isArray(raw.cli_options)) {
+      return { ok: false, reason: 'provider_overrides.cli_options must be an object.' };
+    }
+    const rawCli = raw.cli_options as Record<string, unknown>;
+    const cli: NonNullable<ProviderOverrides['cli_options']> = {};
+    if (rawCli.ephemeral !== undefined) {
+      if (typeof rawCli.ephemeral !== 'boolean') return { ok: false, reason: 'cli_options.ephemeral must be boolean.' };
+      cli.ephemeral = rawCli.ephemeral;
+    }
+    if (rawCli.enable_session_reuse !== undefined) {
+      if (typeof rawCli.enable_session_reuse !== 'boolean') return { ok: false, reason: 'cli_options.enable_session_reuse must be boolean.' };
+      cli.enable_session_reuse = rawCli.enable_session_reuse;
+    }
+    if (rawCli.session_ttl_ms !== undefined) {
+      if (typeof rawCli.session_ttl_ms !== 'number' || rawCli.session_ttl_ms <= 0) {
+        return { ok: false, reason: 'cli_options.session_ttl_ms must be a positive number.' };
+      }
+      cli.session_ttl_ms = rawCli.session_ttl_ms;
+    }
+    if (Object.keys(cli).length > 0) out.cli_options = cli;
+  }
+  return { ok: true, value: Object.keys(out).length > 0 ? out : null };
+}
+
+// DB row에서 providerOverrides(JSON string) → 객체 변환 + 반환용 가공
+function rowWithParsedOverrides(row: Record<string, unknown>): Record<string, unknown> {
+  const raw = row.providerOverrides;
+  if (typeof raw === 'string' && raw.length > 0) {
+    try {
+      return { ...row, providerOverrides: JSON.parse(raw) };
+    } catch {
+      return { ...row, providerOverrides: null };
+    }
+  }
+  return { ...row, providerOverrides: null };
 }
 
 // 사용자 입력 reasoning_effort 정규화/검증.
@@ -42,12 +111,12 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
   app.get('/admin/model-mappings', async (_request, reply) => {
     const db = getDatabase();
     const all = await db.select().from(modelMappings);
-    return reply.send(all);
+    return reply.send(all.map(rowWithParsedOverrides));
   });
 
   // 생성
   app.post<{ Body: CreateMappingBody }>('/admin/model-mappings', async (request, reply) => {
-    const { alias, provider, actual_model, display_name, reasoning_effort, priority, enabled } = request.body;
+    const { alias, provider, actual_model, display_name, reasoning_effort, provider_overrides, priority, enabled } = request.body;
 
     if (!alias || !provider || !actual_model) {
       return reply.status(400).send({ error: { message: 'alias, provider, actual_model are required.' } });
@@ -58,6 +127,11 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
       return reply.status(400).send({
         error: { message: 'reasoning_effort must be one of: low, medium, high, xhigh, max.' },
       });
+    }
+
+    const parsedOverrides = parseProviderOverridesInput(provider_overrides);
+    if (!parsedOverrides.ok) {
+      return reply.status(400).send({ error: { message: parsedOverrides.reason } });
     }
 
     const db = getDatabase();
@@ -71,6 +145,7 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
       actualModel: actual_model,
       displayName: display_name,
       reasoningEffort: parsedEffort.value ?? null,
+      providerOverrides: parsedOverrides.value ? JSON.stringify(parsedOverrides.value) : null,
       priority: priority ?? 0,
       enabled: enabled ?? true,
       createdAt: now,
@@ -78,7 +153,7 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
     });
 
     const created = await db.select().from(modelMappings).where(eq(modelMappings.id, id)).limit(1);
-    return reply.status(201).send(created[0]);
+    return reply.status(201).send(rowWithParsedOverrides(created[0]));
   });
 
   // 수정
@@ -108,11 +183,18 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
       }
       updates.reasoningEffort = parsed.value;
     }
+    if (body.provider_overrides !== undefined) {
+      const parsed = parseProviderOverridesInput(body.provider_overrides);
+      if (!parsed.ok) {
+        return reply.status(400).send({ error: { message: parsed.reason } });
+      }
+      updates.providerOverrides = parsed.value ? JSON.stringify(parsed.value) : null;
+    }
 
     await db.update(modelMappings).set(updates).where(eq(modelMappings.id, id));
 
     const updated = await db.select().from(modelMappings).where(eq(modelMappings.id, id)).limit(1);
-    return reply.send(updated[0]);
+    return reply.send(rowWithParsedOverrides(updated[0]));
   });
 
   // 삭제

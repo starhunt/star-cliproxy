@@ -1,5 +1,5 @@
 import { eq, and, asc } from 'drizzle-orm';
-import { BUILTIN_PROVIDERS, isReasoningEffort, type ReasoningEffort } from '@star-cliproxy/shared';
+import { BUILTIN_PROVIDERS, isReasoningEffort, type ProviderOverrides, type ReasoningEffort } from '@star-cliproxy/shared';
 import { getDatabase } from '../db/client.js';
 import { modelMappings } from '../db/schema.js';
 import type { ProviderRegistry } from '../providers/provider-registry.js';
@@ -8,6 +8,21 @@ export interface ResolvedRoute {
   provider: string;
   actualModel: string;
   reasoningEffort?: ReasoningEffort;
+  providerOverrides?: ProviderOverrides;
+}
+
+// DB의 provider_overrides JSON 문자열을 파싱. 파싱 실패는 warn + null fallback.
+function parseProviderOverrides(raw: string | null | undefined): ProviderOverrides | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as ProviderOverrides;
+    }
+  } catch (e) {
+    console.warn('[router] failed to parse provider_overrides:', (e as Error).message);
+  }
+  return undefined;
 }
 
 export class ModelRouter {
@@ -47,6 +62,7 @@ export class ModelRouter {
         provider: m.provider,
         actualModel: m.actualModel,
         reasoningEffort: isReasoningEffort(m.reasoningEffort) ? m.reasoningEffort : undefined,
+        providerOverrides: parseProviderOverrides(m.providerOverrides),
       }));
   }
 

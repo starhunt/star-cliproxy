@@ -3,6 +3,7 @@ import type { ValidationConfig, ReasoningEffort } from '@star-cliproxy/shared';
 import { isReasoningEffort } from '@star-cliproxy/shared';
 import { nanoid } from 'nanoid';
 import { createRequestId } from '../../utils/stream-transformer.js';
+import { extractClientKey } from '../../utils/client-key.js';
 import { logRequest } from '../../middleware/request-logger.js';
 import type { ModelRouter } from '../../services/router.js';
 import type { QueueManager } from '../../services/queue.js';
@@ -241,6 +242,8 @@ export function registerMessagesRoute(
 
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
+      // X-Cliproxy-Session-Id 헤더 있으면 그 값을, 없으면 apiKeyId로 clientKey 결정 (codex CLI resume 세션 분리용)
+      const clientKey = extractClientKey(request, apiKeyId);
 
       // === 캐시 조회 (non-streaming만) ===
       const requestHash = !body.stream
@@ -397,8 +400,9 @@ export function registerMessagesRoute(
                 temperature: body.temperature,
                 signal: abortController.signal,
                 onDebug,
-                clientKey: apiKeyId,
+                clientKey,
                 reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
+                providerOverrides: route.providerOverrides,
               });
 
               try {
@@ -567,8 +571,9 @@ export function registerMessagesRoute(
               maxTokens: body.max_tokens,
               temperature: body.temperature,
               onDebug,
-              clientKey: apiKeyId,
+              clientKey,
               reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
+              providerOverrides: route.providerOverrides,
             }),
           );
 
@@ -600,6 +605,10 @@ export function registerMessagesRoute(
           reply.header('X-Cache', 'MISS');
           if (unsupportedParams.length > 0) {
             reply.header('X-Unsupported-Params', unsupportedParams.join(','));
+          }
+          // codex CLI 세션 재사용 시 thread_id 노출. 클라이언트는 다음 호출에 같은 X-Cliproxy-Session-Id만 보내면 자동 재사용됨 (참고용 노출).
+          if (result.meta?.threadId) {
+            reply.header('X-Cliproxy-Thread-Id', result.meta.threadId);
           }
 
           // 캐시에 응답 저장
