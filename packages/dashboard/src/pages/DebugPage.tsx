@@ -646,6 +646,11 @@ function DebugLogEntry({
         <span className="text-sm font-mono text-blue-600 dark:text-blue-400">{log.modelAlias}</span>
         <span className="text-xs text-gray-400 dark:text-gray-600">-&gt;</span>
         <span className="text-xs font-mono text-gray-500">{log.provider}:{log.actualModel}</span>
+        {log.reasoningEffort && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-400" title="reasoning_effort">
+            {log.reasoningEffort}
+          </span>
+        )}
         {/* 세션 배지 (SDK 모드) */}
         {(() => {
           const { sessionId, reused } = extractSessionFromArgs(log.cliArgs);
@@ -1050,6 +1055,7 @@ function exportDebugLog(log: DebugLog): void {
   sections.push(``);
   sections.push(`Request ID : ${log.requestId}`);
   sections.push(`Model      : ${log.modelAlias} -> ${log.provider}:${log.actualModel}`);
+  if (log.reasoningEffort) sections.push(`Reasoning  : ${log.reasoningEffort}`);
   sections.push(`Status     : ${log.status.toUpperCase()}`);
   sections.push(`Mode       : ${log.isStream ? 'stream' : 'sync'}`);
   sections.push(`Latency    : ${formatLatency(log.latencyMs)} (${log.latencyMs}ms)`);

@@ -23,10 +23,23 @@ export class CopilotProvider extends BaseProvider {
     const model = options.model || this.config.default_model;
     const prompt = convertMessagesToSinglePrompt(options.messages);
 
+    // 추론 수준 주입 (--effort).
+    // Copilot은 low/medium/high/xhigh만 지원하므로 'max'는 'xhigh'로 폴백.
+    // 사용자가 extra_args에 --effort/--reasoning-effort를 이미 넣었으면 건너뜀.
+    const userHasEffort = this.config.extra_args.some(
+      (arg) => arg === '--effort' || arg === '--reasoning-effort',
+    );
+    const reasoningArgs: string[] = [];
+    if (options.reasoningEffort && !userHasEffort) {
+      const effort = options.reasoningEffort === 'max' ? 'xhigh' : options.reasoningEffort;
+      reasoningArgs.push('--effort', effort);
+    }
+
     const args: string[] = [
       '-p', prompt,
       '-s',             // 메타데이터 제거, 순수 응답만 stdout 출력
       '--no-ask-user',  // 추가 질문 차단 (자동화 필수)
+      ...reasoningArgs,
       ...this.config.extra_args,
       ...(model ? ['--model', model] : []),
     ];

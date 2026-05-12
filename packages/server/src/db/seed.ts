@@ -41,6 +41,7 @@ export async function seedDatabase(config: AppConfig): Promise<void> {
         provider: mapping.provider,
         actualModel: mapping.actual_model,
         displayName: mapping.alias,
+        reasoningEffort: mapping.reasoning_effort ?? null,
         priority: 0,
         enabled: true,
         createdAt: new Date().toISOString(),

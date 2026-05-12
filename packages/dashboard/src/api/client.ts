@@ -67,6 +67,7 @@ export interface DashboardData {
     modelAlias: string;
     provider: string;
     actualModel: string;
+    reasoningEffort: string | null;
     status: string;
     latencyMs: number;
     totalTokens: number | null;
@@ -78,6 +79,7 @@ export interface DashboardData {
     id: string;
     modelAlias: string;
     provider: string;
+    reasoningEffort: string | null;
     status: string;
     errorMessage: string | null;
     latencyMs: number;
@@ -90,6 +92,7 @@ export interface DashboardData {
       modelAlias: string;
       provider: string;
       actualModel: string;
+      reasoningEffort?: string | null;
       isStream: boolean;
       startedAt: number;
       elapsedMs: number;
@@ -160,12 +163,15 @@ export function deleteLogsByAge(days: number) {
 }
 
 // Model Mappings
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface ModelMapping {
   id: string;
   alias: string;
   provider: string;
   actualModel: string;
   displayName: string | null;
+  reasoningEffort: ReasoningEffort | null;
   priority: number;
   enabled: boolean;
   createdAt: string;
@@ -181,6 +187,7 @@ export function createModelMapping(data: {
   provider: string;
   actual_model: string;
   display_name?: string;
+  reasoning_effort?: ReasoningEffort | null;
   priority?: number;
 }) {
   return request<ModelMapping>('/model-mappings', {
@@ -194,6 +201,7 @@ export function updateModelMapping(id: string, data: Partial<{
   provider: string;
   actual_model: string;
   display_name: string;
+  reasoning_effort: ReasoningEffort | null;
   priority: number;
   enabled: boolean;
 }>) {
@@ -381,6 +389,7 @@ export interface DebugLog {
   modelAlias: string;
   provider: string;
   actualModel: string;
+  reasoningEffort: string | null;
   isStream: boolean;
   cliArgs: string | null;
   requestMessages: string | null;

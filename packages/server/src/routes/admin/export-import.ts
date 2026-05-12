@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type { AppConfig, RateLimitConfig, ValidationConfig, ProviderConfigYaml, GenericCliProviderConfig } from '@star-cliproxy/shared';
-import { API_KEY_PREFIX } from '@star-cliproxy/shared';
+import { API_KEY_PREFIX, isReasoningEffort } from '@star-cliproxy/shared';
 import { GenericCliProvider } from '../../providers/generic-cli-provider.js';
 import { getDatabase } from '../../db/client.js';
 import { modelMappings, apiKeys, settings } from '../../db/schema.js';
@@ -39,6 +39,7 @@ interface ExportData {
     provider: string;
     actualModel: string;
     displayName: string | null;
+    reasoningEffort?: string | null;
     priority: number;
     enabled: boolean;
   }>;
@@ -136,6 +137,7 @@ export function registerExportImportRoutes(
       provider: modelMappings.provider,
       actualModel: modelMappings.actualModel,
       displayName: modelMappings.displayName,
+      reasoningEffort: modelMappings.reasoningEffort,
       priority: modelMappings.priority,
       enabled: modelMappings.enabled,
     }).from(modelMappings);
@@ -231,12 +233,18 @@ export function registerExportImportRoutes(
 
       for (const mapping of body.modelMappings) {
         if (!mapping.alias || !mapping.provider || !mapping.actualModel) continue;
+        // 화이트리스트 외 reasoning_effort는 silently 무시 (import 호환성)
+        const rawEffort = typeof mapping.reasoningEffort === 'string'
+          ? mapping.reasoningEffort.trim().toLowerCase()
+          : null;
+        const effort = rawEffort && isReasoningEffort(rawEffort) ? rawEffort : null;
         await db.insert(modelMappings).values({
           id: nanoid(),
           alias: mapping.alias,
           provider: mapping.provider,
           actualModel: mapping.actualModel,
           displayName: mapping.displayName ?? null,
+          reasoningEffort: effort,
           priority: mapping.priority ?? 0,
           enabled: mapping.enabled ?? true,
           createdAt: now,

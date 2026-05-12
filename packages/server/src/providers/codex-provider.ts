@@ -108,11 +108,26 @@ export class CodexProvider extends BaseProvider {
     const userHasEphemeral = this.config.extra_args.includes('--ephemeral');
     const injectEphemeral = ephemeralEnabled && !userHasEphemeral;
 
+    // 추론 수준 주입: -c model_reasoning_effort=<level>.
+    // Codex는 xhigh/max를 지원하지 않으므로 'high'로 폴백.
+    // 사용자가 extra_args에 model_reasoning_effort를 직접 넣었으면 건너뜀.
+    const userHasReasoning = this.config.extra_args.some(
+      (arg) => arg === 'model_reasoning_effort' || arg.startsWith('model_reasoning_effort='),
+    );
+    const reasoningArgs: string[] = [];
+    if (options.reasoningEffort && !userHasReasoning) {
+      const effort = options.reasoningEffort === 'xhigh' || options.reasoningEffort === 'max'
+        ? 'high'
+        : options.reasoningEffort;
+      reasoningArgs.push('-c', `model_reasoning_effort=${effort}`);
+    }
+
     const args: string[] = [
       'exec',
       // --json 필수: 없으면 TUI 출력이 되어 stdout 캡처 불가
       '--json',
       ...(injectEphemeral ? ['--ephemeral'] : []),
+      ...reasoningArgs,
       ...this.config.extra_args,
       ...((ctx?.imageFiles ?? []).flatMap((file) => ['--image', file])),
       // 모델 지정 (빈 값이면 Codex 기본 모델 사용)

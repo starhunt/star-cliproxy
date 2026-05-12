@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { AppConfig, ProviderConfigYaml, PluginEntry } from '@star-cliproxy/shared';
+import type { AppConfig, ProviderConfigYaml, PluginEntry, ReasoningEffort } from '@star-cliproxy/shared';
 import {
   DEFAULT_SERVER_PORT,
   DEFAULT_DASHBOARD_PORT,
@@ -17,7 +17,17 @@ import {
   DEFAULT_MAX_PROMPT_LENGTH,
   DEFAULT_MAX_RESPONSE_LENGTH,
   DEFAULT_BODY_LIMIT_BYTES,
+  isReasoningEffort,
 } from '@star-cliproxy/shared';
+
+// 사용자 입력 reasoning_effort 정규화: 문자열을 trim+lowercase 후 화이트리스트 검증.
+// 알 수 없는 값은 silently 무시 (provider가 default 동작).
+function normalizeReasoningEffort(value: unknown): ReasoningEffort | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return isReasoningEffort(normalized) ? normalized : undefined;
+}
 
 // 환경변수 치환: "${VAR_NAME}" → process.env.VAR_NAME
 function substituteEnvVars(text: string): string {
@@ -64,7 +74,7 @@ export function loadConfig(configPath?: string): AppConfig {
   const rateLimits = rawConfig.rate_limits as Record<string, unknown> | undefined;
   const cache = rawConfig.cache as Record<string, unknown> | undefined;
   const validation = rawConfig.validation as Record<string, unknown> | undefined;
-  const modelMappings = rawConfig.model_mappings as Array<Record<string, string>> | undefined;
+  const modelMappings = rawConfig.model_mappings as Array<Record<string, string | undefined>> | undefined;
   const rawPlugins = rawConfig.plugins as Array<Record<string, unknown>> | undefined;
 
   const corsObj = server?.cors as Record<string, unknown> | undefined;
@@ -147,9 +157,10 @@ export function loadConfig(configPath?: string): AppConfig {
       bodyLimitBytes: (validation?.body_limit_bytes as number) ?? DEFAULT_BODY_LIMIT_BYTES,
     },
     modelMappings: modelMappings?.map((m) => ({
-      alias: m.alias,
-      provider: m.provider,
-      actual_model: m.actual_model,
+      alias: m.alias as string,
+      provider: m.provider as string,
+      actual_model: (m.actual_model as string | undefined) ?? '',
+      reasoning_effort: normalizeReasoningEffort(m.reasoning_effort),
     })) ?? [
       { alias: 'claude-opus', provider: 'claude', actual_model: 'claude-opus-4-6' },
       { alias: 'claude-sonnet', provider: 'claude', actual_model: 'claude-sonnet-4-6' },

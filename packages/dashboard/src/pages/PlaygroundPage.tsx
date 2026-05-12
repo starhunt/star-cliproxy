@@ -1,6 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from '../i18n/context';
-import { fetchModelMappings, fetchApiKeys, fetchServerInfo, type ModelMapping, type ApiKey } from '../api/client';
+import { fetchModelMappings, fetchServerInfo, type ModelMapping, type ReasoningEffort } from '../api/client';
+
+type ReasoningEffortValue = ReasoningEffort | '';
+const REASONING_EFFORT_OPTIONS: ReasoningEffortValue[] = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+// reasoning_effort를 CLI 옵션으로 지원하는 provider만 입력 활성화
+const REASONING_SUPPORTED_PROVIDERS = new Set(['claude', 'codex', 'copilot']);
 
 interface Message {
   role: 'system' | 'user' | 'assistant';
@@ -50,9 +56,8 @@ function savePlaygroundState(state: Partial<PlaygroundState>) {
 export default function PlaygroundPage() {
   const { t } = useTranslation();
 
-  // 모델/키 목록
+  // 모델 목록
   const [models, setModels] = useState<ModelMapping[]>([]);
-  const [keys, setKeys] = useState<ApiKey[]>([]);
   const [apiBaseUrl, setApiBaseUrl] = useState('');
 
   // 입력 상태
@@ -64,6 +69,18 @@ export default function PlaygroundPage() {
   const [stream, setStream] = useState(false);
   const [temperature, setTemperature] = useState<string>('');
   const [maxTokens, setMaxTokens] = useState<string>('');
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortValue>('');
+
+  // 선택된 모델의 provider → reasoning_effort 지원 여부
+  const selectedProvider = models.find((m) => m.alias === selectedModel)?.provider ?? '';
+  const supportsReasoning = REASONING_SUPPORTED_PROVIDERS.has(selectedProvider);
+
+  // provider 변경되어 비지원 상태가 되면 값 자동 클리어 (잘못된 요청 방지)
+  useEffect(() => {
+    if (!supportsReasoning && reasoningEffort !== '') {
+      setReasoningEffort('');
+    }
+  }, [supportsReasoning, reasoningEffort]);
 
   // 응답 상태 (이전 결과 복원)
   const [response, setResponse] = useState(saved.current.response);
@@ -87,7 +104,6 @@ export default function PlaygroundPage() {
         setSelectedModel(exists ? savedModel : enabled[0].alias);
       }
     }).catch(() => {});
-    fetchApiKeys().then(setKeys).catch(() => {});
     // API base URL 결정 (Vite 프록시 경유 시 상대 경로 사용)
     fetchServerInfo().then((info) => {
       setApiBaseUrl(`http://${window.location.hostname}:${info.serverPort}`);
@@ -119,8 +135,9 @@ export default function PlaygroundPage() {
     };
     if (temperature) body.temperature = parseFloat(temperature);
     if (maxTokens) body.max_tokens = parseInt(maxTokens);
+    if (reasoningEffort) body.reasoning_effort = reasoningEffort;
     return body;
-  }, [selectedModel, messages, stream, temperature, maxTokens]);
+  }, [selectedModel, messages, stream, temperature, maxTokens, reasoningEffort]);
 
   // 전송
   const handleSend = async () => {
@@ -286,23 +303,7 @@ export default function PlaygroundPage() {
           </select>
         </div>
         <div>
-          <label className={labelCls}>
-            {t('playground.apiKey')}
-            {keys.length > 0 && (
-              <select
-                onChange={(e) => { if (e.target.value) setApiKey(e.target.value); }}
-                className="ml-2 text-xs bg-transparent border-none text-blue-500 dark:text-blue-400 cursor-pointer"
-                value=""
-              >
-                <option value="">{t('playground.registeredKeys')}</option>
-                {keys.filter((k) => k.enabled).map((k) => (
-                  <option key={k.id} value={k.keyPrefix + '...'}>
-                    {k.name} ({k.keyPrefix}...)
-                  </option>
-                ))}
-              </select>
-            )}
-          </label>
+          <label className={labelCls}>{t('playground.apiKey')}</label>
           <input
             type="text"
             value={apiKey}
@@ -338,6 +339,26 @@ export default function PlaygroundPage() {
             placeholder="default"
             className={`w-24 ${inputCls} text-xs`}
           />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className={`text-xs ${supportsReasoning ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600'}`}>
+            {t('playground.reasoningEffort')}
+          </label>
+          <select
+            value={reasoningEffort}
+            onChange={(e) => setReasoningEffort(e.target.value as ReasoningEffortValue)}
+            disabled={!supportsReasoning}
+            className={`w-28 ${inputCls} text-xs disabled:opacity-50 disabled:cursor-not-allowed`}
+            title={supportsReasoning
+              ? t('playground.reasoningEffortHint')
+              : t('playground.reasoningEffortUnsupported', { provider: selectedProvider || 'this provider' })}
+          >
+            {REASONING_EFFORT_OPTIONS.map((value) => (
+              <option key={value || 'default'} value={value}>
+                {value === '' ? t('playground.reasoningEffortDefault') : value}
+              </option>
+            ))}
+          </select>
         </div>
         <label className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
           <input

@@ -124,6 +124,14 @@ validation:
   body_limit_bytes: 16777216     # HTTP 요청 본문 최대 크기 (16MB, 변경 후 재시작 필요)
 
 model_mappings:
+  # reasoning_effort 필드 (선택):
+  #   low | medium | high | xhigh | max
+  #   - Claude  : --effort <level>           (low/medium/high/xhigh/max 지원)
+  #   - Codex   : -c model_reasoning_effort  (low/medium/high 지원, xhigh/max는 high로 폴백)
+  #   - Copilot : --effort <level>           (low/medium/high/xhigh 지원, max는 xhigh로 폴백)
+  #   - Gemini  : 미지원 (필드 무시)
+  # 생략하면 각 CLI의 기본 동작을 따른다. CLI 모드에서만 적용 (App Server / SDK 모드 제외).
+
   # Claude models
   - alias: "claude-opus"
     provider: "claude"
@@ -131,6 +139,14 @@ model_mappings:
   - alias: "claude-sonnet"
     provider: "claude"
     actual_model: "claude-sonnet-4-6"
+  - alias: "claude-sonnet-medium"
+    provider: "claude"
+    actual_model: "claude-sonnet-4-6"
+    reasoning_effort: "medium"
+  - alias: "claude-sonnet-high"
+    provider: "claude"
+    actual_model: "claude-sonnet-4-6"
+    reasoning_effort: "high"
   - alias: "claude-haiku"
     provider: "claude"
     actual_model: "claude-haiku-4-5-20251001"
@@ -138,9 +154,25 @@ model_mappings:
   - alias: "gpt-5.5"
     provider: "codex"
     actual_model: "gpt-5.5"
+  - alias: "gpt-5.5-medium"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    reasoning_effort: "medium"
+  - alias: "gpt-5.5-high"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    reasoning_effort: "high"
   - alias: "gpt-5.4"
     provider: "codex"
     actual_model: "gpt-5.4"
+  - alias: "gpt-5.4-medium"
+    provider: "codex"
+    actual_model: "gpt-5.4"
+    reasoning_effort: "medium"
+  - alias: "gpt-5.4-high"
+    provider: "codex"
+    actual_model: "gpt-5.4"
+    reasoning_effort: "high"
   - alias: "gpt-5.3-codex"
     provider: "codex"
     actual_model: "gpt-5.3-codex"
@@ -154,6 +186,10 @@ model_mappings:
   - alias: "copilot-sonnet-4-6"
     provider: "copilot"
     actual_model: "claude-sonnet-4-6"
+  - alias: "copilot-sonnet-high"
+    provider: "copilot"
+    actual_model: "claude-sonnet-4-6"
+    reasoning_effort: "high"
   - alias: "copilot-gpt"
     provider: "copilot"
     actual_model: "gpt-5.4"

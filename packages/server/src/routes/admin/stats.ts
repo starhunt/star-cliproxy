@@ -108,6 +108,7 @@ export function registerStatsRoutes(app: FastifyInstance): void {
           modelAlias: requestLogs.modelAlias,
           provider: requestLogs.provider,
           actualModel: requestLogs.actualModel,
+          reasoningEffort: requestLogs.reasoningEffort,
           status: requestLogs.status,
           latencyMs: requestLogs.latencyMs,
           ttfbMs: requestLogs.ttfbMs,

@@ -24,6 +24,8 @@ export interface ChatCompletionRequest {
   temperature?: number;
   top_p?: number;
   stop?: string | string[];
+  // OpenAI 호환 추론 수준. 지정 시 model_mapping의 값보다 우선.
+  reasoning_effort?: string;
 }
 
 export interface ChatCompletionChoice {

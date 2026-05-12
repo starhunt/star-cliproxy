@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import { isReasoningEffort, type ReasoningEffort } from '@star-cliproxy/shared';
 import { getDatabase } from '../../db/client.js';
 import { modelMappings } from '../../db/schema.js';
 
@@ -9,6 +10,7 @@ interface CreateMappingBody {
   provider: string;
   actual_model: string;
   display_name?: string;
+  reasoning_effort?: string | null;
   priority?: number;
   enabled?: boolean;
 }
@@ -18,8 +20,21 @@ interface UpdateMappingBody {
   provider?: string;
   actual_model?: string;
   display_name?: string;
+  reasoning_effort?: string | null;
   priority?: number;
   enabled?: boolean;
+}
+
+// 사용자 입력 reasoning_effort 정규화/검증.
+// null → 명시적 unset, 화이트리스트 외 값 → 400 트리거(undefined 반환 + flag).
+function parseReasoningEffortInput(value: unknown): { ok: true; value: ReasoningEffort | null | undefined } | { ok: false } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== 'string') return { ok: false };
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return { ok: true, value: null };
+  if (!isReasoningEffort(normalized)) return { ok: false };
+  return { ok: true, value: normalized };
 }
 
 export function registerModelMappingsRoutes(app: FastifyInstance): void {
@@ -32,10 +47,17 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
 
   // 생성
   app.post<{ Body: CreateMappingBody }>('/admin/model-mappings', async (request, reply) => {
-    const { alias, provider, actual_model, display_name, priority, enabled } = request.body;
+    const { alias, provider, actual_model, display_name, reasoning_effort, priority, enabled } = request.body;
 
     if (!alias || !provider || !actual_model) {
       return reply.status(400).send({ error: { message: 'alias, provider, actual_model are required.' } });
+    }
+
+    const parsedEffort = parseReasoningEffortInput(reasoning_effort);
+    if (!parsedEffort.ok) {
+      return reply.status(400).send({
+        error: { message: 'reasoning_effort must be one of: low, medium, high, xhigh, max.' },
+      });
     }
 
     const db = getDatabase();
@@ -48,6 +70,7 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
       provider,
       actualModel: actual_model,
       displayName: display_name,
+      reasoningEffort: parsedEffort.value ?? null,
       priority: priority ?? 0,
       enabled: enabled ?? true,
       createdAt: now,
@@ -76,6 +99,15 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
     if (body.display_name !== undefined) updates.displayName = body.display_name;
     if (body.priority !== undefined) updates.priority = body.priority;
     if (body.enabled !== undefined) updates.enabled = body.enabled;
+    if (body.reasoning_effort !== undefined) {
+      const parsed = parseReasoningEffortInput(body.reasoning_effort);
+      if (!parsed.ok) {
+        return reply.status(400).send({
+          error: { message: 'reasoning_effort must be one of: low, medium, high, xhigh, max.' },
+        });
+      }
+      updates.reasoningEffort = parsed.value;
+    }
 
     await db.update(modelMappings).set(updates).where(eq(modelMappings.id, id));
 

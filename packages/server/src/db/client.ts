@@ -44,6 +44,7 @@ async function createTables(client: Client) {
       provider TEXT NOT NULL,
       actual_model TEXT NOT NULL,
       display_name TEXT,
+      reasoning_effort TEXT,
       priority INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -57,6 +58,7 @@ async function createTables(client: Client) {
       model_alias TEXT NOT NULL,
       provider TEXT NOT NULL,
       actual_model TEXT NOT NULL,
+      reasoning_effort TEXT,
       status TEXT NOT NULL,
       status_code INTEGER,
       prompt_tokens INTEGER,
@@ -95,6 +97,7 @@ async function createTables(client: Client) {
       model_alias TEXT NOT NULL,
       provider TEXT NOT NULL,
       actual_model TEXT NOT NULL,
+      reasoning_effort TEXT,
       is_stream INTEGER NOT NULL DEFAULT 0,
       cli_args TEXT,
       request_messages TEXT,
@@ -135,6 +138,25 @@ async function createTables(client: Client) {
     } catch {
       // 이미 존재하면 무시
     }
+  }
+
+  // 기존 DB 마이그레이션: model_mappings.reasoning_effort 컬럼 (이미 존재하면 무시)
+  try {
+    await client.execute('ALTER TABLE model_mappings ADD COLUMN reasoning_effort TEXT');
+  } catch {
+    // 이미 존재하면 무시
+  }
+
+  // 기존 DB 마이그레이션: request_logs / debug_logs.reasoning_effort 컬럼
+  try {
+    await client.execute('ALTER TABLE request_logs ADD COLUMN reasoning_effort TEXT');
+  } catch {
+    // 이미 존재하면 무시
+  }
+  try {
+    await client.execute('ALTER TABLE debug_logs ADD COLUMN reasoning_effort TEXT');
+  } catch {
+    // 이미 존재하면 무시
   }
 }
 

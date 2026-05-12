@@ -1,9 +1,12 @@
+import type { ReasoningEffort } from '@star-cliproxy/shared';
+
 // 현재 처리 중인 요청을 인메모리로 추적
 export interface ActiveRequest {
   requestId: string;
   modelAlias: string;
   provider: string;
   actualModel: string;
+  reasoningEffort?: ReasoningEffort;
   isStream: boolean;
   startedAt: number; // Date.now()
 }

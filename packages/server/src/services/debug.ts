@@ -38,6 +38,7 @@ export interface DebugLogStartEntry {
   modelAlias: string;
   provider: string;
   actualModel: string;
+  reasoningEffort?: string;
   isStream: boolean;
   requestMessages?: unknown;
 }
@@ -97,6 +98,7 @@ export class DebugService {
         modelAlias: entry.modelAlias,
         provider: entry.provider,
         actualModel: entry.actualModel,
+        reasoningEffort: entry.reasoningEffort ?? null,
         isStream: entry.isStream,
         requestMessages: entry.requestMessages
           ? truncate(JSON.stringify(entry.requestMessages))

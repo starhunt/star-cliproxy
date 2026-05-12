@@ -1,7 +1,7 @@
 // 설정 파일 타입 정의
 
 // EndpointType은 PluginEntry에서 사용
-import type { EndpointType } from './provider.js';
+import type { EndpointType, ReasoningEffort } from './provider.js';
 
 export interface ServerConfig {
   port: number;
@@ -89,6 +89,7 @@ export interface ModelMappingSeed {
   alias: string;
   provider: string;
   actual_model: string;
+  reasoning_effort?: ReasoningEffort;
 }
 
 export interface ValidationConfig {

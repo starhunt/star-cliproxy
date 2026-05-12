@@ -8,6 +8,7 @@ interface LogItem {
   modelAlias: string;
   provider: string;
   actualModel: string;
+  reasoningEffort: string | null;
   status: string;
   latencyMs: number;
   ttfbMs: number | null;
@@ -128,6 +129,7 @@ export default function LogsPage() {
               <th className="text-left px-4 py-3">{t('logs.model')}</th>
               <th className="text-left px-4 py-3">{t('logs.provider')}</th>
               <th className="text-left px-4 py-3">{t('logs.actual')}</th>
+              <th className="text-left px-4 py-3">{t('logs.reasoningEffort')}</th>
               <th className="text-left px-4 py-3">{t('logs.status')}</th>
               <th className="text-left px-4 py-3">{t('logs.latency')}</th>
               <th className="text-left px-4 py-3">{t('logs.tokens')}</th>
@@ -143,6 +145,15 @@ export default function LogsPage() {
                 <td className="px-4 py-2.5 font-mono text-blue-600 dark:text-blue-400">{log.modelAlias}</td>
                 <td className="px-4 py-2.5 capitalize text-gray-700 dark:text-gray-300">{log.provider}</td>
                 <td className="px-4 py-2.5 font-mono text-gray-400 text-xs">{log.actualModel}</td>
+                <td className="px-4 py-2.5 text-xs">
+                  {log.reasoningEffort ? (
+                    <span className="px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-mono">
+                      {log.reasoningEffort}
+                    </span>
+                  ) : (
+                    <span className="text-gray-300 dark:text-gray-600">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-2.5">
                   <span className={`px-2 py-0.5 rounded text-xs ${statusBadge[log.status] ?? statusBadge.error}`}>
                     {log.status}
@@ -154,7 +165,7 @@ export default function LogsPage() {
               </tr>
             ))}
             {logs.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 dark:text-gray-600">{t('logs.noLogs')}</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400 dark:text-gray-600">{t('logs.noLogs')}</td></tr>
             )}
           </tbody>
         </table>

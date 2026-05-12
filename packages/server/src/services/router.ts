@@ -1,5 +1,5 @@
 import { eq, and, asc } from 'drizzle-orm';
-import { BUILTIN_PROVIDERS } from '@star-cliproxy/shared';
+import { BUILTIN_PROVIDERS, isReasoningEffort, type ReasoningEffort } from '@star-cliproxy/shared';
 import { getDatabase } from '../db/client.js';
 import { modelMappings } from '../db/schema.js';
 import type { ProviderRegistry } from '../providers/provider-registry.js';
@@ -7,6 +7,7 @@ import type { ProviderRegistry } from '../providers/provider-registry.js';
 export interface ResolvedRoute {
   provider: string;
   actualModel: string;
+  reasoningEffort?: ReasoningEffort;
 }
 
 export class ModelRouter {
@@ -45,6 +46,7 @@ export class ModelRouter {
       .map((m) => ({
         provider: m.provider,
         actualModel: m.actualModel,
+        reasoningEffort: isReasoningEffort(m.reasoningEffort) ? m.reasoningEffort : undefined,
       }));
   }
 

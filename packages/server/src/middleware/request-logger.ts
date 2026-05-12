@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import type { ReasoningEffort } from '@star-cliproxy/shared';
 import { getDatabase } from '../db/client.js';
 import { requestLogs } from '../db/schema.js';
 
@@ -8,6 +9,7 @@ export interface LogEntry {
   modelAlias: string;
   provider: string;
   actualModel: string;
+  reasoningEffort?: ReasoningEffort;
   status: 'success' | 'error' | 'timeout' | 'cancelled';
   statusCode: number;
   promptTokens?: number;
@@ -31,6 +33,7 @@ export async function logRequest(entry: LogEntry): Promise<void> {
       modelAlias: entry.modelAlias,
       provider: entry.provider,
       actualModel: entry.actualModel,
+      reasoningEffort: entry.reasoningEffort ?? null,
       status: entry.status,
       statusCode: entry.statusCode,
       promptTokens: entry.promptTokens,

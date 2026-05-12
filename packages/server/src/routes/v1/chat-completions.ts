@@ -6,7 +6,7 @@ import type {
   ChatMessageContentPart,
   ValidationConfig,
 } from '@star-cliproxy/shared';
-import { ALLOWED_ROLES } from '@star-cliproxy/shared';
+import { ALLOWED_ROLES, isReasoningEffort, type ReasoningEffort } from '@star-cliproxy/shared';
 import { extractTextFromContent, isImagePart } from '../../utils/message-converter.js';
 import { createRequestId, formatAsSSE } from '../../utils/stream-transformer.js';
 import { logRequest } from '../../middleware/request-logger.js';
@@ -266,6 +266,25 @@ export function registerChatCompletionsRoute(
         });
       }
 
+      // 요청 body의 reasoning_effort가 있으면 화이트리스트 검증 후 model_mapping 값보다 우선 적용
+      let bodyReasoningEffort: ReasoningEffort | undefined;
+      if (body.reasoning_effort != null) {
+        const normalized = typeof body.reasoning_effort === 'string'
+          ? body.reasoning_effort.trim().toLowerCase()
+          : '';
+        if (!isReasoningEffort(normalized)) {
+          return reply.status(400).send({
+            error: {
+              message: 'reasoning_effort must be one of: low, medium, high, xhigh, max.',
+              type: 'invalid_request_error',
+              param: 'reasoning_effort',
+              code: 'invalid_reasoning_effort',
+            },
+          });
+        }
+        bodyReasoningEffort = normalized;
+      }
+
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
 
@@ -289,6 +308,7 @@ export function registerChatCompletionsRoute(
             modelAlias: body.model,
             provider: cached.provider,
             actualModel: routes[0].actualModel,
+            reasoningEffort: bodyReasoningEffort ?? routes[0].reasoningEffort,
             status: 'success',
             statusCode: 200,
             promptTokens: cachedBody.usage?.prompt_tokens,
@@ -344,6 +364,7 @@ export function registerChatCompletionsRoute(
           modelAlias: body.model,
           provider: route.provider,
           actualModel: route.actualModel,
+          reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
           isStream: body.stream ?? false,
           startedAt: startTime,
         });
@@ -363,6 +384,7 @@ export function registerChatCompletionsRoute(
             modelAlias: body.model,
             provider: route.provider,
             actualModel: route.actualModel,
+            reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             isStream: body.stream ?? false,
             requestMessages: body.messages,
           });
@@ -413,6 +435,7 @@ export function registerChatCompletionsRoute(
               signal: abortController.signal,
               onDebug,
               clientKey: apiKeyId,
+              reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             });
 
             try {
@@ -454,6 +477,7 @@ export function registerChatCompletionsRoute(
                 modelAlias: body.model,
                 provider: route.provider,
                 actualModel: route.actualModel,
+                reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
                 status: 'error',
                 statusCode: 200,
                 latencyMs: Date.now() - startTime,
@@ -475,6 +499,7 @@ export function registerChatCompletionsRoute(
               modelAlias: body.model,
               provider: route.provider,
               actualModel: route.actualModel,
+              reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
               status: 'success',
               statusCode: 200,
               // ADD-05: 실제 토큰 수 사용 (없으면 completionTokens만 추정)
@@ -519,6 +544,7 @@ export function registerChatCompletionsRoute(
               temperature: body.temperature,
               onDebug,
               clientKey: apiKeyId,
+              reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             }),
           );
 
@@ -572,6 +598,7 @@ export function registerChatCompletionsRoute(
             modelAlias: body.model,
             provider: route.provider,
             actualModel: route.actualModel,
+            reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             status: 'success',
             statusCode: 200,
             promptTokens: result.usage.promptTokens,
@@ -612,6 +639,7 @@ export function registerChatCompletionsRoute(
             modelAlias: body.model,
             provider: route.provider,
             actualModel: route.actualModel,
+            reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             status: isTimeout ? 'timeout' : 'error',
             statusCode: isTimeout ? 504 : 502,
             latencyMs: errLatency,

@@ -155,6 +155,11 @@ export default function DashboardPage() {
                   <span className="text-gray-700 dark:text-gray-300 font-mono">{req.modelAlias}</span>
                   <span className="text-gray-400 dark:text-gray-500">{req.provider}</span>
                   <span className="text-gray-500 dark:text-gray-600 font-mono">{req.actualModel}</span>
+                  {req.reasoningEffort && (
+                    <span className="px-1.5 py-0.5 rounded font-mono bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300" title="reasoning_effort">
+                      {req.reasoningEffort}
+                    </span>
+                  )}
                   {req.isStream && <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded text-xs">SSE</span>}
                 </div>
                 <div className="flex items-center gap-2">
@@ -242,6 +247,11 @@ export default function DashboardPage() {
                       <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                       <span className="text-blue-600 dark:text-blue-300 font-mono">{req.modelAlias}</span>
                       <span className="text-gray-500 dark:text-gray-600">{req.provider}</span>
+                      {req.reasoningEffort && (
+                        <span className="px-1 py-0.5 rounded font-mono bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 text-[10px]" title="reasoning_effort">
+                          {req.reasoningEffort}
+                        </span>
+                      )}
                       {req.isStream && <span className="px-1 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded text-[10px]">SSE</span>}
                     </div>
                     <div className="flex items-center gap-2">
@@ -263,6 +273,11 @@ export default function DashboardPage() {
                       </span>
                       <span className="text-gray-700 dark:text-gray-300 font-mono">{req.modelAlias}</span>
                       <span className="text-gray-500 dark:text-gray-600">{req.provider}</span>
+                      {req.reasoningEffort && (
+                        <span className="px-1 py-0.5 rounded font-mono bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 text-[10px]" title="reasoning_effort">
+                          {req.reasoningEffort}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className={reqStatusStyle[req.status] ?? 'text-gray-400'}>
@@ -344,6 +359,11 @@ export default function DashboardPage() {
                     <span className="text-gray-500 dark:text-gray-600 font-mono">{formatTime(err.createdAt)}</span>
                     <span className="text-gray-700 dark:text-gray-300 font-mono">{err.modelAlias}</span>
                     <span className="text-gray-500 dark:text-gray-600">{err.provider}</span>
+                    {err.reasoningEffort && (
+                      <span className="px-1 py-0.5 rounded font-mono bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 text-[10px]" title="reasoning_effort">
+                        {err.reasoningEffort}
+                      </span>
+                    )}
                     <span className={`px-1.5 py-0.5 rounded ${err.status === 'timeout' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400' : 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400'}`}>
                       {err.status}
                     </span>

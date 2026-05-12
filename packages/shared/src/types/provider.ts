@@ -83,6 +83,20 @@ export interface DebugCaptureInfo {
   rawResponseText?: string;
 }
 
+// CLI 추론 수준 — Claude(--effort), Codex(model_reasoning_effort), Copilot(--effort) 공통.
+// codex는 'xhigh'/'max'를 지원하지 않으므로 codex provider에서 'high'로 폴백한다.
+// Gemini는 지원하지 않으므로 무시된다.
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export const REASONING_EFFORT_VALUES: readonly ReasoningEffort[] = [
+  'low', 'medium', 'high', 'xhigh', 'max',
+] as const;
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === 'string'
+    && (REASONING_EFFORT_VALUES as readonly string[]).includes(value);
+}
+
 export interface ExecuteOptions {
   messages: ChatMessage[];
   model: string;
@@ -92,6 +106,8 @@ export interface ExecuteOptions {
   signal?: AbortSignal;
   onDebug?: (info: DebugCaptureInfo) => void;
   clientKey?: string;  // 세션 재사용용 클라이언트 식별자 (API key ID 등)
+  // 모델 매핑에서 지정한 CLI 추론 수준 (provider별 옵션으로 변환)
+  reasoningEffort?: ReasoningEffort;
   // Image generation passthrough (OpenAI Images API)
   responseFormat?: 'url' | 'b64_json';
   n?: number;

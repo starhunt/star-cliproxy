@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import type { ValidationConfig } from '@star-cliproxy/shared';
+import type { ValidationConfig, ReasoningEffort } from '@star-cliproxy/shared';
+import { isReasoningEffort } from '@star-cliproxy/shared';
 import { nanoid } from 'nanoid';
 import { createRequestId } from '../../utils/stream-transformer.js';
 import { logRequest } from '../../middleware/request-logger.js';
@@ -45,6 +46,7 @@ interface AnthropicMessagesRequest {
   tool_choice?: unknown;
   thinking?: unknown;
   metadata?: unknown;
+  reasoning_effort?: string;  // 모델 매핑보다 우선 적용
 }
 
 // null byte 제거 (CLI 인젝션 방지)
@@ -223,6 +225,20 @@ export function registerMessagesRoute(
         return reply.status(400).send(makeAnthropicError('invalid_request_error', `Model "${body.model}" not found. Check model mappings.`));
       }
 
+      // 요청 body의 reasoning_effort가 있으면 화이트리스트 검증 후 model_mapping 값보다 우선 적용
+      let bodyReasoningEffort: ReasoningEffort | undefined;
+      if (body.reasoning_effort != null) {
+        const normalized = typeof body.reasoning_effort === 'string'
+          ? body.reasoning_effort.trim().toLowerCase()
+          : '';
+        if (!isReasoningEffort(normalized)) {
+          return reply.status(400).send(
+            makeAnthropicError('invalid_request_error', 'reasoning_effort must be one of: low, medium, high, xhigh, max.'),
+          );
+        }
+        bodyReasoningEffort = normalized;
+      }
+
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
 
@@ -245,6 +261,7 @@ export function registerMessagesRoute(
             modelAlias: body.model,
             provider: cached.provider,
             actualModel: routes[0].actualModel,
+            reasoningEffort: bodyReasoningEffort ?? routes[0].reasoningEffort,
             status: 'success',
             statusCode: 200,
             promptTokens: cachedBody.usage?.input_tokens,
@@ -293,6 +310,7 @@ export function registerMessagesRoute(
           modelAlias: body.model,
           provider: route.provider,
           actualModel: route.actualModel,
+          reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
           isStream: body.stream ?? false,
           startedAt: startTime,
         });
@@ -311,6 +329,7 @@ export function registerMessagesRoute(
             modelAlias: body.model,
             provider: route.provider,
             actualModel: route.actualModel,
+            reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             isStream: body.stream ?? false,
             requestMessages: internalMessages,
           });
@@ -379,6 +398,7 @@ export function registerMessagesRoute(
                 signal: abortController.signal,
                 onDebug,
                 clientKey: apiKeyId,
+                reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
               });
 
               try {
@@ -468,6 +488,7 @@ export function registerMessagesRoute(
                   modelAlias: body.model,
                   provider: route.provider,
                   actualModel: route.actualModel,
+                  reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
                   status: 'error',
                   statusCode: 200,
                   latencyMs: Date.now() - startTime,
@@ -506,6 +527,7 @@ export function registerMessagesRoute(
                 modelAlias: body.model,
                 provider: route.provider,
                 actualModel: route.actualModel,
+                reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
                 status: 'success',
                 statusCode: 200,
                 promptTokens: streamUsage?.promptTokens ?? 0,
@@ -546,6 +568,7 @@ export function registerMessagesRoute(
               temperature: body.temperature,
               onDebug,
               clientKey: apiKeyId,
+              reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             }),
           );
 
@@ -597,6 +620,7 @@ export function registerMessagesRoute(
             modelAlias: body.model,
             provider: route.provider,
             actualModel: route.actualModel,
+            reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             status: 'success',
             statusCode: 200,
             promptTokens: result.usage.promptTokens,
@@ -634,6 +658,7 @@ export function registerMessagesRoute(
             modelAlias: body.model,
             provider: route.provider,
             actualModel: route.actualModel,
+            reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
             status: isTimeout ? 'timeout' : 'error',
             statusCode: isTimeout ? 504 : 502,
             latencyMs: errLatency,

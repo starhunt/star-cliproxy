@@ -69,6 +69,11 @@ export class ClaudeProvider extends BaseProvider {
 
     // Claude CLI는 --max-tokens를 지원하지 않음 (API 전용 옵션)
 
+    // 추론 수준 주입 (사용자가 extra_args로 직접 넣지 않은 경우에만)
+    if (options.reasoningEffort && !this.config.extra_args.includes('--effort')) {
+      args.push('--effort', options.reasoningEffort);
+    }
+
     args.push(...this.config.extra_args);
 
     return args;
