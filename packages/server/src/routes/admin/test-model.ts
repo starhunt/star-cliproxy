@@ -45,6 +45,8 @@ export function registerTestModelRoute(
         messages: [{ role: 'user', content: testPrompt }],
         model: actual_model,
         stream: false,
+        // 백엔드의 max_total_tokens 제한과 무관하게 통과하도록 작은 값 사용
+        maxTokens: 64,
       });
 
       const latencyMs = Date.now() - startTime;

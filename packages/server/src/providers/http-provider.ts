@@ -102,7 +102,9 @@ export class HttpProvider extends BaseProvider {
       })),
       stream,
     };
-    body.max_tokens = options.maxTokens ?? this.httpConfig.default_max_tokens ?? 65536;
+    // max_tokens 미지정 시 필드 자체를 생략 → 서버 기본값 사용 (vLLM 등의 max_total_tokens 제한 회피)
+    const maxTokens = options.maxTokens ?? this.httpConfig.default_max_tokens;
+    if (maxTokens !== undefined) body.max_tokens = maxTokens;
     if (options.temperature !== undefined) body.temperature = options.temperature;
     return body;
   }

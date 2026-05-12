@@ -316,6 +316,8 @@ export function registerHttpProviderRoutes(
           messages: [{ role: 'user', content: 'Say "OK" and nothing else.' }],
           model,
           stream: false,
+          // 백엔드의 max_total_tokens 제한과 무관하게 통과하도록 작은 값 사용
+          maxTokens: 64,
         });
         const latencyMs = Date.now() - startTime;
 
