@@ -284,6 +284,55 @@ Default mappings (add or modify from the dashboard):
 
 Mapping the same alias to multiple providers enables **automatic fallback** in priority order.
 
+### Reasoning Effort
+
+Control the underlying CLI's reasoning level (e.g. `gpt-5.5-medium`, `claude-sonnet-high`). Set it once on a mapping, or override per request — applies in CLI mode.
+
+**Option A — bake into a model alias** (`config.yaml` or Dashboard → Models):
+
+```yaml
+model_mappings:
+  - alias: "gpt-5.5-medium"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    reasoning_effort: "medium"
+  - alias: "gpt-5.5-high"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    reasoning_effort: "high"
+  - alias: "claude-sonnet-high"
+    provider: "claude"
+    actual_model: "claude-sonnet-4-6"
+    reasoning_effort: "high"
+```
+
+```bash
+curl http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.5-high","messages":[{"role":"user","content":"hi"}]}'
+```
+
+**Option B — pass `reasoning_effort` per request** (overrides the mapping):
+
+```bash
+curl http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.5","reasoning_effort":"high","messages":[...]}'
+```
+
+Levels: `low` · `medium` · `high` · `xhigh` · `max`. Per-provider mapping:
+
+| Provider | CLI flag injected | Levels supported | Fallback |
+|----------|-------------------|------------------|----------|
+| Claude | `--effort <level>` | low, medium, high, xhigh, max | none |
+| Codex | `-c model_reasoning_effort=<level>` | low, medium, high | `xhigh`/`max` → `high` |
+| Copilot | `--effort <level>` | low, medium, high, xhigh | `max` → `xhigh` |
+| Gemini | — | (unsupported) | field is ignored |
+
+Notes:
+- Applies in **CLI mode** only. Codex App Server / Claude SDK modes use their own config channels (`~/.codex/config.toml`, `sdk_options`).
+- The Playground has a Reasoning selector (auto-disabled for unsupported providers); Logs / Debug / Dashboard show the active level as a badge.
+
 ## HTTP Providers
 
 Connect any local OpenAI-compatible server directly — no CLI wrapper needed.

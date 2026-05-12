@@ -283,6 +283,55 @@ localcc() {
 
 같은 alias에 여러 provider를 매핑하면 priority 순으로 **자동 폴백**됩니다.
 
+### Reasoning Effort (추론 수준)
+
+CLI의 추론 수준을 제어할 수 있습니다 (예: `gpt-5.5-medium`, `claude-sonnet-high`). 매핑에 박아두거나 요청마다 덮어쓸 수 있으며, **CLI 모드**에서만 적용됩니다.
+
+**방법 A — 모델 별칭에 미리 설정** (`config.yaml` 또는 대시보드 → Models):
+
+```yaml
+model_mappings:
+  - alias: "gpt-5.5-medium"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    reasoning_effort: "medium"
+  - alias: "gpt-5.5-high"
+    provider: "codex"
+    actual_model: "gpt-5.5"
+    reasoning_effort: "high"
+  - alias: "claude-sonnet-high"
+    provider: "claude"
+    actual_model: "claude-sonnet-4-6"
+    reasoning_effort: "high"
+```
+
+```bash
+curl http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.5-high","messages":[{"role":"user","content":"hi"}]}'
+```
+
+**방법 B — 요청 body로 즉석 지정** (매핑보다 우선):
+
+```bash
+curl http://localhost:8300/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.5","reasoning_effort":"high","messages":[...]}'
+```
+
+지원 레벨: `low` · `medium` · `high` · `xhigh` · `max`. 프로바이더별 매핑:
+
+| Provider | 주입되는 CLI 플래그 | 지원 레벨 | 폴백 |
+|----------|--------------------|----------|------|
+| Claude | `--effort <level>` | low, medium, high, xhigh, max | 없음 |
+| Codex | `-c model_reasoning_effort=<level>` | low, medium, high | `xhigh`/`max` → `high` |
+| Copilot | `--effort <level>` | low, medium, high, xhigh | `max` → `xhigh` |
+| Gemini | — | (미지원) | 필드 무시 |
+
+참고:
+- **CLI 모드 전용**입니다. Codex App Server / Claude SDK 모드는 각자 설정 채널(`~/.codex/config.toml`, `sdk_options`)을 사용하세요.
+- 플레이그라운드에 Reasoning 셀렉트가 있고(비지원 provider 자동 비활성), 로그 / 디버그 / 대시보드 최근·진행 요청에 추론 수준 배지가 표시됩니다.
+
 ## Configuration
 
 ### config.yaml
