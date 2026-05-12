@@ -84,6 +84,7 @@ providers:
     timeout_ms: 300000
     extra_args:
       - "--yolo"                       # tool 자동 승인 (headless 모드 필수)
+      - "--skip-trust"                 # headless 실행 시 trusted folder 프롬프트 방지
     # working_dir: "/path/to/project"  # 에이전틱 파일 작업 시 필수
 
 # 플러그인: 커스텀 프로바이더를 코드 수정 없이 추가

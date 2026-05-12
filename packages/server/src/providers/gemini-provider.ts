@@ -119,12 +119,14 @@ export class GeminiProvider extends BaseProvider {
           : (s: string) => "'" + s.replace(/\x00/g, '').replace(/'/g, "'\\''") + "'";
         const shellCmd = [shellEscape(this.config.cli_path), ...args.map(shellEscape)].join(' ') + ' > ' + shellEscape(tmpFile);
         const child = spawn(shellCmd, {
-          stdio: ['pipe', 'ignore', 'ignore'],
+          stdio: ['pipe', 'ignore', 'pipe'],
           shell: true,
           env: this.getCleanEnv(),
           cwd: this.workingDir,
         });
         trackProcess(child);
+        const stderrChunks: Buffer[] = [];
+        child.stderr?.on('data', (data: Buffer) => stderrChunks.push(data));
 
         // stdin으로 프롬프트 전달 후 닫기
         if (stdinData) {
@@ -154,7 +156,9 @@ export class GeminiProvider extends BaseProvider {
         child.on('close', (code) => {
           clearTimeout(timeout);
           if (code !== 0) {
-            reject(new Error(`gemini CLI exited with code ${code}`));
+            const stderr = Buffer.concat(stderrChunks).toString('utf-8').trim();
+            const detail = stderr ? `: ${stderr}` : '';
+            reject(new Error(`gemini CLI exited with code ${code}${detail}`));
           } else {
             resolve();
           }
