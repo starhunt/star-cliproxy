@@ -3,6 +3,8 @@ import type {
   ExecuteResult,
   EmbeddingOptions,
   EmbeddingResult,
+  RerankOptions,
+  RerankResult,
   TtsOptions,
   TtsResult,
   ProviderEvent,
@@ -22,7 +24,7 @@ import { BaseProvider } from './base-provider.js';
  */
 export class HttpProvider extends BaseProvider {
   readonly name: string;
-  override readonly endpointTypes = ['chat', 'embeddings', 'tts'] as const;
+  override readonly endpointTypes = ['chat', 'embeddings', 'tts', 'rerank'] as const;
   private httpConfig: HttpProviderConfig;
 
   constructor(providerName: string, httpConfig: HttpProviderConfig) {
@@ -428,6 +430,118 @@ export class HttpProvider extends BaseProvider {
     }
   }
 
+  // === Rerank 실행 ===
+  // 업스트림은 TEI(`/rerank` 네이티브 포맷, `{query, texts}` → `[{index, score, text?}]`)를 가정.
+  // base_url이 `.../v1`로 끝나는 경우 buildUrl('/rerank')은 `.../v1/rerank`가 되므로
+  // 업스트림에 `/v1/rerank`가 없다면 reverse-proxy/사이드카에서 `/rerank`로 rewrite 필요.
+
+  async executeRerank(options: RerankOptions): Promise<RerankResult> {
+    const url = this.buildUrl('/rerank');
+    const headers = this.buildHeaders();
+    const body: Record<string, unknown> = {
+      query: options.query,
+      texts: options.documents,
+    };
+    if (options.returnDocuments) body.return_text = true;
+
+    const debugInfo: Partial<DebugCaptureInfo> = {
+      cliArgs: [],
+      httpRequest: {
+        method: 'POST',
+        url,
+        headers: maskApiKey(headers),
+        body,
+      },
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.httpConfig.timeout_ms);
+
+    if (options.signal) {
+      options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      const rawText = await response.text();
+      let responseBody: TeiRerankResponse;
+      try {
+        responseBody = JSON.parse(rawText) as TeiRerankResponse;
+      } catch {
+        debugInfo.rawResponseText = rawText;
+        debugInfo.httpResponse = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+        };
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+        throw new Error(`${this.name}: Invalid JSON response: ${rawText.slice(0, 200)}`);
+      }
+
+      debugInfo.rawResponseText = rawText;
+      debugInfo.httpResponse = {
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries()),
+        body: responseBody,
+      };
+
+      if (!response.ok) {
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+        const errObj = (responseBody as unknown as Record<string, unknown>)?.error;
+        const errMsg = errObj ? JSON.stringify(errObj) : `HTTP ${response.status}`;
+        throw new Error(`${this.name} HTTP error: ${errMsg}`);
+      }
+
+      options.onDebug?.(debugInfo as DebugCaptureInfo);
+
+      const items = Array.isArray(responseBody) ? responseBody : [];
+      let results = items.map((item) => ({
+        index: item.index,
+        relevanceScore: item.score,
+        ...(options.returnDocuments && typeof item.text === 'string' ? { document: item.text } : {}),
+      }));
+
+      // TEI는 보통 score 내림차순 정렬해 반환하지만, 일관성을 위해 명시적으로 정렬.
+      results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      if (typeof options.topN === 'number' && options.topN > 0) {
+        results = results.slice(0, options.topN);
+      }
+
+      // TEI는 usage를 반환하지 않으므로 대략적으로 추정 (query + 모든 문서 길이의 워드 수)
+      const approxTokens = Math.ceil(
+        (options.query.length + options.documents.reduce((sum, d) => sum + d.length, 0)) / 4,
+      );
+
+      return {
+        results,
+        model: options.model,
+        usage: {
+          totalTokens: approxTokens,
+        },
+      };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        if (options.signal?.aborted) {
+          throw new Error('Request cancelled');
+        }
+        throw new Error(`${this.name} HTTP request timed out after ${this.httpConfig.timeout_ms}ms`);
+      }
+      if (!debugInfo.httpResponse) {
+        options.onDebug?.(debugInfo as DebugCaptureInfo);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   // === TTS 실행 ===
 
   async executeTts(options: TtsOptions): Promise<TtsResult> {
@@ -648,6 +762,11 @@ interface OpenAIEmbeddingResponse {
     total_tokens?: number;
   };
 }
+
+// TEI rerank 응답: `[{index, score, text?}]` 형식. 에러 시 `{error: ...}` 객체.
+type TeiRerankResponse = Array<{ index: number; score: number; text?: string }> & {
+  error?: unknown;
+};
 
 // === 유틸리티 ===
 

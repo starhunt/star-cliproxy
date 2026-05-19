@@ -139,6 +139,30 @@ export interface EmbeddingResponse {
   };
 }
 
+// Rerank API 호환 타입 (Cohere Rerank API 스타일)
+export interface RerankRequest {
+  model: string;
+  query: string;
+  documents: string[];
+  top_n?: number;
+  return_documents?: boolean;
+}
+
+export interface RerankResponseItem {
+  index: number;
+  relevance_score: number;
+  document?: { text: string };
+}
+
+export interface RerankResponse {
+  id: string;
+  results: RerankResponseItem[];
+  model: string;
+  usage: {
+    total_tokens: number;
+  };
+}
+
 // OpenAI Audio Speech (TTS) API 호환 타입
 export type TtsResponseFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
 

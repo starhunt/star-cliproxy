@@ -13,6 +13,7 @@ import { registerMessagesRoute } from './routes/v1/messages.js';
 import { registerModelsRoute } from './routes/v1/models.js';
 import { registerImageGenerationsRoute } from './routes/v1/images-generations.js';
 import { registerEmbeddingsRoute } from './routes/v1/embeddings.js';
+import { registerRerankRoute } from './routes/v1/rerank.js';
 import { registerAudioSpeechRoute } from './routes/v1/audio-speech.js';
 import { registerModelMappingsRoutes } from './routes/admin/model-mappings.js';
 import { registerApiKeysRoutes } from './routes/admin/api-keys.js';
@@ -368,6 +369,15 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
     debug,
   });
   registerEmbeddingsRoute(app, {
+    router,
+    queue: queueManager,
+    rateLimiter,
+    registry,
+    healthChecker,
+    activeRequests,
+    debug,
+  });
+  registerRerankRoute(app, {
     router,
     queue: queueManager,
     rateLimiter,
