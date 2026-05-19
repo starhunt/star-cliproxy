@@ -205,6 +205,10 @@ export interface ModelMapping {
   displayName: string | null;
   reasoningEffort: ReasoningEffort | null;
   providerOverrides: ProviderOverrides | null;
+  // null=상속(전역 default), true=노출, false=숨김
+  includeReasoning: boolean | null;
+  // 백엔드 비표준 필드 패스스루 (chat_template_kwargs / top_k / think 등)
+  extraBody: Record<string, unknown> | null;
   priority: number;
   enabled: boolean;
   createdAt: string;
@@ -222,6 +226,8 @@ export function createModelMapping(data: {
   display_name?: string;
   reasoning_effort?: ReasoningEffort | null;
   provider_overrides?: ProviderOverrides | null;
+  include_reasoning?: boolean | null;
+  extra_body?: Record<string, unknown> | null;
   priority?: number;
 }) {
   return request<ModelMapping>('/model-mappings', {
@@ -237,6 +243,8 @@ export function updateModelMapping(id: string, data: Partial<{
   display_name: string;
   reasoning_effort: ReasoningEffort | null;
   provider_overrides: ProviderOverrides | null;
+  include_reasoning: boolean | null;
+  extra_body: Record<string, unknown> | null;
   priority: number;
   enabled: boolean;
 }>) {

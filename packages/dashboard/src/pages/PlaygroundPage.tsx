@@ -22,6 +22,11 @@ interface Metrics {
   completedAt: number;  // epoch ms
 }
 
+interface PlaygroundResponse {
+  text: string;
+  reasoning: string;
+}
+
 function formatElapsed(ms: number): string {
   const sec = Math.floor(ms / 1000);
   const min = Math.floor(sec / 60);
@@ -46,6 +51,7 @@ interface PlaygroundState {
   apiKey: string;
   messages: Message[];
   response: string;
+  reasoning: string;
   metrics: Metrics | null;
 }
 
@@ -54,7 +60,7 @@ function loadPlaygroundState(): PlaygroundState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
-  return { model: '', apiKey: '', messages: [{ role: 'user', content: '' }], response: '', metrics: null };
+  return { model: '', apiKey: '', messages: [{ role: 'user', content: '' }], response: '', reasoning: '', metrics: null };
 }
 
 function savePlaygroundState(state: Partial<PlaygroundState>) {
@@ -95,6 +101,8 @@ export default function PlaygroundPage() {
 
   // 응답 상태 (이전 결과 복원)
   const [response, setResponse] = useState(saved.current.response);
+  const [reasoning, setReasoning] = useState(saved.current.reasoning ?? '');
+  const [reasoningOpen, setReasoningOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(saved.current.metrics);
@@ -128,6 +136,7 @@ export default function PlaygroundPage() {
   useEffect(() => { savePlaygroundState({ model: selectedModel }); }, [selectedModel]);
   useEffect(() => { savePlaygroundState({ messages }); }, [messages]);
   useEffect(() => { savePlaygroundState({ response }); }, [response]);
+  useEffect(() => { savePlaygroundState({ reasoning }); }, [reasoning]);
   useEffect(() => { if (metrics) savePlaygroundState({ metrics }); }, [metrics]);
 
   // 메시지 관리
@@ -143,6 +152,8 @@ export default function PlaygroundPage() {
       model: selectedModel,
       messages: messages.filter((m) => m.content.trim()),
       stream,
+      // Playground는 디버깅/탐색 도구이므로 항상 thinking을 받아온다.
+      include_reasoning: true,
     };
     if (temperature) body.temperature = parseFloat(temperature);
     if (maxTokens) body.max_tokens = parseInt(maxTokens);
@@ -159,6 +170,8 @@ export default function PlaygroundPage() {
     setLoading(true);
     setError(null);
     setResponse('');
+    setReasoning('');
+    setReasoningOpen(false);
     setMetrics(null);
     setElapsed(0);
 
@@ -198,6 +211,7 @@ export default function PlaygroundPage() {
         const decoder = new TextDecoder();
         let buffer = '';
         let accumulated = '';
+        let accumulatedReasoning = '';
         let usage = null;
         let streamDone = false;
 
@@ -222,9 +236,16 @@ export default function PlaygroundPage() {
 
             try {
               const parsed = JSON.parse(data);
-              const delta = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning;
-              if (delta) {
-                accumulated += delta;
+              const delta = parsed.choices?.[0]?.delta ?? {};
+              // reasoning_content는 thinking 본문, content는 최종 답변.
+              const reasoningDelta = delta.reasoning_content ?? delta.reasoning;
+              if (typeof reasoningDelta === 'string' && reasoningDelta) {
+                accumulatedReasoning += reasoningDelta;
+                setReasoning(accumulatedReasoning);
+                if (!reasoningOpen) setReasoningOpen(true);
+              }
+              if (typeof delta.content === 'string' && delta.content) {
+                accumulated += delta.content;
                 setResponse(accumulated);
               }
               if (parsed.usage) usage = parsed.usage;
@@ -251,8 +272,16 @@ export default function PlaygroundPage() {
       } else {
         // Non-streaming
         const data = await res.json();
-        const content = data.choices?.[0]?.message?.content ?? '';
+        const msg = data.choices?.[0]?.message ?? {};
+        const content = typeof msg.content === 'string' ? msg.content : '';
+        const reasoningText = typeof msg.reasoning_content === 'string'
+          ? msg.reasoning_content
+          : (typeof msg.reasoning === 'string' ? msg.reasoning : '');
         setResponse(content);
+        if (reasoningText) {
+          setReasoning(reasoningText);
+          setReasoningOpen(true);
+        }
         const now = Date.now();
         setMetrics({
           latencyMs: now - startTime,
@@ -279,10 +308,12 @@ export default function PlaygroundPage() {
 
   const handleClear = () => {
     setResponse('');
+    setReasoning('');
+    setReasoningOpen(false);
     setError(null);
     setMetrics(null);
     setMessages([{ role: 'user', content: '' }]);
-    savePlaygroundState({ response: '', metrics: null, messages: [{ role: 'user', content: '' }] });
+    savePlaygroundState({ response: '', reasoning: '', metrics: null, messages: [{ role: 'user', content: '' }] });
   };
 
   // 자동 스크롤
@@ -486,6 +517,41 @@ export default function PlaygroundPage() {
       {error && (
         <div className="px-4 py-3 rounded-lg border bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 text-sm">
           {error}
+        </div>
+      )}
+
+      {/* 추론 본문 (있을 때만) — 답변 위에 접힌 박스로 */}
+      {(reasoning || (loading && stream)) && (
+        <div className="bg-white dark:bg-gray-900 border border-purple-200 dark:border-purple-500/30 rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setReasoningOpen((v) => !v)}
+            className="w-full px-4 py-2 flex items-center justify-between gap-3 text-left hover:bg-purple-50/50 dark:hover:bg-purple-500/5 transition-colors"
+          >
+            <span className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-300 font-medium">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2a7 7 0 00-4 12.74V18a2 2 0 002 2h4a2 2 0 002-2v-3.26A7 7 0 0012 2z" strokeLinejoin="round" />
+                <path d="M9 22h6" strokeLinecap="round" />
+              </svg>
+              {t('playground.reasoning')}
+              {reasoning && (
+                <span className="text-[10px] font-mono text-purple-400 dark:text-purple-500">
+                  · {reasoning.length.toLocaleString()} chars
+                </span>
+              )}
+              {loading && stream && reasoning && (
+                <span className="inline-block w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+              )}
+            </span>
+            <span className="text-xs text-purple-400 dark:text-purple-500">
+              {reasoningOpen ? t('playground.hide') : t('playground.show')}
+            </span>
+          </button>
+          {reasoningOpen && (
+            <div className="px-4 py-3 border-t border-purple-200 dark:border-purple-500/20 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap max-h-72 overflow-y-auto font-mono leading-relaxed">
+              {reasoning || (loading ? <span className="text-purple-400 dark:text-purple-500 animate-pulse">{t('playground.waiting')}</span> : '')}
+            </div>
+          )}
         </div>
       )}
 

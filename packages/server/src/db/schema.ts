@@ -21,6 +21,13 @@ export const modelMappings = sqliteTable('model_mappings', {
   displayName: text('display_name'),
   reasoningEffort: text('reasoning_effort'),
   providerOverrides: text('provider_overrides'),  // JSON string, 화이트리스트 기반 옵션 오버라이드
+  // 추론 노출 정책: NULL=상속(전역 default), 1=노출, 0=숨김.
+  // body.include_reasoning > mapping.includeReasoning > 전역 default 순으로 적용.
+  includeReasoning: integer('include_reasoning', { mode: 'boolean' }),
+  // 백엔드 비표준 필드 패스스루 (JSON 객체). 예: {chat_template_kwargs:{enable_thinking:false}} (vLLM/sglang),
+  // {think:false} (Ollama), {top_k:20, repetition_penalty:1.05} 등.
+  // HTTP provider만 사용하고 CLI provider는 무시.
+  extraBody: text('extra_body'),
   priority: integer('priority').notNull().default(0),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull().default('(datetime(\'now\'))'),

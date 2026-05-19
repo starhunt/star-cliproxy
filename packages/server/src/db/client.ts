@@ -165,6 +165,20 @@ async function createTables(client: Client) {
   } catch {
     // 이미 존재하면 무시
   }
+
+  // 기존 DB 마이그레이션: model_mappings.include_reasoning (NULL=상속, 0/1=명시)
+  try {
+    await client.execute('ALTER TABLE model_mappings ADD COLUMN include_reasoning INTEGER');
+  } catch {
+    // 이미 존재하면 무시
+  }
+
+  // 기존 DB 마이그레이션: model_mappings.extra_body (백엔드 비표준 필드 JSON 패스스루)
+  try {
+    await client.execute('ALTER TABLE model_mappings ADD COLUMN extra_body TEXT');
+  } catch {
+    // 이미 존재하면 무시
+  }
 }
 
 export function getDatabase() {

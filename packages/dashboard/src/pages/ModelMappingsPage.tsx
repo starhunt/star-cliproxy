@@ -29,6 +29,10 @@ interface MappingFormState {
   provider: string;
   actual_model: string;
   reasoning_effort: ReasoningEffortValue;
+  // ''=상속(전역 default), 'true'=노출, 'false'=숨김
+  include_reasoning: TriState;
+  // 백엔드 비표준 필드 JSON (chat_template_kwargs / top_k / think 등). 빈 문자열 = 미설정.
+  extra_body_text: string;
   priority: number;
   // codex provider 한정 오버라이드 — 다른 provider 선택 시 무시
   override_ephemeral: TriState;
@@ -55,6 +59,8 @@ const EMPTY_FORM: MappingFormState = {
   provider: 'claude',
   actual_model: '',
   reasoning_effort: '',
+  include_reasoning: '',
+  extra_body_text: '',
   priority: 0,
   override_ephemeral: '',
   override_enable_session_reuse: '',
@@ -302,12 +308,35 @@ export default function ModelMappingsPage() {
     const reasoningEffort: ReasoningEffort | null = form.reasoning_effort === ''
       ? null
       : form.reasoning_effort;
+    const includeReasoning: boolean | null = form.include_reasoning === ''
+      ? null
+      : form.include_reasoning === 'true';
+
+    // extra_body 파싱. 빈 문자열은 null, 잘못된 JSON이면 에러.
+    let extraBody: Record<string, unknown> | null = null;
+    const extraText = form.extra_body_text.trim();
+    if (extraText) {
+      try {
+        const parsed = JSON.parse(extraText);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          setError('extra_body must be a JSON object.');
+          return;
+        }
+        extraBody = parsed as Record<string, unknown>;
+      } catch {
+        setError('extra_body is not valid JSON.');
+        return;
+      }
+    }
+
     const payload = {
       alias: form.alias,
       provider: form.provider,
       actual_model: form.actual_model,
       reasoning_effort: reasoningEffort,
       provider_overrides: buildOverridesPayload(form),
+      include_reasoning: includeReasoning,
+      extra_body: extraBody,
       priority: form.priority,
     };
     try {
@@ -332,6 +361,10 @@ export default function ModelMappingsPage() {
       provider: m.provider,
       actual_model: m.actualModel,
       reasoning_effort: m.reasoningEffort ?? '',
+      include_reasoning: m.includeReasoning === null || m.includeReasoning === undefined
+        ? ''
+        : (m.includeReasoning ? 'true' : 'false'),
+      extra_body_text: m.extraBody ? JSON.stringify(m.extraBody, null, 2) : '',
       priority: m.priority,
       ...applyOverridesToForm(m.providerOverrides),
     });
@@ -516,6 +549,46 @@ export default function ModelMappingsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                  {t('models.includeReasoningLabel')}
+                  <span
+                    className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700"
+                    title={t('models.includeReasoningHelp')}
+                  >
+                    {t('models.overrides.effectiveLabel')}:{' '}
+                    {form.include_reasoning === '' ? 'inherit' : form.include_reasoning}
+                  </span>
+                </label>
+                <select
+                  value={form.include_reasoning}
+                  onChange={(e) => setForm({ ...form, include_reasoning: e.target.value as TriState })}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
+                  title={t('models.includeReasoningHelp')}
+                >
+                  <option value="">{t('models.includeReasoningInherit')}</option>
+                  <option value="true">{t('models.includeReasoningTrue')}</option>
+                  <option value="false">{t('models.includeReasoningFalse')}</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                  {t('models.extraBodyLabel')}
+                  <span className="ml-2 text-[10px] text-gray-400 dark:text-gray-500 font-normal">
+                    {t('models.extraBodyHint')}
+                  </span>
+                </label>
+                <textarea
+                  value={form.extra_body_text}
+                  onChange={(e) => setForm({ ...form, extra_body_text: e.target.value })}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-xs font-mono text-gray-800 dark:text-gray-200"
+                  rows={4}
+                  placeholder='{"chat_template_kwargs": {"enable_thinking": false}}'
+                />
+                <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                  {t('models.extraBodyHelp')}
+                </p>
               </div>
               <div>
                 <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">{t('models.priorityLabel')}</label>

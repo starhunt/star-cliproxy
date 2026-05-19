@@ -93,6 +93,11 @@ export class HttpProvider extends BaseProvider {
     return headers;
   }
 
+  // cliproxy가 직접 관리하는 표준 필드. extra_body가 이 키들을 덮어쓰지 못하게 보호.
+  private static readonly RESERVED_BODY_KEYS = new Set([
+    'model', 'messages', 'stream', 'max_tokens', 'temperature',
+  ]);
+
   private buildRequestBody(options: ExecuteOptions, stream: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: options.model,
@@ -106,6 +111,16 @@ export class HttpProvider extends BaseProvider {
     const maxTokens = options.maxTokens ?? this.httpConfig.default_max_tokens;
     if (maxTokens !== undefined) body.max_tokens = maxTokens;
     if (options.temperature !== undefined) body.temperature = options.temperature;
+
+    // extra_body 머지: 백엔드 비표준 필드 패스스루 (chat_template_kwargs, top_k, think 등).
+    // 표준 필드(모델/메시지 등)는 cliproxy가 우선 — extra_body로 덮어쓰기 차단.
+    if (options.extraBody && typeof options.extraBody === 'object') {
+      for (const [key, value] of Object.entries(options.extraBody)) {
+        if (HttpProvider.RESERVED_BODY_KEYS.has(key)) continue;
+        if (value === undefined) continue;
+        body[key] = value;
+      }
+    }
     return body;
   }
 
@@ -175,12 +190,18 @@ export class HttpProvider extends BaseProvider {
       options.onDebug?.(debugInfo as DebugCaptureInfo);
 
       const choice = responseBody.choices?.[0];
-      // content 우선, 비어있으면 reasoning fallback (reasoning 모델 지원)
-      const content = choice?.message?.content || choice?.message?.reasoning || '';
+      const msg = choice?.message;
+      // 분리 필드 우선: 백엔드가 reasoning_content/reasoning을 별도로 보내면 그대로 보존.
+      // 시간차 폴백: content가 비고 reasoning만 있는 경우(일부 백엔드)도 reasoning을 답변으로.
+      const rawContent = msg?.content ?? '';
+      const rawReasoning = msg?.reasoning_content ?? msg?.reasoning ?? '';
+      const content = rawContent || rawReasoning || '';
+      const reasoning = rawContent ? rawReasoning : '';
       const usage = responseBody.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
       return {
         content,
+        ...(reasoning ? { reasoning } : {}),
         usage: {
           promptTokens: usage.prompt_tokens ?? 0,
           completionTokens: usage.completion_tokens ?? 0,
@@ -548,10 +569,14 @@ function parseSSELineToEvents(line: string): ProviderEvent[] {
 
     const events: ProviderEvent[] = [];
 
-    // content 우선, 비어있으면 reasoning fallback (reasoning 모델 지원)
-    const text = delta?.content || delta?.reasoning;
-    if (text) {
-      events.push({ type: 'text_delta', text });
+    // reasoning_content/reasoning은 thinking 이벤트로, content는 text_delta로 분리 emit.
+    // 백엔드(vLLM/sglang 등)가 reasoning_parser를 켠 경우 별도 필드로 도착한다.
+    const reasoningText = delta?.reasoning_content || delta?.reasoning;
+    if (reasoningText) {
+      events.push({ type: 'thinking', text: reasoningText });
+    }
+    if (delta?.content) {
+      events.push({ type: 'text_delta', text: delta.content });
     }
 
     // tool_calls 지원
@@ -577,7 +602,7 @@ function parseSSELineToEvents(line: string): ProviderEvent[] {
 
 interface OpenAIChatCompletionResponse {
   choices?: Array<{
-    message?: { content?: string; reasoning?: string; role?: string };
+    message?: { content?: string; reasoning?: string; reasoning_content?: string; role?: string };
     finish_reason?: string;
   }>;
   usage?: {
@@ -592,6 +617,7 @@ interface OpenAIChatCompletionChunk {
     delta?: {
       content?: string;
       reasoning?: string;
+      reasoning_content?: string;
       role?: string;
       tool_calls?: Array<{
         index?: number;

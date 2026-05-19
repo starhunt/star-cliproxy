@@ -14,6 +14,9 @@ export interface ChatMessage {
   content: ChatMessageContent;
   name?: string;            // tool role: 함수/도구 이름
   tool_call_id?: string;    // tool role: 연관된 tool_call ID
+  // assistant 응답에만 사용: 추론 모델의 thinking/CoT 본문. content와 분리되어 보존됨.
+  // OpenAI 공식 스펙 외 비표준 확장 (vLLM/sglang/OpenRouter 등과 호환).
+  reasoning_content?: string;
 }
 
 export interface ChatCompletionRequest {
@@ -26,6 +29,8 @@ export interface ChatCompletionRequest {
   stop?: string | string[];
   // OpenAI 호환 추론 수준. 지정 시 model_mapping의 값보다 우선.
   reasoning_effort?: string;
+  // 추론 본문(thinking)을 응답에 포함할지. 우선순위: body > mapping > 전역 default(false).
+  include_reasoning?: boolean;
 }
 
 export interface ChatCompletionChoice {
@@ -60,6 +65,8 @@ export interface ChatCompletionChunkToolCall {
 export interface ChatCompletionChunkDelta {
   role?: 'assistant';
   content?: string;
+  // 추론 본문 delta. vLLM/sglang reasoning_parser 호환 비표준 확장.
+  reasoning_content?: string;
   tool_calls?: ChatCompletionChunkToolCall[];
 }
 

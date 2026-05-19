@@ -12,6 +12,8 @@ interface CreateMappingBody {
   display_name?: string;
   reasoning_effort?: string | null;
   provider_overrides?: ProviderOverrides | null;
+  include_reasoning?: boolean | null;
+  extra_body?: Record<string, unknown> | null;
   priority?: number;
   enabled?: boolean;
 }
@@ -23,8 +25,43 @@ interface UpdateMappingBody {
   display_name?: string;
   reasoning_effort?: string | null;
   provider_overrides?: ProviderOverrides | null;
+  include_reasoning?: boolean | null;
+  extra_body?: Record<string, unknown> | null;
   priority?: number;
   enabled?: boolean;
+}
+
+// cliproxy가 직접 관리하는 표준 필드 — extra_body로 덮어쓰지 못하도록 거부.
+const RESERVED_EXTRA_BODY_KEYS = new Set([
+  'model', 'messages', 'stream', 'max_tokens', 'temperature',
+]);
+const MAX_EXTRA_BODY_BYTES = 4096;  // JSON 직렬화 후 크기 제한 (DB row bloat 방지)
+
+function parseExtraBodyInput(value: unknown): { ok: true; value: Record<string, unknown> | null | undefined } | { ok: false; reason: string } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return { ok: false, reason: 'extra_body must be an object or null.' };
+  }
+  const obj = value as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
+    if (RESERVED_EXTRA_BODY_KEYS.has(key)) {
+      return { ok: false, reason: `extra_body cannot override reserved field "${key}".` };
+    }
+  }
+  const serialized = JSON.stringify(obj);
+  if (serialized.length > MAX_EXTRA_BODY_BYTES) {
+    return { ok: false, reason: `extra_body too large (max ${MAX_EXTRA_BODY_BYTES} bytes).` };
+  }
+  return { ok: true, value: Object.keys(obj).length > 0 ? obj : null };
+}
+
+// boolean | null | undefined 입력 검증. NULL/undefined = 상속(전역 default).
+function parseIncludeReasoningInput(value: unknown): { ok: true; value: boolean | null | undefined } | { ok: false } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== 'boolean') return { ok: false };
+  return { ok: true, value };
 }
 
 // provider_overrides 입력 검증.
@@ -81,17 +118,24 @@ function parseProviderOverridesInput(value: unknown): { ok: true; value: Provide
   return { ok: true, value: Object.keys(out).length > 0 ? out : null };
 }
 
-// DB row에서 providerOverrides(JSON string) → 객체 변환 + 반환용 가공
+// DB row에서 providerOverrides + extraBody (JSON string) → 객체 변환
 function rowWithParsedOverrides(row: Record<string, unknown>): Record<string, unknown> {
-  const raw = row.providerOverrides;
-  if (typeof raw === 'string' && raw.length > 0) {
-    try {
-      return { ...row, providerOverrides: JSON.parse(raw) };
-    } catch {
-      return { ...row, providerOverrides: null };
-    }
+  const parsed: Record<string, unknown> = { ...row };
+  // providerOverrides
+  const rawOverrides = row.providerOverrides;
+  if (typeof rawOverrides === 'string' && rawOverrides.length > 0) {
+    try { parsed.providerOverrides = JSON.parse(rawOverrides); } catch { parsed.providerOverrides = null; }
+  } else {
+    parsed.providerOverrides = null;
   }
-  return { ...row, providerOverrides: null };
+  // extraBody
+  const rawExtra = row.extraBody;
+  if (typeof rawExtra === 'string' && rawExtra.length > 0) {
+    try { parsed.extraBody = JSON.parse(rawExtra); } catch { parsed.extraBody = null; }
+  } else {
+    parsed.extraBody = null;
+  }
+  return parsed;
 }
 
 // 사용자 입력 reasoning_effort 정규화/검증.
@@ -116,7 +160,7 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
 
   // 생성
   app.post<{ Body: CreateMappingBody }>('/admin/model-mappings', async (request, reply) => {
-    const { alias, provider, actual_model, display_name, reasoning_effort, provider_overrides, priority, enabled } = request.body;
+    const { alias, provider, actual_model, display_name, reasoning_effort, provider_overrides, include_reasoning, extra_body, priority, enabled } = request.body;
 
     if (!alias || !provider || !actual_model) {
       return reply.status(400).send({ error: { message: 'alias, provider, actual_model are required.' } });
@@ -134,6 +178,16 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
       return reply.status(400).send({ error: { message: parsedOverrides.reason } });
     }
 
+    const parsedInclude = parseIncludeReasoningInput(include_reasoning);
+    if (!parsedInclude.ok) {
+      return reply.status(400).send({ error: { message: 'include_reasoning must be boolean or null.' } });
+    }
+
+    const parsedExtra = parseExtraBodyInput(extra_body);
+    if (!parsedExtra.ok) {
+      return reply.status(400).send({ error: { message: parsedExtra.reason } });
+    }
+
     const db = getDatabase();
     const id = nanoid();
     const now = new Date().toISOString();
@@ -146,6 +200,8 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
       displayName: display_name,
       reasoningEffort: parsedEffort.value ?? null,
       providerOverrides: parsedOverrides.value ? JSON.stringify(parsedOverrides.value) : null,
+      includeReasoning: parsedInclude.value ?? null,
+      extraBody: parsedExtra.value ? JSON.stringify(parsedExtra.value) : null,
       priority: priority ?? 0,
       enabled: enabled ?? true,
       createdAt: now,
@@ -189,6 +245,20 @@ export function registerModelMappingsRoutes(app: FastifyInstance): void {
         return reply.status(400).send({ error: { message: parsed.reason } });
       }
       updates.providerOverrides = parsed.value ? JSON.stringify(parsed.value) : null;
+    }
+    if (body.include_reasoning !== undefined) {
+      const parsed = parseIncludeReasoningInput(body.include_reasoning);
+      if (!parsed.ok) {
+        return reply.status(400).send({ error: { message: 'include_reasoning must be boolean or null.' } });
+      }
+      updates.includeReasoning = parsed.value;
+    }
+    if (body.extra_body !== undefined) {
+      const parsed = parseExtraBodyInput(body.extra_body);
+      if (!parsed.ok) {
+        return reply.status(400).send({ error: { message: parsed.reason } });
+      }
+      updates.extraBody = parsed.value ? JSON.stringify(parsed.value) : null;
     }
 
     await db.update(modelMappings).set(updates).where(eq(modelMappings.id, id));

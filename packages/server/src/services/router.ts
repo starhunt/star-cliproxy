@@ -9,6 +9,10 @@ export interface ResolvedRoute {
   actualModel: string;
   reasoningEffort?: ReasoningEffort;
   providerOverrides?: ProviderOverrides;
+  // null=상속(전역 default), true/false=명시
+  includeReasoning?: boolean | null;
+  // 백엔드 비표준 필드 패스스루 (HTTP provider 전용)
+  extraBody?: Record<string, unknown>;
 }
 
 // DB의 provider_overrides JSON 문자열을 파싱. 파싱 실패는 warn + null fallback.
@@ -21,6 +25,20 @@ function parseProviderOverrides(raw: string | null | undefined): ProviderOverrid
     }
   } catch (e) {
     console.warn('[router] failed to parse provider_overrides:', (e as Error).message);
+  }
+  return undefined;
+}
+
+// extra_body JSON 파싱. 객체가 아니면 무시.
+function parseExtraBody(raw: string | null | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch (e) {
+    console.warn('[router] failed to parse extra_body:', (e as Error).message);
   }
   return undefined;
 }
@@ -63,6 +81,8 @@ export class ModelRouter {
         actualModel: m.actualModel,
         reasoningEffort: isReasoningEffort(m.reasoningEffort) ? m.reasoningEffort : undefined,
         providerOverrides: parseProviderOverrides(m.providerOverrides),
+        includeReasoning: typeof m.includeReasoning === 'boolean' ? m.includeReasoning : null,
+        extraBody: parseExtraBody(m.extraBody),
       }));
   }
 

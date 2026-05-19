@@ -10,7 +10,8 @@ export type BuiltinProviderName = typeof BUILTIN_PROVIDERS[number];
 export type ProviderName = string;
 
 // 프로바이더가 지원하는 엔드포인트 타입
-export type EndpointType = 'chat' | 'images' | 'tts' | 'embeddings';
+// 'rerank'는 HTTP 프로바이더 전용 (CLI/플러그인 프로바이더는 지원하지 않음).
+export type EndpointType = 'chat' | 'images' | 'tts' | 'embeddings' | 'rerank';
 
 // 플러그인 설정 (ProviderConfigYaml과 동일 구조, 순환 참조 방지용)
 export interface PluginProviderConfig {
@@ -110,6 +111,9 @@ export interface ExecuteOptions {
   reasoningEffort?: ReasoningEffort;
   // 모델 매핑에서 지정한 provider 옵션 오버라이드 (화이트리스트 기반 deep merge)
   providerOverrides?: import('./config.js').ProviderOverrides;
+  // 백엔드 비표준 필드 패스스루 (HTTP provider 전용). chat_template_kwargs/think/top_k 등.
+  // CLI provider는 무시.
+  extraBody?: Record<string, unknown>;
   // Image generation passthrough (OpenAI Images API)
   responseFormat?: 'url' | 'b64_json';
   n?: number;
@@ -142,6 +146,33 @@ export interface EmbeddingResult {
   };
 }
 
+// 리랭킹 전용 옵션/결과 (Cohere Rerank API 호환 시맨틱).
+// HTTP 프로바이더 전용 — CLI/플러그인 프로바이더는 미지원.
+export interface RerankOptions {
+  model: string;
+  query: string;
+  documents: string[];
+  topN?: number;
+  returnDocuments?: boolean;
+  signal?: AbortSignal;
+  providerOverrides?: import('./config.js').ProviderOverrides;
+  onDebug?: (info: DebugCaptureInfo) => void;
+}
+
+export interface RerankResultItem {
+  index: number;
+  relevanceScore: number;
+  document?: string;
+}
+
+export interface RerankResult {
+  results: RerankResultItem[];
+  model: string;
+  usage: {
+    totalTokens: number;
+  };
+}
+
 // TTS 전용 옵션/결과
 export interface TtsOptions {
   model: string;
@@ -167,6 +198,8 @@ export interface TokenUsage {
 
 export interface ExecuteResult {
   content: string;
+  /** 추론 모델의 thinking/CoT 본문. content와 분리되어 보존됨 (있을 때만). */
+  reasoning?: string;
   usage: TokenUsage;
   finishReason: 'stop' | 'length' | 'error';
   meta?: ExecuteMeta;  // provider별 부가 메타데이터 (codex thread_id 등)

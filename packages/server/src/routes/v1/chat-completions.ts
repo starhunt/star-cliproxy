@@ -9,6 +9,7 @@ import type {
 import { ALLOWED_ROLES, isReasoningEffort, type ReasoningEffort } from '@star-cliproxy/shared';
 import { extractTextFromContent, isImagePart } from '../../utils/message-converter.js';
 import { createRequestId, formatAsSSE } from '../../utils/stream-transformer.js';
+import { splitReasoning, ReasoningSplitter } from '../../utils/reasoning-splitter.js';
 import { extractClientKey } from '../../utils/client-key.js';
 import { logRequest } from '../../middleware/request-logger.js';
 import type { ModelRouter } from '../../services/router.js';
@@ -286,6 +287,11 @@ export function registerChatCompletionsRoute(
         bodyReasoningEffort = normalized;
       }
 
+      // include_reasoning: body > mapping > 전역 default(false). undefined는 폴백.
+      const bodyIncludeReasoning: boolean | undefined = typeof body.include_reasoning === 'boolean'
+        ? body.include_reasoning
+        : undefined;
+
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
       const clientKey = extractClientKey(request, apiKeyId);
@@ -416,10 +422,21 @@ export function registerChatCompletionsRoute(
               ...(unsupportedParams.length > 0 ? { 'X-Unsupported-Params': unsupportedParams.join(',') } : {}),
             });
 
+            // 스트림 단위 include_reasoning 결정 (body > mapping > false)
+            const streamIncludeReasoning = bodyIncludeReasoning ?? (route.includeReasoning ?? false);
+            const sseOptions = { includeReasoning: streamIncludeReasoning };
+            // 사용자가 추론 노출 정책을 명시적으로 설정한 경우(true/false 모두)에만 splitter 활성.
+            // 비추론 모델에 잘못 적용해서 답변이 reasoning 박스로 가는 사고 방지 — null/상속이면 통과.
+            const reasoningExplicit = bodyIncludeReasoning !== undefined
+              || (route.includeReasoning !== null && route.includeReasoning !== undefined);
+            // splitter는 백엔드가 reasoning을 별도 필드로 분리하지 않고 content에 마커와 함께 보내는 경우를 위함.
+            const streamSplitter = reasoningExplicit ? new ReasoningSplitter() : null;
+
             const roleChunk = formatAsSSE(
               { type: 'delta', content: '' },
               requestId,
               body.model,
+              sseOptions,
             );
             if (roleChunk) safeWrite(reply.raw, roleChunk);
 
@@ -439,7 +456,30 @@ export function registerChatCompletionsRoute(
               clientKey,
               reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
               providerOverrides: route.providerOverrides,
+              extraBody: route.extraBody,
             });
+
+            // text_delta 안의 마커를 splitter로 잘라서 thinking/text_delta로 재분배하는 헬퍼.
+            // splitter가 비활성이거나 일반 이벤트면 원본 그대로 emit.
+            const emitTextDelta = (text: string): boolean => {
+              if (!streamSplitter || !text) {
+                const sse = formatAsSSE({ type: 'text_delta', text }, requestId, body.model, sseOptions);
+                if (sse && !safeWrite(reply.raw, sse)) return false;
+                totalContent += text;
+                return true;
+              }
+              const split = streamSplitter.push(text);
+              if (split.reasoning) {
+                const sse = formatAsSSE({ type: 'thinking', text: split.reasoning }, requestId, body.model, sseOptions);
+                if (sse && !safeWrite(reply.raw, sse)) return false;
+              }
+              if (split.content) {
+                const sse = formatAsSSE({ type: 'text_delta', text: split.content }, requestId, body.model, sseOptions);
+                if (sse && !safeWrite(reply.raw, sse)) return false;
+                totalContent += split.content;
+              }
+              return true;
+            };
 
             try {
               for await (const event of streamIterator) {
@@ -447,25 +487,41 @@ export function registerChatCompletionsRoute(
                   ttfbMs = Date.now() - startTime;
                 }
 
-                const sseData = formatAsSSE(event, requestId, body.model);
-                if (sseData) {
-                  // write 실패(연결 끊김)면 스트림 루프 조기 종료
-                  if (!safeWrite(reply.raw, sseData)) break;
-                }
+                // text_delta는 splitter 통과 (활성 시 마커로 reasoning 추출).
+                // 그 외 이벤트(thinking/usage/tool_use/done)는 원본 그대로 formatAsSSE.
                 if (event.type === 'text_delta') {
-                  totalContent += event.text;
-                }
-                if (event.type === 'usage') {
-                  streamUsage = event.usage;
+                  if (!emitTextDelta(event.text)) break;
+                } else {
+                  const sseData = formatAsSSE(event, requestId, body.model, sseOptions);
+                  if (sseData) {
+                    if (!safeWrite(reply.raw, sseData)) break;
+                  }
+                  if (event.type === 'usage') {
+                    streamUsage = event.usage;
+                  }
                 }
 
                 // 응답 크기 제한
                 if (totalContent.length > v.maxResponseLength) {
-                  const doneSSE = formatAsSSE({ type: 'done' as const }, requestId, body.model);
+                  const doneSSE = formatAsSSE({ type: 'done' as const }, requestId, body.model, sseOptions);
                   if (doneSSE) safeWrite(reply.raw, doneSSE);
                   break;
                 }
                 if (event.type === 'done') break;
+              }
+
+              // splitter 잔여 버퍼 flush (응답 끝에 padding이 남았을 수 있음).
+              if (streamSplitter) {
+                const tail = streamSplitter.flush();
+                if (tail.reasoning) {
+                  const sse = formatAsSSE({ type: 'thinking', text: tail.reasoning }, requestId, body.model, sseOptions);
+                  if (sse) safeWrite(reply.raw, sse);
+                }
+                if (tail.content) {
+                  const sse = formatAsSSE({ type: 'text_delta', text: tail.content }, requestId, body.model, sseOptions);
+                  if (sse) safeWrite(reply.raw, sse);
+                  totalContent += tail.content;
+                }
               }
             } catch (streamErr) {
               // 헤더 전송 후 에러: 스트림 에러 이벤트 전송 후 종료 (폴백 불가)
@@ -549,14 +605,32 @@ export function registerChatCompletionsRoute(
               clientKey,
               reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
               providerOverrides: route.providerOverrides,
+              extraBody: route.extraBody,
             }),
           );
 
-          // 응답 크기 제한
+          // 추론 본문 분리: provider가 reasoning을 분리해 보냈으면 그대로, 아니면 content 안의 마커로 split.
           let content = result.content;
+          let reasoning = result.reasoning ?? '';
+          if (!reasoning) {
+            const split = splitReasoning(content);
+            if (split.reasoning) {
+              reasoning = split.reasoning;
+              content = split.content;
+            }
+          }
+          // 응답 크기 제한 (content만 — reasoning은 별도)
           if (content.length > v.maxResponseLength) {
             content = content.substring(0, v.maxResponseLength);
           }
+
+          // include_reasoning 우선순위 결정: body > mapping > 기본값(false).
+          const effectiveInclude = bodyIncludeReasoning ?? (route.includeReasoning ?? false);
+          const assistantMessage: ChatCompletionResponse['choices'][0]['message'] = {
+            role: 'assistant',
+            content,
+            ...(effectiveInclude && reasoning ? { reasoning_content: reasoning } : {}),
+          };
 
           const response: ChatCompletionResponse = {
             id: requestId,
@@ -565,7 +639,7 @@ export function registerChatCompletionsRoute(
             model: body.model,
             choices: [{
               index: 0,
-              message: { role: 'assistant', content },
+              message: assistantMessage,
               finish_reason: result.finishReason === 'error' ? 'stop' : result.finishReason,
             }],
             usage: {

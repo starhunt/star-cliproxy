@@ -295,20 +295,26 @@ export class GeminiStreamParser implements StreamParser {
 // ProviderEvent 전용 타입만 존재하는지 확인 (StreamChunk과 겹치지 않는 type)
 const PROVIDER_EVENT_ONLY_TYPES = new Set(['text_delta', 'tool_use', 'thinking', 'usage']);
 
+export interface FormatAsSseOptions {
+  // true면 thinking 이벤트를 delta.reasoning_content SSE로 직렬화. false/생략이면 thinking 무시.
+  includeReasoning?: boolean;
+}
+
 // StreamChunk 또는 ProviderEvent를 OpenAI SSE 형식으로 변환
 export function formatAsSSE(
   event: ProviderEvent | StreamChunk,
   requestId: string,
   model: string,
+  options: FormatAsSseOptions = {},
 ): string | null {
   // ProviderEvent 전용 타입이면 ProviderEvent 경로
   if (PROVIDER_EVENT_ONLY_TYPES.has(event.type)) {
-    return formatProviderEventAsSSE(event as ProviderEvent, requestId, model);
+    return formatProviderEventAsSSE(event as ProviderEvent, requestId, model, options);
   }
 
   // done/error 타입은 ProviderEvent와 StreamChunk 공통이므로 finishReason 필드로 판별
   if ('finishReason' in event) {
-    return formatProviderEventAsSSE(event as ProviderEvent, requestId, model);
+    return formatProviderEventAsSSE(event as ProviderEvent, requestId, model, options);
   }
 
   // 레거시 StreamChunk 처리
@@ -356,6 +362,7 @@ function formatProviderEventAsSSE(
   event: ProviderEvent,
   requestId: string,
   model: string,
+  options: FormatAsSseOptions = {},
 ): string | null {
   const makeChunk = (delta: Record<string, unknown>, finishReason: string | null = null): string => {
     const data: ChatCompletionChunk = {
@@ -390,8 +397,10 @@ function formatProviderEventAsSSE(
       });
 
     case 'thinking':
-      // OpenAI API에는 thinking 대응이 없음 → 무시
-      return null;
+      // include_reasoning=true일 때만 delta.reasoning_content로 직렬화 (vLLM/sglang 호환 비표준 확장).
+      // 일반 OpenAI SDK는 모르는 필드 무시하므로 안전.
+      if (!options.includeReasoning) return null;
+      return makeChunk({ reasoning_content: event.text });
 
     case 'usage':
       // OpenAI에서는 stream_options.include_usage로 처리 → 무시
