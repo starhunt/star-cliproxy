@@ -415,6 +415,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'playground.streaming': 'Streaming...',
     'playground.processing': 'Processing...',
     'playground.latency': 'Latency',
+    'playground.startedAt': 'Started',
+    'playground.completedAt': 'Completed',
+    'playground.duration': 'Duration',
+    'playground.throughput': 'Throughput',
+    'playground.tokens': 'Tokens',
 
     // API 가이드
     'guide.title': 'API Guide',
@@ -892,6 +897,11 @@ export const translations: Record<Lang, Record<string, string>> = {
     'playground.streaming': '스트리밍 중...',
     'playground.processing': '처리 중...',
     'playground.latency': '응답시간',
+    'playground.startedAt': '시작',
+    'playground.completedAt': '완료',
+    'playground.duration': '소요 시간',
+    'playground.throughput': '처리량',
+    'playground.tokens': '토큰',
 
     // API 가이드
     'guide.title': 'API 가이드',

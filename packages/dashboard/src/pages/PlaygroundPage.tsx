@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from '../i18n/context';
 import { fetchModelMappings, fetchServerInfo, type ModelMapping, type ReasoningEffort } from '../api/client';
+import { formatDuration } from '../components/dashboard/format';
 
 type ReasoningEffortValue = ReasoningEffort | '';
 const REASONING_EFFORT_OPTIONS: ReasoningEffortValue[] = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
@@ -17,6 +18,8 @@ interface Metrics {
   latencyMs: number;
   ttfbMs: number | null;
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
+  startedAt: number;  // epoch ms
+  completedAt: number;  // epoch ms
 }
 
 function formatElapsed(ms: number): string {
@@ -26,6 +29,14 @@ function formatElapsed(ms: number): string {
   const tenths = Math.floor((ms % 1000) / 100);
   if (min > 0) return `${min}:${String(s).padStart(2, '0')}.${tenths}`;
   return `${s}.${tenths}s`;
+}
+
+function formatClock(epoch: number): string {
+  const d = new Date(epoch);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }
 
 const STORAGE_KEY = 'playground_state';
@@ -229,20 +240,26 @@ export default function PlaygroundPage() {
         // 스트림 정리
         reader.cancel().catch(() => {});
 
+        const now = Date.now();
         setMetrics({
-          latencyMs: Date.now() - startTime,
+          latencyMs: now - startTime,
           ttfbMs,
           usage,
+          startedAt: startTime,
+          completedAt: now,
         });
       } else {
         // Non-streaming
         const data = await res.json();
         const content = data.choices?.[0]?.message?.content ?? '';
         setResponse(content);
+        const now = Date.now();
         setMetrics({
-          latencyMs: Date.now() - startTime,
+          latencyMs: now - startTime,
           ttfbMs: null,
           usage: data.usage ?? null,
+          startedAt: startTime,
+          completedAt: now,
         });
       }
     } catch (e) {
@@ -475,14 +492,25 @@ export default function PlaygroundPage() {
       {/* 응답 */}
       {(response || loading) && (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
-          <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+          <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-3 flex-wrap">
             <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{t('playground.response')}</span>
-            {loading && (
+            {loading ? (
               <span className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
                 <span className="inline-block w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                 <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span>
               </span>
-            )}
+            ) : metrics ? (
+              <span
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 text-blue-700 dark:text-blue-300 text-xs font-mono tabular-nums"
+                title={`${t('playground.startedAt')}: ${formatClock(metrics.startedAt)} → ${formatClock(metrics.completedAt)}`}
+              >
+                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 7v5l3 2" strokeLinecap="round" />
+                </svg>
+                {formatDuration(metrics.latencyMs)}
+              </span>
+            ) : null}
           </div>
           <div
             ref={responseRef}
@@ -491,16 +519,92 @@ export default function PlaygroundPage() {
             {response || (loading ? <span className="text-gray-400 dark:text-gray-600 animate-pulse">{t('playground.waiting')}</span> : '')}
           </div>
           {metrics && (
-            <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-800 flex items-center gap-4 text-xs text-gray-400 dark:text-gray-500">
-              <span>{t('playground.latency')}: {metrics.latencyMs}ms</span>
-              {metrics.ttfbMs !== null && <span>TTFB: {metrics.ttfbMs}ms</span>}
+            <div className="px-4 py-2.5 border-t border-gray-200 dark:border-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
+              <Stat
+                label={t('playground.startedAt')}
+                value={formatClock(metrics.startedAt)}
+                hint={new Date(metrics.startedAt).toLocaleString()}
+              />
+              <Stat
+                label={t('playground.completedAt')}
+                value={formatClock(metrics.completedAt)}
+                hint={new Date(metrics.completedAt).toLocaleString()}
+              />
+              <Stat
+                label={t('playground.duration')}
+                value={formatDuration(metrics.latencyMs)}
+                hint={`${metrics.latencyMs.toLocaleString()} ms`}
+                accent
+              />
+              {metrics.ttfbMs !== null ? (
+                <Stat
+                  label="TTFB"
+                  value={formatDuration(metrics.ttfbMs)}
+                  hint={`${metrics.ttfbMs.toLocaleString()} ms`}
+                />
+              ) : metrics.usage ? (
+                <Stat
+                  label={t('playground.throughput')}
+                  value={
+                    metrics.usage.completion_tokens > 0 && metrics.latencyMs > 0
+                      ? `${(metrics.usage.completion_tokens / (metrics.latencyMs / 1000)).toFixed(1)} tok/s`
+                      : '—'
+                  }
+                />
+              ) : (
+                <span />
+              )}
               {metrics.usage && (
-                <span>Tokens: {metrics.usage.prompt_tokens} + {metrics.usage.completion_tokens} = {metrics.usage.total_tokens}</span>
+                <div className="col-span-2 sm:col-span-4 pt-1 mt-1 border-t border-gray-100 dark:border-gray-800/60 flex flex-wrap gap-x-4 gap-y-1 text-gray-500 dark:text-gray-400">
+                  <span>
+                    {t('playground.tokens')}:{' '}
+                    <span className="text-gray-700 dark:text-gray-200 font-mono">{metrics.usage.prompt_tokens.toLocaleString()}</span>
+                    <span className="text-gray-400 dark:text-gray-600"> in</span> +{' '}
+                    <span className="text-gray-700 dark:text-gray-200 font-mono">{metrics.usage.completion_tokens.toLocaleString()}</span>
+                    <span className="text-gray-400 dark:text-gray-600"> out</span> ={' '}
+                    <span className="text-gray-700 dark:text-gray-200 font-mono">{metrics.usage.total_tokens.toLocaleString()}</span>
+                  </span>
+                  {metrics.ttfbMs !== null && metrics.usage.completion_tokens > 0 && metrics.latencyMs > metrics.ttfbMs && (
+                    <span>
+                      {t('playground.throughput')}:{' '}
+                      <span className="text-gray-700 dark:text-gray-200 font-mono">
+                        {(metrics.usage.completion_tokens / ((metrics.latencyMs - metrics.ttfbMs) / 1000)).toFixed(1)} tok/s
+                      </span>
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex flex-col" title={hint}>
+      <span className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500">{label}</span>
+      <span
+        className={`font-mono tabular-nums text-sm ${
+          accent
+            ? 'text-blue-600 dark:text-blue-400 font-semibold'
+            : 'text-gray-700 dark:text-gray-200'
+        }`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
