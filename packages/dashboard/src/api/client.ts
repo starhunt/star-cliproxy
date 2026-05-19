@@ -39,7 +39,11 @@ export interface DashboardData {
     timeoutCount: number;
     successRate: number;
     avgLatencyMs: number;
+    p50LatencyMs: number;
+    p95LatencyMs: number;
     totalTokens: number;
+    totalPromptTokens: number;
+    totalCompletionTokens: number;
     streamCount: number;
   };
   today: {
@@ -58,9 +62,25 @@ export interface DashboardData {
   }>;
   cache: { totalEntries: number; activeEntries: number };
   rateLimits: { global: { rpm: number; rpd: number }; perProvider: Record<string, { rpm: number }> };
-  providerStats: Array<{ provider: string; count: number; successCount: number; avgLatencyMs: number; totalTokens: number }>;
-  popularModels: Array<{ modelAlias: string; provider: string; count: number; avgLatencyMs: number }>;
-  hourlyTrend: Array<{ hour: number; count: number; successCount: number; errorCount: number }>;
+  providerStats: Array<{
+    provider: string;
+    count: number;
+    successCount: number;
+    errorCount: number;
+    successRate: number;
+    avgLatencyMs: number;
+    p95LatencyMs: number;
+    totalTokens: number;
+  }>;
+  popularModels: Array<{
+    modelAlias: string;
+    provider: string;
+    count: number;
+    successCount: number;
+    successRate: number;
+    avgLatencyMs: number;
+  }>;
+  hourlyTrend: Array<{ hour: number; count: number; successCount: number; errorCount: number; tokens: number }>;
   hourlyByModel: Array<{ hour: number; modelAlias: string; count: number }>;
   recentRequests: Array<{
     id: string;
@@ -108,7 +128,7 @@ export function fetchDashboard(days?: number) {
 // Trend (시간대별 요청 추이)
 export interface TrendData {
   hours: number;
-  trend: Array<{ slot: string; count: number; successCount: number; errorCount: number }>;
+  trend: Array<{ slot: string; count: number; successCount: number; errorCount: number; tokens: number }>;
   byModel: Array<{ slot: string; modelAlias: string; count: number }>;
 }
 

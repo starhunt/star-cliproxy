@@ -70,6 +70,7 @@ export function registerStatsRoutes(app: FastifyInstance): void {
         count: sql<number>`count(*)`,
         successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
         errorCount: sql<number>`coalesce(sum(case when status != 'success' then 1 else 0 end), 0)`,
+        tokens: sql<number>`coalesce(sum(total_tokens), 0)`,
       }).from(requestLogs)
         .where(sql`created_at >= datetime('now', ${`-${hours} hours`})`)
         .groupBy(sql`strftime('%Y-%m-%d %H', created_at)`)

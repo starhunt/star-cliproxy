@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { sql, eq, desc } from 'drizzle-orm';
+import { sql, eq, desc, asc, and } from 'drizzle-orm';
 import { getDatabase } from '../../db/client.js';
 import { requestLogs, apiKeys, modelMappings, providerHealth, responseCache, settings } from '../../db/schema.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
@@ -36,6 +36,32 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
     }).from(requestLogs);
     const statsResult = dateFilter ? await statsQuery.where(dateFilter) : await statsQuery;
     const overview = statsResult[0];
+
+    // 1-1. P50 / P95 지연 (이상치에 강건한 분위수)
+    // 표준 select + offset 방식 — idx_logs_created_at 인덱스 활용 가능
+    const successLatencyFilter = dateFilter
+      ? and(sql`status = 'success'`, sql`latency_ms IS NOT NULL`, dateFilter)
+      : and(sql`status = 'success'`, sql`latency_ms IS NOT NULL`);
+    const successCountRow = await db.select({ c: sql<number>`count(*)` })
+      .from(requestLogs)
+      .where(successLatencyFilter);
+    const successCnt = successCountRow[0]?.c ?? 0;
+    let p50LatencyMs = 0;
+    let p95LatencyMs = 0;
+    if (successCnt > 0) {
+      const p50Offset = Math.max(Math.floor(successCnt * 0.5) - 1, 0);
+      const p95Offset = Math.max(Math.floor(successCnt * 0.95) - 1, 0);
+      const [p50Row, p95Row] = await Promise.all([
+        db.select({ l: requestLogs.latencyMs })
+          .from(requestLogs).where(successLatencyFilter)
+          .orderBy(asc(requestLogs.latencyMs)).limit(1).offset(p50Offset),
+        db.select({ l: requestLogs.latencyMs })
+          .from(requestLogs).where(successLatencyFilter)
+          .orderBy(asc(requestLogs.latencyMs)).limit(1).offset(p95Offset),
+      ]);
+      p50LatencyMs = p50Row[0]?.l ?? 0;
+      p95LatencyMs = p95Row[0]?.l ?? 0;
+    }
 
     // 2. 오늘 통계
     const todayResult = await db.select({
@@ -90,35 +116,65 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       try { rateLimits = JSON.parse(rateLimitResult[0].value); } catch {}
     }
 
-    // 8. Provider별 통계
+    // 8. Provider별 통계 (사용량 내림차순 + 성공률 + 토큰)
     const providerStatsQuery = db.select({
       provider: requestLogs.provider,
       count: sql<number>`count(*)`,
       successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
+      errorCount: sql<number>`coalesce(sum(case when status != 'success' then 1 else 0 end), 0)`,
       avgLatencyMs: sql<number>`coalesce(avg(case when status = 'success' then latency_ms end), 0)`,
       totalTokens: sql<number>`coalesce(sum(total_tokens), 0)`,
     }).from(requestLogs);
-    const providerStats = dateFilter
-      ? await providerStatsQuery.where(dateFilter).groupBy(requestLogs.provider)
-      : await providerStatsQuery.groupBy(requestLogs.provider);
+    const providerStatsRaw = dateFilter
+      ? await providerStatsQuery.where(dateFilter).groupBy(requestLogs.provider).orderBy(sql`count(*) DESC`)
+      : await providerStatsQuery.groupBy(requestLogs.provider).orderBy(sql`count(*) DESC`);
+    const providerStats = providerStatsRaw.map((p) => ({
+      ...p,
+      successRate: p.count > 0 ? (p.successCount / p.count) * 100 : 0,
+    }));
 
-    // 9. 인기 모델 (상위 5개)
+    // 8-1. Provider별 P95 지연 (SLA 카드용)
+    // 사용량이 많은 프로바이더만 계산 (n >= 5) — 통계적으로 의미 있는 표본
+    const providerP95Map = new Map<string, number>();
+    const candidates = providerStats.filter((p) => p.successCount >= 5);
+    await Promise.all(candidates.map(async (p) => {
+      const baseFilter = dateFilter
+        ? and(eq(requestLogs.provider, p.provider), sql`status = 'success'`, sql`latency_ms IS NOT NULL`, dateFilter)
+        : and(eq(requestLogs.provider, p.provider), sql`status = 'success'`, sql`latency_ms IS NOT NULL`);
+      const off = Math.max(Math.floor(p.successCount * 0.95) - 1, 0);
+      const row = await db.select({ l: requestLogs.latencyMs })
+        .from(requestLogs).where(baseFilter)
+        .orderBy(asc(requestLogs.latencyMs)).limit(1).offset(off);
+      providerP95Map.set(p.provider, row[0]?.l ?? 0);
+    }));
+    const providerStatsWithSla = providerStats.map((p) => ({
+      ...p,
+      p95LatencyMs: providerP95Map.get(p.provider) ?? 0,
+    }));
+
+    // 9. 인기 모델 (상위 20개로 확장 — 프론트엔드가 자체 Top-N 절단)
     const popularModelsQuery = db.select({
       modelAlias: requestLogs.modelAlias,
       provider: requestLogs.provider,
       count: sql<number>`count(*)`,
       avgLatencyMs: sql<number>`coalesce(avg(case when status = 'success' then latency_ms end), 0)`,
+      successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
     }).from(requestLogs);
-    const popularModels = dateFilter
-      ? await popularModelsQuery.where(dateFilter).groupBy(requestLogs.modelAlias, requestLogs.provider).orderBy(sql`count(*) DESC`).limit(5)
-      : await popularModelsQuery.groupBy(requestLogs.modelAlias, requestLogs.provider).orderBy(sql`count(*) DESC`).limit(5);
+    const popularModelsRaw = dateFilter
+      ? await popularModelsQuery.where(dateFilter).groupBy(requestLogs.modelAlias, requestLogs.provider).orderBy(sql`count(*) DESC`).limit(20)
+      : await popularModelsQuery.groupBy(requestLogs.modelAlias, requestLogs.provider).orderBy(sql`count(*) DESC`).limit(20);
+    const popularModels = popularModelsRaw.map((m) => ({
+      ...m,
+      successRate: m.count > 0 ? (m.successCount / m.count) * 100 : 0,
+    }));
 
-    // 10. 24시간 시간대별 요청 추이 (모델별 breakdown 포함)
+    // 10. 24시간 시간대별 요청 추이 (모델별 breakdown + 토큰 포함)
     const hourlyTrend = await db.select({
       hour: sql<number>`cast(strftime('%H', created_at) as integer)`,
       count: sql<number>`count(*)`,
       successCount: sql<number>`coalesce(sum(case when status = 'success' then 1 else 0 end), 0)`,
       errorCount: sql<number>`coalesce(sum(case when status != 'success' then 1 else 0 end), 0)`,
+      tokens: sql<number>`coalesce(sum(total_tokens), 0)`,
     }).from(requestLogs)
       .where(sql`created_at >= datetime('now', '-24 hours')`)
       .groupBy(sql`strftime('%H', created_at)`)
@@ -177,7 +233,11 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
           ? ((overview.successCount ?? 0) / overview.totalRequests * 100)
           : 0,
         avgLatencyMs: Math.round(overview.avgLatencyMs ?? 0),
+        p50LatencyMs: Math.round(p50LatencyMs),
+        p95LatencyMs: Math.round(p95LatencyMs),
         totalTokens: overview.totalTokens ?? 0,
+        totalPromptTokens: overview.totalPromptTokens ?? 0,
+        totalCompletionTokens: overview.totalCompletionTokens ?? 0,
         streamCount: overview.streamCount ?? 0,
       },
       today: {
@@ -199,7 +259,7 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
         activeEntries: cache.activeEntries ?? 0,
       },
       rateLimits,
-      providerStats,
+      providerStats: providerStatsWithSla,
       popularModels,
       hourlyTrend,
       hourlyByModel,
