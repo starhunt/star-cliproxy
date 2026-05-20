@@ -1,5 +1,6 @@
 import type { ProviderConfigYaml } from '@star-cliproxy/shared';
 import type { BaseProvider } from './base-provider.js';
+import { AgyProvider } from './agy-provider.js';
 import { ClaudeProvider } from './claude-provider.js';
 import { CodexProvider } from './codex-provider.js';
 import { CopilotProvider } from './copilot-provider.js';
@@ -78,6 +79,7 @@ const builtinFactories: Record<string, ProviderFactory> = {
   codex: (config) => new CodexProvider(config),
   copilot: (config) => new CopilotProvider(config),
   gemini: (config) => new GeminiProvider(config),
+  agy: (config) => new AgyProvider(config),
 };
 
 // 설정 기반으로 활성화된 Provider들을 등록

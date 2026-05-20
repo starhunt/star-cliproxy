@@ -381,7 +381,7 @@ export function registerExportImportRoutes(
     let genericProvidersImported = 0;
     if (body.genericProviders && typeof body.genericProviders === 'object') {
       const now = new Date().toISOString();
-      const BUILTIN_NAMES = ['claude', 'codex', 'copilot', 'gemini'];
+      const BUILTIN_NAMES = ['claude', 'codex', 'copilot', 'gemini', 'agy'];
 
       for (const [name, genericConfig] of Object.entries(body.genericProviders)) {
         // 빌트인 이름 충돌 방지

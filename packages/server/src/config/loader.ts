@@ -80,6 +80,8 @@ const BUILTIN_DEFAULTS: Record<string, { cliPath: string; defaultModel: string }
   codex: { cliPath: 'codex', defaultModel: '' },
   copilot: { cliPath: 'copilot', defaultModel: 'claude-sonnet-4-6' },
   gemini: { cliPath: 'gemini', defaultModel: 'gemini-2.5-pro' },
+  // agy 1.0.0은 -m/--model 미지원 → defaultModel은 응답 메타데이터 표시용
+  agy: { cliPath: 'agy', defaultModel: 'antigravity' },
 };
 
 export function loadConfig(configPath?: string): AppConfig {

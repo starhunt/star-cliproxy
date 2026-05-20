@@ -5,7 +5,7 @@ import { fetchRateLimits, updateRateLimits, fetchProviders, type RateLimitsConfi
 export default function RateLimitsPage() {
   const { t } = useTranslation();
   const [config, setConfig] = useState<RateLimitsConfig | null>(null);
-  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini']);
+  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini', 'agy']);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 

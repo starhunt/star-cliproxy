@@ -104,6 +104,10 @@ export class ModelRouter {
     if (/^gemini-/.test(lower)) {
       return 'gemini';
     }
+    // Antigravity (agy): antigravity, antigravity-*, agy, agy-* 접두사
+    if (/^(antigravity|agy)(-|$)/.test(lower)) {
+      return 'agy';
+    }
     return null;
   }
 }
