@@ -27,7 +27,7 @@ import {
 } from '../api/client';
 
 // 빌트인 프로바이더 목록
-const BUILTIN_PROVIDERS = new Set(['claude', 'codex', 'copilot', 'gemini']);
+const BUILTIN_PROVIDERS = new Set(['claude', 'codex', 'copilot', 'gemini', 'agy']);
 
 interface ProviderState {
   info: ProviderInfo;
@@ -364,7 +364,10 @@ export default function ProvidersPage() {
       {/* 프로바이더 카드 목록 */}
       {(() => {
         const builtinProviders = providers.filter((p) => BUILTIN_PROVIDERS.has(p.info.name));
-        const customProviders = providers.filter((p) => !BUILTIN_PROVIDERS.has(p.info.name));
+        // HTTP 프로바이더는 전용 섹션에서 렌더되므로 plugin/custom 섹션에서 제외 (중복 표시 방지)
+        const customProviders = providers.filter(
+          (p) => !BUILTIN_PROVIDERS.has(p.info.name) && !httpProviderNames.has(p.info.name),
+        );
 
         const renderProviderCard = ({ info, config, loading }: ProviderState) => {
           const isExpanded = expandedProvider === info.name;
