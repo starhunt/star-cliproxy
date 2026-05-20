@@ -55,6 +55,7 @@ export interface DashboardData {
   modelMappings: { total: number; active: number };
   providers: Array<{
     name: string;
+    kind: 'builtin' | 'http' | 'plugin';
     status: string;
     lastCheckAt: string | null;
     consecutiveFailures: number;

@@ -198,6 +198,14 @@ export const translations: Record<Lang, Record<string, string>> = {
     'models.sortIndicatorAsc': '↑',
     'models.sortIndicatorDesc': '↓',
 
+    // System Status — provider kind 구분
+    'systemStatus.kindBuiltin': 'Built-in',
+    'systemStatus.kindBuiltinShort': 'B',
+    'systemStatus.kindPlugin': 'Plugin',
+    'systemStatus.kindPluginShort': 'P',
+    'systemStatus.kindHttp': 'HTTP',
+    'systemStatus.kindHttpShort': 'H',
+
     // API 키
     'apiKeys.title': 'API Keys',
     'apiKeys.generateButton': '+ Generate Key',
@@ -706,6 +714,14 @@ export const translations: Record<Lang, Record<string, string>> = {
     'models.sortPriority': '우선순위 순',
     'models.sortIndicatorAsc': '↑',
     'models.sortIndicatorDesc': '↓',
+
+    // System Status — provider kind 구분
+    'systemStatus.kindBuiltin': '기본',
+    'systemStatus.kindBuiltinShort': '기본',
+    'systemStatus.kindPlugin': '플러그인',
+    'systemStatus.kindPluginShort': '플러그인',
+    'systemStatus.kindHttp': 'HTTP',
+    'systemStatus.kindHttpShort': 'HTTP',
 
     // API 키
     'apiKeys.title': 'API 키',
