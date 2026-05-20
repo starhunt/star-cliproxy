@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from '../i18n/context';
+import { Modal } from '../components/Modal';
+import { ProviderBadge, getProviderStyle } from '../components/ProviderBadge';
 import {
   fetchModelMappings,
   createModelMapping,
@@ -16,6 +18,18 @@ import {
   type ReasoningEffort,
   type TestModelResult,
 } from '../api/client';
+
+// 정렬 키. priority는 숫자 오름차순(낮을수록 먼저)이 자연스러우므로 기본 dir과 분리.
+type SortKey = 'alias' | 'provider' | 'priority';
+type SortDir = 'asc' | 'desc';
+
+// 백그라운드 테스트 완료 토스트 — 모달이 닫혀 있는 동안 결과가 도착하면 띄움.
+interface Toast {
+  rowId: string;
+  success: boolean;
+  alias: string;
+  model: string;
+}
 
 type ReasoningEffortValue = ReasoningEffort | '';
 
@@ -119,7 +133,7 @@ export default function ModelMappingsPage() {
   const [testResult, setTestResult] = useState<TestModelResult | null>(null);
   const [rowTesting, setRowTesting] = useState<string | null>(null);
   const [rowTestResult, setRowTestResult] = useState<{ id: string; result: TestModelResult } | null>(null);
-  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini']);
+  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini', 'agy']);
   // ephemeral ↔ enable_session_reuse 자동 조정 알림 (3초 후 자동 해제)
   const [overrideMutexNotice, setOverrideMutexNotice] = useState(false);
   const mutexNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,9 +148,24 @@ export default function ModelMappingsPage() {
   const [filterEffort, setFilterEffort] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<'' | 'on' | 'off'>('');
 
+  // 정렬 (헤더 클릭) — 기본은 priority 오름차순
+  const [sortKey, setSortKey] = useState<SortKey>('priority');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  // 행 테스트 모달은 별도 상태로 분리. rowTesting과 분리되어 있어
+  // 모달을 닫아도 백그라운드 테스트는 그대로 진행된다.
+  const [testModalRowId, setTestModalRowId] = useState<string | null>(null);
+
+  // 백그라운드 테스트 완료 토스트
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 폼 dirty 추적 — 모달 외부 클릭으로 의도치 않게 작업 손실 방지
+  const [formDirty, setFormDirty] = useState(false);
+
   const filteredMappings = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return mappings.filter((m) => {
+    const filtered = mappings.filter((m) => {
       if (filterProvider && m.provider !== filterProvider) return false;
       if (filterEffort) {
         const cur = m.reasoningEffort ?? '';
@@ -150,7 +179,37 @@ export default function ModelMappingsPage() {
       }
       return true;
     });
-  }, [mappings, searchQuery, filterProvider, filterEffort, filterStatus]);
+
+    // 정렬 — provider 정렬은 같은 provider끼리 묶이도록 두 번째 키로 alias 사용.
+    const dirMul = sortDir === 'asc' ? 1 : -1;
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortKey === 'alias') {
+        return a.alias.localeCompare(b.alias) * dirMul;
+      }
+      if (sortKey === 'provider') {
+        const c = a.provider.localeCompare(b.provider);
+        if (c !== 0) return c * dirMul;
+        return a.alias.localeCompare(b.alias); // 그룹 내 보조 정렬
+      }
+      // priority — 숫자
+      const c = (a.priority - b.priority) * dirMul;
+      if (c !== 0) return c;
+      return a.alias.localeCompare(b.alias);
+    });
+    return sorted;
+  }, [mappings, searchQuery, filterProvider, filterEffort, filterStatus, sortKey, sortDir]);
+
+  // 헤더 클릭 정렬 토글: 같은 키면 방향 토글, 다른 키면 그 키로 asc 시작
+  const handleSort = useCallback((key: SortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        return prev;
+      }
+      setSortDir('asc');
+      return key;
+    });
+  }, []);
 
   const filtersActive = !!(searchQuery || filterProvider || filterEffort || filterStatus);
   const clearFilters = () => {
@@ -240,8 +299,45 @@ export default function ModelMappingsPage() {
       formTestAbortRef.current?.abort();
       rowTestAbortRef.current?.abort();
       if (mutexNoticeTimerRef.current) clearTimeout(mutexNoticeTimerRef.current);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
+
+  // 백그라운드 테스트 완료 감지 — 모달이 닫혀 있을 때만 토스트 노출.
+  // testModalRowId가 결과 row와 같으면 모달 안에서 결과가 이미 보이므로 토스트 불요.
+  useEffect(() => {
+    if (!rowTestResult) return;
+    if (testModalRowId === rowTestResult.id) return;
+    const mapping = mappings.find((m) => m.id === rowTestResult.id);
+    if (!mapping) return;
+    setToast({
+      rowId: rowTestResult.id,
+      success: rowTestResult.result.success,
+      alias: mapping.alias,
+      model: rowTestResult.result.model,
+    });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 6000);
+  }, [rowTestResult, testModalRowId, mappings]);
+
+  // 폼 dirty 추적: 모달 열림 시 스냅샷 → 현재 form과 JSON 비교.
+  const formSnapshotRef = useRef<string>('');
+  useEffect(() => {
+    if (showForm) {
+      // 모달 진입 시 현재 form 상태를 기준선으로 저장 (handleEdit/handleAddOpen 이후 호출됨)
+      formSnapshotRef.current = JSON.stringify(form);
+    }
+    // showForm 의존성만 — form 변경 시 매번 갱신하지 않아야 dirty 비교가 유효
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showForm]);
+
+  useEffect(() => {
+    if (!showForm) {
+      setFormDirty(false);
+      return;
+    }
+    setFormDirty(JSON.stringify(form) !== formSnapshotRef.current);
+  }, [form, showForm]);
 
   // ephemeral ↔ enable_session_reuse 상호 배제 자동 조정 핸들러.
   // 한쪽을 'true'로 바꾸면 다른 쪽이 'true'면 'false'로 자동 변경 + 알림 표시.
@@ -414,13 +510,14 @@ export default function ModelMappingsPage() {
     }
   };
 
-  // 테이블 행에서 테스트
+  // 테이블 행에서 테스트 — 모달 자동 오픈. 모달을 닫아도 테스트는 백그라운드에서 계속.
   const handleRowTest = async (m: ModelMapping) => {
     cancelRowTest();
     const controller = new AbortController();
     rowTestAbortRef.current = controller;
     setRowTesting(m.id);
     setRowTestResult(null);
+    setTestModalRowId(m.id);  // 모달 열기 — 닫혀도 fetch는 abort되지 않음
 
     try {
       const result = await testModel(m.provider, m.actualModel, controller.signal);
@@ -440,22 +537,53 @@ export default function ModelMappingsPage() {
     }
   };
 
+  // 토스트의 "보기" 클릭 → 해당 행 결과 모달 재오픈
+  const handleToastView = useCallback(() => {
+    if (!toast) return;
+    setTestModalRowId(toast.rowId);
+    setToast(null);
+  }, [toast]);
+
+  // 테스트 모달 닫기 — fetch는 그대로 진행 (취소하지 않음)
+  const closeTestModal = useCallback(() => {
+    setTestModalRowId(null);
+  }, []);
+
+  // 테스트 모달 안에서 명시적으로 취소 버튼 누른 경우
+  const cancelTestFromModal = useCallback(() => {
+    cancelRowTest();
+    setTestModalRowId(null);
+  }, [cancelRowTest]);
+
+  const openCreate = useCallback(() => {
+    cancelFormTest();
+    setShowForm(true);
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM });
+    setTestResult(null);
+  }, [cancelFormTest]);
+
+  // dirty 폼 닫기 시 확인. 닫아도 되면 true 반환.
+  const handleBeforeFormClose = useCallback((): boolean => {
+    if (!formDirty) return true;
+    return confirm(t('models.editUnsavedConfirm'));
+  }, [formDirty, t]);
+
+  // 현재 테스트 모달이 가리키는 매핑 객체
+  const testModalMapping = useMemo(
+    () => testModalRowId ? mappings.find((m) => m.id === testModalRowId) ?? null : null,
+    [testModalRowId, mappings],
+  );
+  const testModalIsRunning = !!testModalRowId && rowTesting === testModalRowId;
+  const testModalResult = rowTestResult?.id === testModalRowId ? rowTestResult.result : null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('models.title')}</h2>
         <button
-          onClick={() => {
-            if (showForm) { closeForm(); }
-            else {
-              cancelFormTest();
-              setShowForm(true);
-              setEditingId(null);
-              setForm({ ...EMPTY_FORM });
-              setTestResult(null);
-            }
-          }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm text-white transition-colors"
+          onClick={openCreate}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm text-white transition-colors shadow-sm"
         >
           {t('models.addMapping')}
         </button>
@@ -463,9 +591,17 @@ export default function ModelMappingsPage() {
 
       {error && <p className="text-red-500 dark:text-red-400 text-sm">{error}</p>}
 
-      {/* 폼 */}
-      {showForm && (
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 space-y-3">
+      {/* 폼 모달 */}
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        onBeforeClose={handleBeforeFormClose}
+        size="lg"
+        title={editingId ? t('models.editTitle') : t('models.createTitle')}
+        subtitle={editingId ? form.alias : undefined}
+        headerActions={form.provider ? <ProviderBadge provider={form.provider} size="md" /> : undefined}
+      >
+        <div className="space-y-3">
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <div>
@@ -535,9 +671,9 @@ export default function ModelMappingsPage() {
                 <select
                   value={form.reasoning_effort}
                   onChange={(e) => setForm({ ...form, reasoning_effort: e.target.value as ReasoningEffortValue })}
-                  disabled={form.provider === 'gemini'}
+                  disabled={form.provider === 'gemini' || form.provider === 'agy'}
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={form.provider === 'gemini' ? t('models.reasoningEffortUnsupported') : t('models.reasoningEffortHelp')}
+                  title={(form.provider === 'gemini' || form.provider === 'agy') ? t('models.reasoningEffortUnsupported') : t('models.reasoningEffortHelp')}
                 >
                   {REASONING_EFFORT_OPTIONS.map((value) => (
                     <option key={value || 'default'} value={value}>
@@ -888,51 +1024,86 @@ export default function ModelMappingsPage() {
             </div>
           )}
         </div>
-      )}
+      </Modal>
 
-      {/* 행 테스트 결과 배너 */}
-      {rowTesting && (
-        <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <span className="inline-block w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-              {t('models.testing')} {mappings.find(m => m.id === rowTesting)?.provider} / {mappings.find(m => m.id === rowTesting)?.actualModel} ...
+      {/* 행 테스트 모달 — 모달 닫아도 백그라운드 진행, 완료 시 토스트로 알림 */}
+      <Modal
+        open={!!testModalRowId}
+        onClose={closeTestModal}
+        size="sm"
+        title={t('models.testTitle')}
+        subtitle={testModalMapping ? `${testModalMapping.alias} → ${testModalMapping.actualModel}` : undefined}
+        headerActions={testModalMapping ? <ProviderBadge provider={testModalMapping.provider} size="md" /> : undefined}
+      >
+        <div className="space-y-3">
+          {testModalIsRunning && (
+            <div className="px-4 py-6 flex flex-col items-center gap-3 text-center">
+              <span className="inline-block w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              <div className="text-sm text-gray-600 dark:text-gray-300">
+                {t('models.testing')}...
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500 max-w-xs leading-relaxed">
+                {t('models.testBackgroundHint')}
+              </p>
+              <button
+                onClick={cancelTestFromModal}
+                className="mt-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 text-red-600 dark:text-red-300 rounded text-xs font-medium transition-colors"
+              >
+                {t('common.cancelTest')}
+              </button>
             </div>
-            <button
-              onClick={cancelRowTest}
-              className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-400 transition-colors"
-            >
-              {t('common.cancel')}
-            </button>
-          </div>
-        </div>
-      )}
-      {rowTestResult && (
-        <div className={`px-4 py-3 rounded-lg border ${rowTestResult.result.success ? 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30' : 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30'}`}>
-          <div className="flex items-center justify-between">
-            <div>
-              <span className={`text-sm font-semibold ${rowTestResult.result.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {rowTestResult.result.success ? t('models.testPassed') : t('models.testFailed')}
-              </span>
-              <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                {rowTestResult.result.provider} / {rowTestResult.result.model}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400 dark:text-gray-500">{rowTestResult.result.latencyMs}ms</span>
-              <button onClick={() => setRowTestResult(null)} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xs">{t('common.dismiss')}</button>
-            </div>
-          </div>
-          {rowTestResult.result.success && rowTestResult.result.response && (
-            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-              {t('models.response')}: <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-green-600 dark:text-green-300">{rowTestResult.result.response}</code>
-            </p>
           )}
-          {!rowTestResult.result.success && rowTestResult.result.error && (
-            <p className="text-sm text-red-500 dark:text-red-300 mt-1">{rowTestResult.result.error}</p>
+          {!testModalIsRunning && testModalResult && (
+            <div className={`px-4 py-3 rounded-lg border ${testModalResult.success ? 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30' : 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30'}`}>
+              <div className="flex items-center justify-between">
+                <span className={`text-sm font-semibold ${testModalResult.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {testModalResult.success ? t('models.testPassed') : t('models.testFailed')}
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500">{testModalResult.latencyMs}ms</span>
+              </div>
+              {testModalResult.success && testModalResult.response && (
+                <div className="mt-2">
+                  <p className="text-sm text-gray-700 dark:text-gray-300 break-words">
+                    {t('models.response')}: <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-green-600 dark:text-green-300">{testModalResult.response}</code>
+                  </p>
+                  {isImageUrl(testModalResult.response) && (
+                    <img
+                      src={testModalResult.response.trim()}
+                      alt="Generated image"
+                      className="mt-2 max-w-full rounded-lg border border-gray-200 dark:border-gray-700"
+                      loading="lazy"
+                    />
+                  )}
+                </div>
+              )}
+              {testModalResult.success && testModalResult.usage && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5">
+                  {t('models.tokens')}: {testModalResult.usage.promptTokens} {t('models.tokensIn')} / {testModalResult.usage.completionTokens} {t('models.tokensOut')}
+                </p>
+              )}
+              {!testModalResult.success && testModalResult.error && (
+                <p className="text-sm text-red-500 dark:text-red-300 mt-1 break-words">{testModalResult.error}</p>
+              )}
+              <div className="flex justify-end gap-2 mt-3">
+                {testModalMapping && (
+                  <button
+                    onClick={() => handleRowTest(testModalMapping)}
+                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded text-xs font-medium transition-colors"
+                  >
+                    {t('common.test')}
+                  </button>
+                )}
+                <button
+                  onClick={closeTestModal}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded text-xs font-medium transition-colors"
+                >
+                  {t('common.dismiss')}
+                </button>
+              </div>
+            </div>
           )}
         </div>
-      )}
+      </Modal>
 
       {/* 검색/필터 툴바 */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 flex flex-wrap items-center gap-2">
@@ -996,24 +1167,41 @@ export default function ModelMappingsPage() {
 
       {/* 테이블 */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
+        <div className="max-h-[calc(100vh-280px)] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80 dark:supports-[backdrop-filter]:bg-gray-900/80">
             <tr className="border-b border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider">
-              <th className="text-left px-4 py-3">{t('models.alias')}</th>
-              <th className="text-left px-4 py-3">{t('models.provider')}</th>
+              <SortableTh label={t('models.alias')} sortKey="alias" current={sortKey} dir={sortDir} onSort={handleSort} />
+              <SortableTh label={t('models.provider')} sortKey="provider" current={sortKey} dir={sortDir} onSort={handleSort} />
               <th className="text-left px-4 py-3">{t('models.actualModel')}</th>
               <th className="text-left px-4 py-3">{t('models.reasoningEffort')}</th>
-              <th className="text-left px-4 py-3">{t('models.priority')}</th>
+              <SortableTh label={t('models.priority')} sortKey="priority" current={sortKey} dir={sortDir} onSort={handleSort} />
               <th className="text-left px-4 py-3">{t('models.status')}</th>
               <th className="text-right px-4 py-3">{t('models.actions')}</th>
             </tr>
           </thead>
           <tbody>
-            {filteredMappings.map((m) => (
-              <tr key={m.id} className="border-b border-gray-100 dark:border-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/30">
-                <td className="px-4 py-3 font-mono text-blue-600 dark:text-blue-400">{m.alias}</td>
-                <td className="px-4 py-3 capitalize text-gray-700 dark:text-gray-300">{m.provider}</td>
-                <td className="px-4 py-3 font-mono text-gray-500 dark:text-gray-300">{m.actualModel}</td>
+            {filteredMappings.map((m, idx) => {
+              const style = getProviderStyle(m.provider);
+              // provider별 그룹 첫 행에 살짝 두꺼운 구분선 (provider 정렬 시 그룹 가독성 ↑)
+              const prevSameProvider = idx > 0 && filteredMappings[idx - 1].provider === m.provider;
+              const groupBorder = sortKey === 'provider' && !prevSameProvider
+                ? 'border-t-2 border-t-gray-300 dark:border-t-gray-700'
+                : 'border-t border-t-gray-100 dark:border-t-gray-800/50';
+              return (
+              <tr
+                key={m.id}
+                className={`${groupBorder} hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors group ${!m.enabled ? 'opacity-60' : ''}`}
+              >
+                <td className="relative px-4 py-3 font-mono text-blue-600 dark:text-blue-300 font-semibold">
+                  {/* 좌측 컬러 액센트 — provider 아이덴티티 보조 표시 */}
+                  <span aria-hidden className={`absolute left-0 top-0 bottom-0 w-1 ${style.accent} opacity-60 group-hover:opacity-100 transition-opacity`} />
+                  <span className="ml-1">{m.alias}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <ProviderBadge provider={m.provider} />
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400">{m.actualModel}</td>
                 <td className="px-4 py-3 text-xs">
                   {m.reasoningEffort ? (
                     <span className="px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 font-mono">
@@ -1023,11 +1211,11 @@ export default function ModelMappingsPage() {
                     <span className="text-gray-300 dark:text-gray-600">—</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-gray-400 dark:text-gray-500">{m.priority}</td>
+                <td className="px-4 py-3 text-gray-400 dark:text-gray-500 tabular-nums">{m.priority}</td>
                 <td className="px-4 py-3">
                   <button
                     onClick={() => handleToggle(m)}
-                    className={`px-2 py-0.5 rounded text-xs ${m.enabled ? 'bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}
+                    className={`px-2 py-0.5 rounded text-xs font-medium ${m.enabled ? 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'}`}
                   >
                     {m.enabled ? t('common.on') : t('common.off')}
                   </button>
@@ -1080,7 +1268,8 @@ export default function ModelMappingsPage() {
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {filteredMappings.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-gray-400 dark:text-gray-600">
@@ -1092,8 +1281,82 @@ export default function ModelMappingsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
+
+      {/* 백그라운드 테스트 완료 토스트 — 모달이 닫혀 있는 동안 결과 도착 시 표시 */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-6 right-6 z-40 max-w-sm px-4 py-3 rounded-xl shadow-lg border backdrop-blur-sm flex items-start gap-3 ${
+            toast.success
+              ? 'bg-green-50/95 dark:bg-green-900/40 border-green-300 dark:border-green-700 text-green-900 dark:text-green-100'
+              : 'bg-red-50/95 dark:bg-red-900/40 border-red-300 dark:border-red-700 text-red-900 dark:text-red-100'
+          }`}
+        >
+          <span aria-hidden className="text-lg leading-none mt-0.5">
+            {toast.success ? '✓' : '✕'}
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold truncate">
+              {(toast.success
+                ? t('models.testToastSuccess', { model: toast.alias })
+                : t('models.testToastFailure', { model: toast.alias }))}
+            </div>
+            <div className="text-xs opacity-80 truncate font-mono">{toast.model}</div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={handleToastView}
+              className="px-2 py-1 text-xs font-medium rounded bg-white/60 dark:bg-black/30 hover:bg-white dark:hover:bg-black/50 transition-colors"
+            >
+              {t('models.testToastView')}
+            </button>
+            <button
+              onClick={() => setToast(null)}
+              aria-label={t('models.testToastDismiss')}
+              className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// 정렬 가능한 헤더 셀
+interface SortableThProps {
+  label: string;
+  sortKey: SortKey;
+  current: SortKey;
+  dir: SortDir;
+  onSort: (key: SortKey) => void;
+}
+
+function SortableTh({ label, sortKey, current, dir, onSort }: SortableThProps) {
+  const active = current === sortKey;
+  return (
+    <th className="text-left px-4 py-3 select-none">
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 text-xs uppercase tracking-wider transition-colors ${
+          active
+            ? 'text-blue-600 dark:text-blue-300 font-semibold'
+            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+        }`}
+      >
+        {label}
+        <span aria-hidden className={`text-[10px] ${active ? 'opacity-100' : 'opacity-30'}`}>
+          {active ? (dir === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </th>
   );
 }
 
