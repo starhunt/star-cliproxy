@@ -192,14 +192,17 @@ export function loadConfig(configPath?: string): AppConfig {
       reasoning_effort: normalizeReasoningEffort(m.reasoning_effort),
       provider_overrides: normalizeProviderOverrides(m.provider_overrides),
     })) ?? [
-      { alias: 'claude-opus', provider: 'claude', actual_model: 'claude-opus-4-6' },
+      // 초기 시드 — 프로바이더당 최대 2개. 대시보드에서 추가/수정 가능.
       { alias: 'claude-sonnet', provider: 'claude', actual_model: 'claude-sonnet-4-6' },
       { alias: 'claude-haiku', provider: 'claude', actual_model: 'claude-haiku-4-5-20251001' },
-      { alias: 'gpt-4', provider: 'codex', actual_model: '' },
-      { alias: 'gpt-4o', provider: 'codex', actual_model: '' },
-      { alias: 'o4-mini', provider: 'codex', actual_model: '' },
+      { alias: 'gpt-5.5', provider: 'codex', actual_model: 'gpt-5.5' },
+      { alias: 'gpt-5.4-mini', provider: 'codex', actual_model: 'gpt-5.4-mini' },
+      { alias: 'copilot-sonnet', provider: 'copilot', actual_model: 'claude-sonnet-4-6' },
+      { alias: 'copilot-gpt', provider: 'copilot', actual_model: 'gpt-5.4' },
       { alias: 'gemini-pro', provider: 'gemini', actual_model: 'gemini-2.5-pro' },
       { alias: 'gemini-flash', provider: 'gemini', actual_model: 'gemini-2.5-flash' },
+      // Antigravity 1.0.0: actual_model은 표시용
+      { alias: 'antigravity', provider: 'agy', actual_model: 'antigravity' },
     ],
   };
 }

@@ -18,12 +18,12 @@ import PlaygroundPage from './pages/PlaygroundPage';
 const navItems = [
   { to: '/', labelKey: 'nav.dashboard', icon: '~' },
   { to: '/playground', labelKey: 'nav.playground', icon: '^' },
+  { to: '/providers', labelKey: 'nav.providers', icon: '&' },
   { to: '/models', labelKey: 'nav.models', icon: '#' },
+  { to: '/debug', labelKey: 'nav.debug', icon: '!' },
   { to: '/keys', labelKey: 'nav.apiKeys', icon: '*' },
   { to: '/rate-limits', labelKey: 'nav.rateLimits', icon: '%' },
-  { to: '/providers', labelKey: 'nav.providers', icon: '&' },
   { to: '/logs', labelKey: 'nav.logs', icon: '>' },
-  { to: '/debug', labelKey: 'nav.debug', icon: '!' },
   { to: '/settings', labelKey: 'nav.settings', icon: '@' },
   { to: '/guide', labelKey: 'nav.apiGuide', icon: '?' },
 ];
