@@ -75,14 +75,14 @@ describe('AgyProvider.buildArgs', () => {
     expect(args).not.toContain('gemini-3-flash');
   });
 
-  it('extra_args를 -p prompt 뒤에 그대로 append', () => {
+  it('extra_args를 -p prompt 앞에 그대로 prepend', () => {
     const provider = new AgyProvider(baseConfig({
       extra_args: ['--dangerously-skip-permissions', '--sandbox'],
     }));
     const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
       baseOptions(),
     );
-    expect(args).toEqual(['-p', 'hello', '--dangerously-skip-permissions', '--sandbox']);
+    expect(args).toEqual(['--dangerously-skip-permissions', '--sandbox', '-p', 'hello']);
   });
 
   it('800KB 초과 prompt는 빌드 단계에서 즉시 throw (ARG_MAX 보호)', () => {
