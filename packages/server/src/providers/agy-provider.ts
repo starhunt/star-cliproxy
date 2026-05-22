@@ -52,9 +52,10 @@ export class AgyProvider extends BaseProvider {
       );
     }
 
-    const args: string[] = ['-p', prompt];
-    args.push(...this.config.extra_args);
-    return args;
+    // agy parses print-mode flags before the print prompt. Keep user-provided
+    // flags before -p so options such as --print-timeout apply to this run
+    // instead of being interpreted as prompt text or ignored after the prompt.
+    return [...this.config.extra_args, '-p', prompt];
   }
 
   // agy는 plain text를 stdout으로 흘리므로 BaseProvider의 NDJSON 라인 파싱을 우회.

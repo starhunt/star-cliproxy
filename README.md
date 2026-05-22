@@ -2,7 +2,7 @@
 
 # star-cliproxy
 
-An OpenAI-compatible API proxy powered by your AI CLI subscriptions — Claude, Codex, Copilot, and Gemini
+An OpenAI-compatible API proxy powered by your AI CLI subscriptions - Claude, Codex, Copilot, Gemini, and Antigravity
 
 ![Dashboard](docs/images/dashboard.png)
 
@@ -32,7 +32,7 @@ response = client.chat.completions.create(
 
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/images/generations`, and `/v1/models` endpoints
 - **Anthropic Messages API** — `/v1/messages` endpoint for native Claude Code / Anthropic SDK support
-- **Four CLI providers** — Claude Code, Codex, Copilot CLI, Gemini CLI
+- **Five CLI providers** - Claude Code, Codex, Copilot CLI, Gemini CLI, Antigravity CLI
 - **HTTP providers** — connect any OpenAI-compatible HTTP API (MLX serve, llama.cpp, vLLM, Ollama, LM Studio, etc.) with no wrapper scripts
 - **Claude Agent SDK mode** — optional SDK execution for Claude provider with session reuse, fine-grained tool control, and budget limits
 - **Plugin system** — extend with custom providers without modifying the main codebase (see [Plugin Guide](./plugins/README.md))
@@ -74,6 +74,7 @@ response = client.chat.completions.create(
 | [Codex](https://github.com/openai/codex) | ChatGPT Plus / Pro | `npm install -g @openai/codex` |
 | [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | GitHub Copilot | `gh extension install github/gh-copilot` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
+| [Antigravity CLI](https://antigravity.google/) | Google AI Pro / Ultra | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
 
 > **HTTP providers:** Any local server with an OpenAI-compatible API (MLX serve, llama.cpp, vLLM, Ollama, LM Studio) can be added directly from the dashboard — no CLI tool or plugin needed. See [HTTP Providers](#http-providers) below.
 >
@@ -135,6 +136,9 @@ providers:
   gemini:
     enabled: false    # disable if not installed
     cli_path: "gemini"
+  agy:
+    enabled: false    # use Antigravity CLI
+    cli_path: "agy"
 ```
 
 ### 3. Run
@@ -281,6 +285,7 @@ Default mappings (add or modify from the dashboard):
 | `gpt-4o` | Codex | `gpt-5.4` |
 | `gemini-pro` | Gemini | `gemini-2.5-pro` |
 | `gemini-flash` | Gemini | `gemini-2.5-flash` |
+| `antigravity` | Antigravity | `antigravity` |
 
 Mapping the same alias to multiple providers enables **automatic fallback** in priority order.
 
@@ -328,6 +333,7 @@ Levels: `low` · `medium` · `high` · `xhigh` · `max`. Per-provider mapping:
 | Codex | `-c model_reasoning_effort=<level>` | low, medium, high | `xhigh`/`max` → `high` |
 | Copilot | `--effort <level>` | low, medium, high, xhigh | `max` → `xhigh` |
 | Gemini | — | (unsupported) | field is ignored |
+| Antigravity | none | (unsupported) | field is ignored |
 
 Notes:
 - Applies in **CLI mode** only. Codex App Server / Claude SDK modes use their own config channels (`~/.codex/config.toml`, `sdk_options`).
@@ -417,7 +423,7 @@ model_mappings:
         session_ttl_ms: 3600000   # 1 hour
 ```
 
-In the Dashboard the form exposes the whitelisted fields under **Provider Overrides** (visible only when the provider is `codex`); leave a field blank to inherit the provider default. Other providers (`claude`, `gemini`, `copilot`, `http`) currently ignore `provider_overrides`.
+In the Dashboard the form exposes the whitelisted fields under **Provider Overrides** (visible only when the provider is `codex`); leave a field blank to inherit the provider default. Other providers (`claude`, `gemini`, `copilot`, `agy`, `http`) currently ignore `provider_overrides`.
 
 ## HTTP Providers
 
