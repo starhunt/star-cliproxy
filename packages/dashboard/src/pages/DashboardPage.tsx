@@ -44,7 +44,7 @@ export default function DashboardPage() {
     const intervalMs = hasActiveRequests ? 2_000 : 10_000;
     const timer = setInterval(load, intervalMs);
     return () => clearInterval(timer);
-  }, [hasActiveRequests]);
+  }, [hasActiveRequests, days]);
 
   if (error) {
     return (
