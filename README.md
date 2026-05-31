@@ -2,7 +2,7 @@
 
 # star-cliproxy
 
-An OpenAI-compatible API proxy powered by your AI CLI subscriptions - Claude, Codex, Copilot, Gemini, and Antigravity
+An OpenAI-compatible API proxy powered by your AI CLI subscriptions - Claude, Codex, Copilot, Gemini, Antigravity, and Grok
 
 ![Dashboard](docs/images/dashboard.png)
 
@@ -32,7 +32,7 @@ response = client.chat.completions.create(
 
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/images/generations`, and `/v1/models` endpoints
 - **Anthropic Messages API** — `/v1/messages` endpoint for native Claude Code / Anthropic SDK support
-- **Five CLI providers** - Claude Code, Codex, Copilot CLI, Gemini CLI, Antigravity CLI
+- **Six CLI providers** - Claude Code, Codex, Copilot CLI, Gemini CLI, Antigravity CLI, Grok Build CLI
 - **HTTP providers** — connect any OpenAI-compatible HTTP API (MLX serve, llama.cpp, vLLM, Ollama, LM Studio, etc.) with no wrapper scripts
 - **Claude Agent SDK mode** — optional SDK execution for Claude provider with session reuse, fine-grained tool control, and budget limits
 - **Plugin system** — extend with custom providers without modifying the main codebase (see [Plugin Guide](./plugins/README.md))
@@ -75,6 +75,7 @@ response = client.chat.completions.create(
 | [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | GitHub Copilot | `gh extension install github/gh-copilot` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
 | [Antigravity CLI](https://antigravity.google/) | Google AI Pro / Ultra | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
+| [Grok Build CLI](https://x.ai/cli) | SuperGrok / X Premium+ | `curl -fsSL https://x.ai/cli/install.sh \| bash` |
 
 > **HTTP providers:** Any local server with an OpenAI-compatible API (MLX serve, llama.cpp, vLLM, Ollama, LM Studio) can be added directly from the dashboard — no CLI tool or plugin needed. See [HTTP Providers](#http-providers) below.
 >
@@ -139,6 +140,10 @@ providers:
   agy:
     enabled: false    # use Antigravity CLI
     cli_path: "agy"
+  grok:
+    enabled: true     # xAI Grok Build CLI (grok login required)
+    cli_path: "grok"
+    default_model: "grok-build"
 ```
 
 ### 3. Run
@@ -286,6 +291,7 @@ Default mappings (add or modify from the dashboard):
 | `gemini-pro` | Gemini | `gemini-2.5-pro` |
 | `gemini-flash` | Gemini | `gemini-2.5-flash` |
 | `antigravity` | Antigravity | `antigravity` |
+| `grok-build` | Grok | `grok-build` |
 
 Mapping the same alias to multiple providers enables **automatic fallback** in priority order.
 
@@ -334,6 +340,7 @@ Levels: `low` · `medium` · `high` · `xhigh` · `max`. Per-provider mapping:
 | Copilot | `--effort <level>` | low, medium, high, xhigh | `max` → `xhigh` |
 | Gemini | — | (unsupported) | field is ignored |
 | Antigravity | none | (unsupported) | field is ignored |
+| Grok | — | (unsupported) | field is ignored |
 
 Notes:
 - Applies in **CLI mode** only. Codex App Server / Claude SDK modes use their own config channels (`~/.codex/config.toml`, `sdk_options`).
@@ -423,7 +430,7 @@ model_mappings:
         session_ttl_ms: 3600000   # 1 hour
 ```
 
-In the Dashboard the form exposes the whitelisted fields under **Provider Overrides** (visible only when the provider is `codex`); leave a field blank to inherit the provider default. Other providers (`claude`, `gemini`, `copilot`, `agy`, `http`) currently ignore `provider_overrides`.
+In the Dashboard the form exposes the whitelisted fields under **Provider Overrides** (visible only when the provider is `codex`); leave a field blank to inherit the provider default. Other providers (`claude`, `gemini`, `copilot`, `agy`, `grok`, `http`) currently ignore `provider_overrides`.
 
 ## HTTP Providers
 

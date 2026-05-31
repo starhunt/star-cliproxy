@@ -115,6 +115,28 @@ providers:
     #   - "--sandbox"                       # 터미널 제한 샌드박스 (격리 범위는 agy 1.0.0 문서 기준 불명확)
     # working_dir: "/path/to/safe-workspace"  # 파일 시스템 격리 권장 (--dangerously-skip-permissions 사용 시 필수)
 
+  # xAI Grok Build CLI (grok, "Grok Build TUI") — 2026-05-20 발표.
+  # SuperGrok / X Premium+ 구독 + 사전 로그인 필요 (grok login). 설치 후 `grok models`로 모델 확인.
+  # 헤드리스 단발 실행: grok -m <model> -p "<prompt>" → stdout plain text.
+  #
+  # 동작 (구현 시 반영됨):
+  #   - -m/--model 지원 → 매핑된 actual_model을 실제로 전달. 현재 `grok models`는 grok-build 1종(default) 노출.
+  #   - 출력은 plain text(stdout). 토큰 사용량은 추정값(estimateTokens).
+  #   - 단일-청크 가짜 스트리밍으로 wrap(클라이언트 호환 유지). --reasoning-effort는 미배선(매핑에서 무시).
+  #   - 세션 연속성은 매 호출 신규(messages 전체를 매번 prompt로 직렬화).
+  grok:
+    enabled: true
+    cli_path: "grok"
+    default_model: "grok-build"         # `grok models`의 기본·최신 모델
+    max_concurrent: 5                   # 구독 쿼터 보호를 위해 보수적 기본값
+    timeout_ms: 300000
+    extra_args: []
+    # 옵션 (사용자 옵트인 — 보안/안정성 영향 큰 플래그):
+    # extra_args:
+    #   - "--always-approve"                # 툴 자동 승인 (무인 프록시 운영 시)
+    #                                       # 주의: prompt 내 악성 지시가 working_dir 범위 안에서 실행될 수 있음
+    # working_dir: "/path/to/safe-workspace"  # 파일 시스템 격리 권장 (--always-approve 사용 시 권장)
+
 # 플러그인: 커스텀 프로바이더를 코드 수정 없이 추가
 # plugins/ 디렉토리에 플러그인을 만들고 여기에 등록
 # 자세한 가이드: plugins/README.md, 예제: plugins/example-plugin/
@@ -140,6 +162,8 @@ rate_limits:
     gemini:
       rpm: 20
     agy:
+      rpm: 20
+    grok:
       rpm: 20
 
 cache:
@@ -209,3 +233,8 @@ model_mappings:
   - alias: "antigravity"
     provider: "agy"
     actual_model: "antigravity"
+
+  # xAI Grok Build — 최신 단일 모델 (grok models의 기본값)
+  - alias: "grok-build"
+    provider: "grok"
+    actual_model: "grok-build"

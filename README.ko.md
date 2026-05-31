@@ -2,7 +2,7 @@
 
 # star-cliproxy
 
-AI CLI 구독 플랜을 활용한 OpenAI 호환 API 프록시 - Claude, Codex, Copilot, Gemini, Antigravity CLI 지원
+AI CLI 구독 플랜을 활용한 OpenAI 호환 API 프록시 - Claude, Codex, Copilot, Gemini, Antigravity, Grok CLI 지원
 
 ![Dashboard](docs/images/dashboard.png)
 
@@ -32,7 +32,7 @@ response = client.chat.completions.create(
 
 - **OpenAI 호환 API** — `/v1/chat/completions`, `/v1/images/generations`, `/v1/models` 엔드포인트
 - **Anthropic Messages API** — `/v1/messages` 엔드포인트로 Claude Code / Anthropic SDK 네이티브 지원
-- **5개 CLI Provider 지원** - Claude Code, Codex, Copilot CLI, Gemini CLI, Antigravity CLI
+- **6개 CLI Provider 지원** - Claude Code, Codex, Copilot CLI, Gemini CLI, Antigravity CLI, Grok Build CLI
 - **HTTP Provider** — OpenAI 호환 HTTP API 서버 직접 연결 (MLX serve, llama.cpp, vLLM, Ollama, LM Studio 등) — 래퍼 스크립트 불필요
 - **Claude Agent SDK 모드** — Claude 프로바이더의 선택적 SDK 실행 모드 (세션 재사용, 도구 제어, 비용 제한)
 - **플러그인 시스템** — 메인 코드 수정 없이 커스텀 프로바이더 추가 가능 ([플러그인 가이드](./plugins/README.md))
@@ -75,6 +75,7 @@ response = client.chat.completions.create(
 | [Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) | GitHub Copilot | `gh extension install github/gh-copilot` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm install -g @google/gemini-cli` |
 | [Antigravity CLI](https://antigravity.google/) | Google AI Pro / Ultra | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
+| [Grok Build CLI](https://x.ai/cli) | SuperGrok / X Premium+ | `curl -fsSL https://x.ai/cli/install.sh \| bash` |
 
 > **HTTP Provider:** OpenAI 호환 API를 제공하는 로컬 서버(MLX serve, llama.cpp, vLLM, Ollama, LM Studio)는 대시보드에서 바로 추가할 수 있습니다 — CLI 도구나 플러그인 없이 사용 가능.
 >
@@ -139,6 +140,10 @@ providers:
   agy:
     enabled: false    # Antigravity CLI 사용
     cli_path: "agy"
+  grok:
+    enabled: true     # xAI Grok Build CLI (grok login 필요)
+    cli_path: "grok"
+    default_model: "grok-build"
 ```
 
 ### 3. Run
@@ -285,6 +290,7 @@ localcc() {
 | `gemini-pro` | Gemini | `gemini-2.5-pro` |
 | `gemini-flash` | Gemini | `gemini-2.5-flash` |
 | `antigravity` | Antigravity | `antigravity` |
+| `grok-build` | Grok | `grok-build` |
 
 같은 alias에 여러 provider를 매핑하면 priority 순으로 **자동 폴백**됩니다.
 
@@ -333,6 +339,7 @@ curl http://localhost:8300/v1/chat/completions \
 | Copilot | `--effort <level>` | low, medium, high, xhigh | `max` → `xhigh` |
 | Gemini | — | (미지원) | 필드 무시 |
 | Antigravity | 없음 | (미지원) | 필드 무시 |
+| Grok | — | (미지원) | 필드 무시 |
 
 참고:
 - **CLI 모드 전용**입니다. Codex App Server / Claude SDK 모드는 각자 설정 채널(`~/.codex/config.toml`, `sdk_options`)을 사용하세요.
@@ -422,7 +429,7 @@ model_mappings:
         session_ttl_ms: 3600000   # 1시간
 ```
 
-대시보드 모델 매핑 편집 화면의 **Provider Overrides** 섹션에서 화이트리스트 필드를 폼으로 설정할 수 있습니다 (`codex` provider 선택 시에만 표시). 빈 칸으로 두면 프로바이더 기본값을 따릅니다. 다른 프로바이더(`claude`, `gemini`, `copilot`, `agy`, `http`)는 현재 `provider_overrides`를 무시합니다.
+대시보드 모델 매핑 편집 화면의 **Provider Overrides** 섹션에서 화이트리스트 필드를 폼으로 설정할 수 있습니다 (`codex` provider 선택 시에만 표시). 빈 칸으로 두면 프로바이더 기본값을 따릅니다. 다른 프로바이더(`claude`, `gemini`, `copilot`, `agy`, `grok`, `http`)는 현재 `provider_overrides`를 무시합니다.
 
 ## Configuration
 

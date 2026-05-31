@@ -8,7 +8,7 @@ import type { ActiveRequestTracker } from '../../services/active-requests.js';
 import { HttpProvider } from '../../providers/http-provider.js';
 
 // 빌트인 프로바이더 — kind 분류용. 다른 곳의 동일 상수와 동기 유지 필요.
-const BUILTIN_PROVIDER_NAMES = new Set(['claude', 'codex', 'copilot', 'gemini', 'agy']);
+const BUILTIN_PROVIDER_NAMES = new Set(['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok']);
 type ProviderKind = 'builtin' | 'http' | 'plugin';
 
 interface DashboardDeps {

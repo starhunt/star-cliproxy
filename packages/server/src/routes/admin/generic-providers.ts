@@ -13,7 +13,7 @@ const GENERIC_PROVIDER_PREFIX = 'generic_provider:';
 const PROVIDER_CONFIG_PREFIX = 'provider_config:';
 
 // 빌트인 프로바이더 이름 (사용 불가)
-const BUILTIN_PROVIDER_NAMES = ['claude', 'codex', 'copilot', 'gemini', 'agy'];
+const BUILTIN_PROVIDER_NAMES = ['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok'];
 
 // 프로바이더 이름 유효성 검사 패턴: 소문자·숫자·하이픈, 길이 2-30
 const PROVIDER_NAME_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;

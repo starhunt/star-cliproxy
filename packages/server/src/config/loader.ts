@@ -82,6 +82,8 @@ const BUILTIN_DEFAULTS: Record<string, { cliPath: string; defaultModel: string }
   gemini: { cliPath: 'gemini', defaultModel: 'gemini-2.5-pro' },
   // agy 1.0.0은 -m/--model 미지원 → defaultModel은 응답 메타데이터 표시용
   agy: { cliPath: 'agy', defaultModel: 'antigravity' },
+  // xAI Grok Build CLI (`grok`) — -m/--model 지원, 헤드리스 `grok -p`
+  grok: { cliPath: 'grok', defaultModel: 'grok-build' },
 };
 
 export function loadConfig(configPath?: string): AppConfig {
@@ -203,6 +205,8 @@ export function loadConfig(configPath?: string): AppConfig {
       { alias: 'gemini-flash', provider: 'gemini', actual_model: 'gemini-2.5-flash' },
       // Antigravity 1.0.0: actual_model은 표시용
       { alias: 'antigravity', provider: 'agy', actual_model: 'antigravity' },
+      // xAI Grok Build — 최신 단일 모델
+      { alias: 'grok-build', provider: 'grok', actual_model: 'grok-build' },
     ],
   };
 }

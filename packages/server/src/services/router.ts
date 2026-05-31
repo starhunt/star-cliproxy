@@ -108,6 +108,10 @@ export class ModelRouter {
     if (/^(antigravity|agy)(-|$)/.test(lower)) {
       return 'agy';
     }
+    // Grok: grok, grok-* 접두사
+    if (/^grok(-|$)/.test(lower)) {
+      return 'grok';
+    }
     return null;
   }
 }

@@ -132,6 +132,11 @@ function buildTerminalCommand(log: { cliArgs: string | null; httpRequest?: strin
       return cmdArgs.map(escapeShellArg).join(' ');
     }
 
+    if (provider === 'grok') {
+      // grok: prompt가 이미 -p 인수에 직접 들어 있어 stdin 파이프 불필요
+      return cmdArgs.map(escapeShellArg).join(' ');
+    }
+
     // 기타 프로바이더
     const cmd = cmdArgs.map(escapeShellArg).join(' ');
     if (messages) {
