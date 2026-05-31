@@ -133,7 +133,7 @@ export default function ModelMappingsPage() {
   const [testResult, setTestResult] = useState<TestModelResult | null>(null);
   const [rowTesting, setRowTesting] = useState<string | null>(null);
   const [rowTestResult, setRowTestResult] = useState<{ id: string; result: TestModelResult } | null>(null);
-  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini', 'agy']);
+  const [providerNames, setProviderNames] = useState<string[]>(['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok']);
   // ephemeral ↔ enable_session_reuse 자동 조정 알림 (3초 후 자동 해제)
   const [overrideMutexNotice, setOverrideMutexNotice] = useState(false);
   const mutexNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -671,9 +671,9 @@ export default function ModelMappingsPage() {
                 <select
                   value={form.reasoning_effort}
                   onChange={(e) => setForm({ ...form, reasoning_effort: e.target.value as ReasoningEffortValue })}
-                  disabled={form.provider === 'gemini' || form.provider === 'agy'}
+                  disabled={form.provider === 'gemini' || form.provider === 'agy' || form.provider === 'grok'}
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={(form.provider === 'gemini' || form.provider === 'agy') ? t('models.reasoningEffortUnsupported') : t('models.reasoningEffortHelp')}
+                  title={(form.provider === 'gemini' || form.provider === 'agy' || form.provider === 'grok') ? t('models.reasoningEffortUnsupported') : t('models.reasoningEffortHelp')}
                 >
                   {REASONING_EFFORT_OPTIONS.map((value) => (
                     <option key={value || 'default'} value={value}>
