@@ -44,6 +44,16 @@ function formatClock(epoch: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+// API 키 마스킹: 앞 8자(sk-proxy-)와 끝 4자만 노출, 중간은 *로 가림.
+// 포커스가 없을 때 표시용 — 실제 값은 그대로 보존된다.
+function maskApiKey(key: string): string {
+  if (!key) return '';
+  if (key.length <= 12) return '*'.repeat(key.length);
+  const head = key.slice(0, 8);
+  const tail = key.slice(-4);
+  return `${head}${'*'.repeat(key.length - 12)}${tail}`;
+}
+
 const STORAGE_KEY = 'playground_state';
 
 interface PlaygroundState {
@@ -82,6 +92,8 @@ export default function PlaygroundPage() {
   const saved = useRef(loadPlaygroundState());
   const [selectedModel, setSelectedModel] = useState(saved.current.model);
   const [apiKey, setApiKey] = useState(saved.current.apiKey);
+  // 포커스 중에는 실제 값, 아닐 때는 마스킹 표시 (편집·붙여넣기는 정상 동작)
+  const [apiKeyFocused, setApiKeyFocused] = useState(false);
   const [messages, setMessages] = useState<Message[]>(saved.current.messages);
   const [stream, setStream] = useState(false);
   const [temperature, setTemperature] = useState<string>('');
@@ -354,9 +366,13 @@ export default function PlaygroundPage() {
           <label className={labelCls}>{t('playground.apiKey')}</label>
           <input
             type="text"
-            value={apiKey}
+            value={apiKeyFocused ? apiKey : maskApiKey(apiKey)}
             onChange={(e) => setApiKey(e.target.value)}
+            onFocus={() => setApiKeyFocused(true)}
+            onBlur={() => setApiKeyFocused(false)}
             placeholder="sk-proxy-..."
+            autoComplete="off"
+            spellCheck={false}
             className={`w-full ${inputCls} font-mono`}
           />
         </div>
