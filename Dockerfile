@@ -43,8 +43,8 @@ COPY --from=dashboard-build /app/packages/dashboard/dist /usr/share/nginx/html
 COPY <<'CONF' /etc/nginx/templates/default.conf.template
 server {
     listen 80;
-    location /admin { proxy_pass ${CLIPROXY_UPSTREAM}; proxy_set_header Host $host; }
-    location /v1 { proxy_pass ${CLIPROXY_UPSTREAM}; proxy_set_header Host $host; proxy_buffering off; }
+    location /admin { proxy_pass ${CLIPROXY_UPSTREAM}; proxy_set_header Host $host; proxy_read_timeout 300s; proxy_send_timeout 300s; }
+    location /v1 { proxy_pass ${CLIPROXY_UPSTREAM}; proxy_set_header Host $host; proxy_buffering off; proxy_read_timeout 300s; proxy_send_timeout 300s; }
     location /health { proxy_pass ${CLIPROXY_UPSTREAM}; }
     location / { root /usr/share/nginx/html; try_files $uri /index.html; }
 }
