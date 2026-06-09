@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { eq, like } from 'drizzle-orm';
-import type { HttpProviderConfig } from '@star-cliproxy/shared';
+import type { HttpProviderConfig, EndpointType } from '@star-cliproxy/shared';
+import { inferEndpointTypeFromName } from '@star-cliproxy/shared';
 import { getDatabase } from '../../db/client.js';
 import { settings, providerHealth } from '../../db/schema.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
@@ -85,6 +86,94 @@ interface HttpProviderDeps {
   registry: ProviderRegistry;
   healthChecker: HealthChecker;
   queueManager: QueueManager;
+}
+
+// ── 엔드포인트 타입 자동 감지 ────────────────────────────────
+// base_url에 최소 요청을 보내 어떤 엔드포인트가 실제로 응답하는지 판별한다.
+// chat/embeddings/rerank만 실제 프로빙(저비용). images/tts는 생성 비용이 커서
+// 수동 선택 + 이름 휴리스틱에 맡긴다.
+interface ProbeOutcome {
+  type: EndpointType;
+  ok: boolean;
+  status: number | null;
+  error?: string;
+}
+
+async function probeEndpoint(
+  type: EndpointType,
+  url: string,
+  body: unknown,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  isOk: (json: unknown) => boolean,
+): Promise<ProbeOutcome> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    let json: unknown = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+    return { type, ok: res.ok && isOk(json), status: res.status };
+  } catch (err) {
+    return { type, ok: false, status: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function detectEndpointType(
+  baseUrl: string,
+  model: string,
+  apiKey: string | undefined,
+  customHeaders: Record<string, string> | undefined,
+  timeoutMs: number,
+): Promise<{ detected: EndpointType | null; source: 'probe' | 'heuristic' | 'none'; results: ProbeOutcome[] }> {
+  const base = baseUrl.replace(/\/+$/, '');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(customHeaders ?? {}),
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+  };
+  const m = model || 'detect-probe';
+
+  // record 형태 안전 접근
+  const obj = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? v as Record<string, unknown> : {});
+
+  const results = await Promise.all([
+    probeEndpoint('embeddings', `${base}/embeddings`, { model: m, input: 'ping' }, headers, timeoutMs, (j) => {
+      const data = obj(j).data;
+      if (Array.isArray(data) && data.length > 0 && (obj(data[0]).embedding !== undefined)) return true;
+      // TEI native: [[...]] 형태
+      return Array.isArray(j) && Array.isArray((j as unknown[])[0]);
+    }),
+    // Cohere(documents) / TEI(texts) 양쪽 형식을 함께 전송
+    probeEndpoint('rerank', `${base}/rerank`, { model: m, query: 'ping', documents: ['a', 'b'], texts: ['a', 'b'], top_n: 2 }, headers, timeoutMs, (j) => {
+      if (Array.isArray(obj(j).results) || Array.isArray(obj(j).data)) return true;
+      // TEI native: [{index, score}, ...] 형태
+      return Array.isArray(j) && obj((j as unknown[])[0]).score !== undefined;
+    }),
+    probeEndpoint('chat', `${base}/chat/completions`, { model: m, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }, headers, timeoutMs, (j) => {
+      return Array.isArray(obj(j).choices);
+    }),
+  ]);
+
+  // 특수 타입(rerank/embeddings) 우선, 그다음 chat
+  const priority: EndpointType[] = ['rerank', 'embeddings', 'chat'];
+  for (const p of priority) {
+    const hit = results.find((r) => r.type === p && r.ok);
+    if (hit) return { detected: p, source: 'probe', results };
+  }
+
+  // 프로빙 실패 → 이름 휴리스틱
+  const heuristic = inferEndpointTypeFromName(model);
+  if (heuristic) return { detected: heuristic, source: 'heuristic', results };
+
+  return { detected: null, source: 'none', results };
 }
 
 export function registerHttpProviderRoutes(
@@ -174,6 +263,7 @@ export function registerHttpProviderRoutes(
         max_concurrent: configData.max_concurrent ?? 5,
         timeout_ms: configData.timeout_ms ?? 300000,
         display_name: configData.display_name ?? name,
+        ...(configData.endpoint_type !== undefined && { endpoint_type: configData.endpoint_type }),
         ...(configData.api_key !== undefined && { api_key: configData.api_key }),
         ...(configData.custom_headers !== undefined && { custom_headers: configData.custom_headers }),
         ...(configData.description !== undefined && { description: configData.description }),
@@ -335,6 +425,34 @@ export function registerHttpProviderRoutes(
           latencyMs,
         });
       }
+    },
+  );
+
+  // 엔드포인트 타입 자동 감지 — base_url을 프로빙해 chat/embeddings/rerank 판별
+  app.post<{ Body: { name?: string } & Partial<HttpProviderConfig> }>(
+    '/admin/http-providers/detect',
+    async (request, reply) => {
+      const configData = request.body;
+
+      if (!configData.base_url) {
+        return reply.status(400).send({ error: { message: 'base_url is required.' } });
+      }
+      const urlError = validateBaseUrl(configData.base_url);
+      if (urlError) {
+        return reply.status(400).send({ error: { message: urlError } });
+      }
+
+      // 프로브당 타임아웃: 설정값과 무관하게 10초 상한 (감지는 빠르게)
+      const perProbeTimeout = Math.min(configData.timeout_ms ?? 10000, 10000);
+      const detection = await detectEndpointType(
+        configData.base_url,
+        configData.default_model ?? '',
+        configData.api_key,
+        configData.custom_headers,
+        perProbeTimeout,
+      );
+
+      return reply.send(detection);
     },
   );
 }

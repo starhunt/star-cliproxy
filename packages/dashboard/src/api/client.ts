@@ -667,6 +667,8 @@ export function testGenericProvider(data: { name?: string } & GenericCliProvider
 }
 
 // HTTP Providers (OpenAI 호환 HTTP API 프로바이더)
+export type EndpointType = 'chat' | 'images' | 'tts' | 'embeddings' | 'rerank';
+
 export interface HttpProviderConfig {
   enabled: boolean;
   base_url: string;
@@ -675,6 +677,8 @@ export interface HttpProviderConfig {
   default_model: string;
   max_concurrent: number;
   timeout_ms: number;
+  // 미지정 시 'chat'으로 간주 (레거시 호환)
+  endpoint_type?: EndpointType;
   display_name: string;
   description?: string;
 }
@@ -715,4 +719,39 @@ export function testHttpProvider(data: { name?: string } & Partial<HttpProviderC
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+export interface EndpointDetectResult {
+  detected: EndpointType | null;
+  source: 'probe' | 'heuristic' | 'none';
+  results: Array<{ type: EndpointType; ok: boolean; status: number | null; error?: string }>;
+}
+
+// base_url을 프로빙해 엔드포인트 타입(chat/embeddings/rerank)을 자동 감지한다.
+export function detectHttpProviderEndpoint(data: { name?: string } & Partial<HttpProviderConfig>) {
+  return request<EndpointDetectResult>('/http-providers/detect', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// 이름에서 엔드포인트 타입 추론 (shared의 inferEndpointTypeFromName 미러링).
+// endpoint_type 메타데이터가 없는 레거시 프로바이더의 폴백.
+export function inferEndpointTypeFromName(...names: Array<string | null | undefined>): EndpointType | null {
+  const s = names.filter(Boolean).join(' ').toLowerCase();
+  if (!s) return null;
+  if (/(rerank|reranker|cross-?encoder)/.test(s)) return 'rerank';
+  if (/(embed|embedding|kure|bge-m3|gte-|e5-|text-embedding|nomic-embed|jina-embed)/.test(s)) return 'embeddings';
+  if (/(\btts\b|text-to-speech|speech|xtts|piper|kokoro|\bvoice\b)/.test(s)) return 'tts';
+  if (/(\bimage\b|images|imagen|dall-?e|sdxl|stable-?diffusion|\bflux\b|nano-banana)/.test(s)) return 'images';
+  return null;
+}
+
+// 명시적 endpoint_type 우선, 없으면 이름 휴리스틱, 그래도 불명이면 'chat'.
+export function effectiveEndpointType(
+  explicit: EndpointType | null | undefined,
+  ...names: Array<string | null | undefined>
+): EndpointType {
+  if (explicit) return explicit;
+  return inferEndpointTypeFromName(...names) ?? 'chat';
 }
