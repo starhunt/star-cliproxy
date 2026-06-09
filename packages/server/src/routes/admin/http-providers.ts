@@ -399,23 +399,51 @@ export function registerHttpProviderRoutes(
 
       const testProvider = new HttpProvider(providerName, config);
       const model = config.default_model || '';
+      const endpointType: EndpointType = configData.endpoint_type ?? 'chat';
       const startTime = Date.now();
 
       try {
-        const result = await testProvider.execute({
-          messages: [{ role: 'user', content: 'Say "OK" and nothing else.' }],
-          model,
-          stream: false,
-          // 백엔드의 max_total_tokens 제한과 무관하게 통과하도록 작은 값 사용
-          maxTokens: 64,
-        });
-        const latencyMs = Date.now() - startTime;
+        // 엔드포인트 타입에 맞는 실제 호출로 테스트 (채팅 전용 테스트의 한계 해소)
+        let response: string;
+        let usage: unknown;
+
+        if (endpointType === 'embeddings') {
+          const r = await testProvider.executeEmbedding({ model, input: 'ping' });
+          const dims = r.embeddings[0]?.length ?? 0;
+          response = `✓ embedding: ${dims}d × ${r.embeddings.length}`;
+          usage = r.usage;
+        } else if (endpointType === 'rerank') {
+          const r = await testProvider.executeRerank({ model, query: 'ping', documents: ['alpha document', 'beta document'] });
+          const top = r.results[0];
+          response = `✓ rerank: ${r.results.length} results` + (top ? `, top #${top.index} (${top.relevanceScore.toFixed(3)})` : '');
+          usage = r.usage;
+        } else if (endpointType === 'tts') {
+          const r = await testProvider.executeTts({ model, input: 'ping', voice: 'alloy' });
+          response = `✓ tts: ${r.audio.length} bytes (${r.contentType})`;
+        } else if (endpointType === 'images') {
+          // 이미지 생성 테스트 메서드 부재 — 자동 감지로 엔드포인트 확인 권장
+          return reply.send({
+            success: false,
+            error: 'Image-generation test is not supported by this button yet. Use Auto-detect to verify the endpoint.',
+            latencyMs: Date.now() - startTime,
+          });
+        } else {
+          const r = await testProvider.execute({
+            messages: [{ role: 'user', content: 'Say "OK" and nothing else.' }],
+            model,
+            stream: false,
+            // 백엔드의 max_total_tokens 제한과 무관하게 통과하도록 작은 값 사용
+            maxTokens: 64,
+          });
+          response = r.content.substring(0, 200);
+          usage = r.usage;
+        }
 
         return reply.send({
           success: true,
-          response: result.content.substring(0, 200),
-          latencyMs,
-          usage: result.usage,
+          response,
+          latencyMs: Date.now() - startTime,
+          usage,
         });
       } catch (err) {
         const latencyMs = Date.now() - startTime;

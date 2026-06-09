@@ -784,7 +784,9 @@ export default function ProvidersPage() {
                     setTesting(hp.name);
                     setTestResult(null);
                     try {
-                      const result = await testHttpProvider({ name: hp.name, ...hp.config });
+                      // draft(편집 중 값: endpoint_type 등)를 저장된 config 위에 병합 →
+                      // 자동 감지 후 저장하지 않아도 올바른 엔드포인트로 테스트
+                      const result = await testHttpProvider({ name: hp.name, ...hp.config, ...(draft as Partial<HttpProviderConfig>) });
                       setTestResult(result);
                     } catch (e) {
                       setTestResult({ success: false, error: e instanceof Error ? e.message : String(e), latencyMs: 0 });
