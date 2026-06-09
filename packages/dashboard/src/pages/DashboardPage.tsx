@@ -24,7 +24,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [days, setDays] = useState(0);
+  // 기본 기간 7d — 'All'(0)은 기간이 길어지면 불필요한 데이터를 과도하게 조회
+  const [days, setDays] = useState(7);
 
   const load = () => {
     fetchDashboard(days || undefined)
