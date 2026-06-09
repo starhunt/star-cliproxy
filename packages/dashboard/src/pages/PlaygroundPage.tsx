@@ -1,6 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from '../i18n/context';
-import { fetchModelMappings, fetchServerInfo, type ModelMapping, type ReasoningEffort } from '../api/client';
+import {
+  fetchModelMappings,
+  fetchServerInfo,
+  fetchHttpProviders,
+  effectiveEndpointType,
+  type ModelMapping,
+  type ReasoningEffort,
+  type HttpProviderConfig,
+} from '../api/client';
 import { formatDuration } from '../components/dashboard/format';
 
 type ReasoningEffortValue = ReasoningEffort | '';
@@ -86,6 +94,8 @@ export default function PlaygroundPage() {
   // 모델 목록
   const [models, setModels] = useState<ModelMapping[]>([]);
   const [apiBaseUrl, setApiBaseUrl] = useState('');
+  // HTTP 프로바이더 설정 맵 (provider명 → config) — 엔드포인트 타입 판별용
+  const [httpProviderMap, setHttpProviderMap] = useState<Record<string, HttpProviderConfig>>({});
 
   // 입력 상태
   // localStorage에서 이전 상태 복원
@@ -101,8 +111,19 @@ export default function PlaygroundPage() {
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortValue>('');
 
   // 선택된 모델의 provider → reasoning_effort 지원 여부
-  const selectedProvider = models.find((m) => m.alias === selectedModel)?.provider ?? '';
+  const selectedModelMeta = models.find((m) => m.alias === selectedModel);
+  const selectedProvider = selectedModelMeta?.provider ?? '';
   const supportsReasoning = REASONING_SUPPORTED_PROVIDERS.has(selectedProvider);
+
+  // 선택된 모델의 엔드포인트 타입 — HTTP provider의 endpoint_type 우선, 없으면 이름 휴리스틱.
+  // chat이 아니면(임베딩/리랭크 등) Playground 채팅 호출이 불가하므로 안내 + 전송 차단.
+  const selectedEndpointType = effectiveEndpointType(
+    selectedModelMeta ? httpProviderMap[selectedModelMeta.provider]?.endpoint_type : undefined,
+    selectedModelMeta?.provider,
+    selectedModelMeta?.alias,
+    selectedModelMeta?.actualModel,
+  );
+  const isNonChatModel = !!selectedModel && selectedEndpointType !== 'chat';
 
   // provider 변경되어 비지원 상태가 되면 값 자동 클리어 (잘못된 요청 방지)
   useEffect(() => {
@@ -141,6 +162,10 @@ export default function PlaygroundPage() {
     }).catch(() => {
       setApiBaseUrl('');
     });
+    // HTTP 프로바이더 설정 로드 (endpoint_type 판별용)
+    fetchHttpProviders().then((list) => {
+      setHttpProviderMap(Object.fromEntries(list.map((p) => [p.name, p.config])));
+    }).catch(() => {});
   }, []);
 
   // 상태 변경 시 localStorage 저장
@@ -378,6 +403,18 @@ export default function PlaygroundPage() {
         </div>
       </div>
 
+      {/* 비채팅 모델(임베딩/리랭크 등) 안내 — 채팅 호출 불가 */}
+      {isNonChatModel && (
+        <div className="px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30">
+          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+            ⚠️ {t('playground.nonChatTitle')}
+          </p>
+          <p className="text-xs text-amber-600 dark:text-amber-300/80 mt-1">
+            {t('playground.nonChatBody').replace('{type}', t(`providers.endpointType.${selectedEndpointType}`))}
+          </p>
+        </div>
+      )}
+
       {/* 파라미터 */}
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
@@ -515,7 +552,7 @@ export default function PlaygroundPage() {
         ) : (
           <button
             onClick={handleSend}
-            disabled={!selectedModel || !apiKey || messages.every((m) => !m.content.trim())}
+            disabled={!selectedModel || !apiKey || isNonChatModel || messages.every((m) => !m.content.trim())}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 rounded-lg text-sm font-medium text-white transition-colors"
           >
             {t('playground.send')}

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="star-cliproxy">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <!-- 라운드 사각 배경 (대시보드 다크 테마와 어울리는 인디고→바이올렛) -->
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- 메인 스파클: "star" 모티프 -->
+  <path d="M32 13c1.6 8.2 5.8 12.4 14 14-8.2 1.6-12.4 5.8-14 14-1.6-8.2-5.8-12.4-14-14 8.2-1.6 12.4-5.8 14-14z" fill="#fff"/>
+  <!-- 보조 스파클: AI 프록시 느낌의 작은 별 -->
+  <path d="M47 38c.7 3.4 2.4 5.1 5.8 5.8-3.4.7-5.1 2.4-5.8 5.8-.7-3.4-2.4-5.1-5.8-5.8 3.4-.7 5.1-2.4 5.8-5.8z" fill="#fff" opacity="0.85"/>
+</svg>

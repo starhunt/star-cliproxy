@@ -340,6 +340,10 @@ export interface HttpProviderConfig {
   max_concurrent: number;
   timeout_ms: number;
 
+  // 이 프로바이더가 서빙하는 엔드포인트 타입. 미지정 시 'chat'으로 간주(레거시 호환).
+  // Playground는 이 값이 'chat'이 아니면 채팅 테스트 불가 안내를 표시한다.
+  endpoint_type?: EndpointType;
+
   // 메타
   display_name: string;
   description?: string;

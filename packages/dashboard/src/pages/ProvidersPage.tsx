@@ -15,16 +15,21 @@ import {
   updateHttpProvider,
   deleteHttpProvider,
   testHttpProvider,
+  detectHttpProviderEndpoint,
   type ProviderInfo,
   type ProviderConfig,
   type ProviderTestResult,
   type GenericCliProviderConfig,
   type HttpProviderConfig,
   type HttpProviderInfo,
+  type EndpointType,
   type ClaudeSdkOptions,
   type CodexAppServerOptions,
   type CodexCliOptions,
 } from '../api/client';
+
+// HTTP 엔드포인트 타입 옵션 (셀렉트 표시용)
+const ENDPOINT_TYPE_OPTIONS: EndpointType[] = ['chat', 'embeddings', 'rerank', 'images', 'tts'];
 
 // 빌트인 프로바이더 목록
 const BUILTIN_PROVIDERS = new Set(['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok']);
@@ -63,6 +68,7 @@ const DEFAULT_HTTP_CONFIG: Partial<HttpProviderConfig> = {
   default_model: '',
   max_concurrent: 5,
   timeout_ms: 300000,
+  endpoint_type: 'chat',
   display_name: '',
 };
 
@@ -778,7 +784,9 @@ export default function ProvidersPage() {
                     setTesting(hp.name);
                     setTestResult(null);
                     try {
-                      const result = await testHttpProvider({ name: hp.name, ...hp.config });
+                      // draft(편집 중 값: endpoint_type 등)를 저장된 config 위에 병합 →
+                      // 자동 감지 후 저장하지 않아도 올바른 엔드포인트로 테스트
+                      const result = await testHttpProvider({ name: hp.name, ...hp.config, ...(draft as Partial<HttpProviderConfig>) });
                       setTestResult(result);
                     } catch (e) {
                       setTestResult({ success: false, error: e instanceof Error ? e.message : String(e), latencyMs: 0 });
@@ -1547,6 +1555,33 @@ function HttpProviderCard({
   const labelCls = 'text-xs text-gray-500 dark:text-gray-400 block mb-1.5';
   const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm';
 
+  const d = draft as Record<string, unknown>;
+  const currentEndpointType = (d.endpoint_type as EndpointType | undefined) ?? hp.config.endpoint_type ?? 'chat';
+  const [detecting, setDetecting] = useState(false);
+  const [detectMsg, setDetectMsg] = useState<string | null>(null);
+
+  const handleDetect = async () => {
+    setDetecting(true);
+    setDetectMsg(null);
+    try {
+      const res = await detectHttpProviderEndpoint({
+        base_url: (d.base_url as string) ?? hp.config.base_url,
+        api_key: (d.api_key as string) ?? hp.config.api_key,
+        default_model: (d.default_model as string) ?? hp.config.default_model,
+      });
+      if (res.detected) {
+        updateDraft('endpoint_type' as keyof ProviderConfig, res.detected);
+        setDetectMsg(`✓ ${res.detected} (${res.source})`);
+      } else {
+        setDetectMsg(`✗ ${t('providers.endpointDetectFailed')}`);
+      }
+    } catch (e) {
+      setDetectMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDetecting(false);
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700/50 shadow-sm overflow-hidden">
       {/* 헤더 */}
@@ -1559,6 +1594,11 @@ function HttpProviderCard({
         <span className="text-xs text-purple-500 dark:text-purple-400 border border-purple-300 dark:border-purple-600 rounded px-1.5 py-0.5">
           {t('providers.httpType')}
         </span>
+        {(hp.config.endpoint_type && hp.config.endpoint_type !== 'chat') && (
+          <span className="text-xs text-indigo-500 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-600 rounded px-1.5 py-0.5">
+            {t(`providers.endpointType.${hp.config.endpoint_type}`)}
+          </span>
+        )}
         <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{hp.config.base_url}</span>
         <div className="flex-1" />
         <span className="text-xs text-gray-400">{expanded ? '▲' : '▼'}</span>
@@ -1595,6 +1635,31 @@ function HttpProviderCard({
                 onChange={(e) => updateDraft('default_model' as keyof ProviderConfig, e.target.value)}
                 className={inputCls}
               />
+            </div>
+            <div>
+              <label className={labelCls}>{t('providers.endpointType')}</label>
+              <div className="flex gap-2">
+                <select
+                  value={currentEndpointType}
+                  onChange={(e) => updateDraft('endpoint_type' as keyof ProviderConfig, e.target.value)}
+                  className={`${inputCls} flex-1`}
+                >
+                  {ENDPOINT_TYPE_OPTIONS.map((et) => (
+                    <option key={et} value={et}>{t(`providers.endpointType.${et}`)}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleDetect}
+                  disabled={detecting}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded text-xs font-medium text-white whitespace-nowrap"
+                >
+                  {detecting ? t('providers.detecting') : t('providers.autoDetect')}
+                </button>
+              </div>
+              {detectMsg && (
+                <p className="text-[11px] mt-1 text-gray-500 dark:text-gray-400">{detectMsg}</p>
+              )}
             </div>
             <div>
               <label className={labelCls}>{t('providers.displayName')}</label>
@@ -1704,6 +1769,8 @@ function AddHttpProviderForm({
   const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm';
   const [localTestResult, setLocalTestResult] = useState<ProviderTestResult | null>(null);
   const [localTesting, setLocalTesting] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [detectMsg, setDetectMsg] = useState<string | null>(null);
 
   const handleTestBeforeRegister = async () => {
     setLocalTesting(true);
@@ -1715,6 +1782,24 @@ function AddHttpProviderForm({
       setLocalTestResult({ success: false, error: e instanceof Error ? e.message : String(e), latencyMs: 0 });
     } finally {
       setLocalTesting(false);
+    }
+  };
+
+  const handleDetect = async () => {
+    setDetecting(true);
+    setDetectMsg(null);
+    try {
+      const res = await detectHttpProviderEndpoint(draft);
+      if (res.detected) {
+        setDraft((p) => ({ ...p, endpoint_type: res.detected as EndpointType }));
+        setDetectMsg(`✓ ${res.detected} (${res.source})`);
+      } else {
+        setDetectMsg(`✗ ${t('providers.endpointDetectFailed')}`);
+      }
+    } catch (e) {
+      setDetectMsg(`✗ ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDetecting(false);
     }
   };
 
@@ -1781,6 +1866,31 @@ function AddHttpProviderForm({
             placeholder="llama3"
             className={inputCls}
           />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.endpointType')}</label>
+          <div className="flex gap-2">
+            <select
+              value={draft.endpoint_type ?? 'chat'}
+              onChange={(e) => setDraft((p) => ({ ...p, endpoint_type: e.target.value as EndpointType }))}
+              className={`${inputCls} flex-1`}
+            >
+              {ENDPOINT_TYPE_OPTIONS.map((et) => (
+                <option key={et} value={et}>{t(`providers.endpointType.${et}`)}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleDetect}
+              disabled={detecting || !draft.base_url}
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded text-xs font-medium text-white whitespace-nowrap"
+            >
+              {detecting ? t('providers.detecting') : t('providers.autoDetect')}
+            </button>
+          </div>
+          {detectMsg && (
+            <p className="text-[11px] mt-1 text-gray-500 dark:text-gray-400">{detectMsg}</p>
+          )}
         </div>
         <div>
           <label className={labelCls}>{t('providers.maxConcurrent')}</label>
