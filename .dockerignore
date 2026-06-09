@@ -1,0 +1,11 @@
+node_modules
+packages/*/node_modules
+packages/*/dist
+*.tsbuildinfo
+packages/*/tsconfig.tsbuildinfo
+data
+*.db
+.env
+.git
+plugins/*/node_modules
+start.sh
