@@ -97,18 +97,28 @@ export class HttpProvider extends BaseProvider {
 
   // cliproxy가 직접 관리하는 표준 필드. extra_body가 이 키들을 덮어쓰지 못하게 보호.
   private static readonly RESERVED_BODY_KEYS = new Set([
-    'model', 'messages', 'stream', 'max_tokens', 'temperature',
+    'model', 'messages', 'stream', 'max_tokens', 'temperature', 'tools', 'tool_choice',
   ]);
 
   private buildRequestBody(options: ExecuteOptions, stream: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: options.model,
-      messages: options.messages.map(m => ({
-        role: m.role,
-        content: m.content,
-      })),
+      // role/content 외에 function calling 필드(name, tool_call_id, tool_calls)도 보존해야
+      // 멀티턴 도구 대화(assistant tool_calls → tool 결과 → 후속 응답)가 백엔드에 온전히 전달됨.
+      messages: options.messages.map(m => {
+        const msg: Record<string, unknown> = { role: m.role, content: m.content };
+        if (m.name !== undefined) msg.name = m.name;
+        if (m.tool_call_id !== undefined) msg.tool_call_id = m.tool_call_id;
+        if (m.tool_calls !== undefined) msg.tool_calls = m.tool_calls;
+        return msg;
+      }),
       stream,
     };
+    // function calling 패스스루: tools가 있을 때만 백엔드로 전달.
+    if (options.tools && options.tools.length > 0) {
+      body.tools = options.tools;
+      if (options.toolChoice !== undefined) body.tool_choice = options.toolChoice;
+    }
     // max_tokens 미지정 시 필드 자체를 생략 → 서버 기본값 사용 (vLLM 등의 max_total_tokens 제한 회피)
     const maxTokens = options.maxTokens ?? this.httpConfig.default_max_tokens;
     if (maxTokens !== undefined) body.max_tokens = maxTokens;
@@ -201,9 +211,23 @@ export class HttpProvider extends BaseProvider {
       const reasoning = rawContent ? rawReasoning : '';
       const usage = responseBody.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
+      // function calling: 백엔드가 반환한 tool_calls를 OpenAI 포맷 그대로 보존.
+      const toolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0
+        ? msg.tool_calls.map((tc) => ({
+            id: tc.id ?? '',
+            type: 'function' as const,
+            function: {
+              name: tc.function?.name ?? '',
+              arguments: tc.function?.arguments ?? '',
+            },
+            ...(typeof tc.index === 'number' ? { index: tc.index } : {}),
+          }))
+        : undefined;
+
       return {
         content,
         ...(reasoning ? { reasoning } : {}),
+        ...(toolCalls ? { toolCalls } : {}),
         usage: {
           promptTokens: usage.prompt_tokens ?? 0,
           completionTokens: usage.completion_tokens ?? 0,
@@ -693,7 +717,7 @@ function parseSSELineToEvents(line: string): ProviderEvent[] {
       events.push({ type: 'text_delta', text: delta.content });
     }
 
-    // tool_calls 지원
+    // tool_calls 지원: 병렬 호출 구분을 위해 backend의 index를 보존.
     if (delta?.tool_calls) {
       for (const tc of delta.tool_calls) {
         events.push({
@@ -702,6 +726,7 @@ function parseSSELineToEvents(line: string): ProviderEvent[] {
           toolName: tc.function?.name ?? '',
           input: tc.function?.arguments ?? '',
           isPartial: !tc.id, // id가 없으면 partial delta
+          ...(typeof tc.index === 'number' ? { index: tc.index } : {}),
         });
       }
     }
@@ -716,7 +741,18 @@ function parseSSELineToEvents(line: string): ProviderEvent[] {
 
 interface OpenAIChatCompletionResponse {
   choices?: Array<{
-    message?: { content?: string; reasoning?: string; reasoning_content?: string; role?: string };
+    message?: {
+      content?: string;
+      reasoning?: string;
+      reasoning_content?: string;
+      role?: string;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
+    };
     finish_reason?: string;
   }>;
   usage?: {
@@ -770,8 +806,9 @@ type TeiRerankResponse = Array<{ index: number; score: number; text?: string }> 
 
 // === 유틸리티 ===
 
-function mapFinishReason(reason?: string): 'stop' | 'length' | 'error' {
+function mapFinishReason(reason?: string): 'stop' | 'length' | 'tool_calls' | 'error' {
   if (reason === 'length') return 'length';
+  if (reason === 'tool_calls') return 'tool_calls';
   return 'stop';
 }
 

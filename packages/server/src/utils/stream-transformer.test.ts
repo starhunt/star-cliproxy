@@ -188,6 +188,53 @@ describe('formatAsSSE', () => {
     expect(result).toContain('"finish_reason":"stop"');
     expect(result).toContain('data: [DONE]');
   });
+
+  it('tool_use 이벤트를 delta.tool_calls SSE로 변환', () => {
+    const result = formatAsSSE(
+      { type: 'tool_use', toolCallId: 'call_1', toolName: 'click', input: '{"selector":"#x"}' },
+      'chatcmpl-test-123',
+      'gpt-4',
+    );
+    expect(result).toContain('"tool_calls"');
+    expect(result).toContain('"id":"call_1"');
+    expect(result).toContain('"name":"click"');
+    expect(result).toContain('"type":"function"');
+    expect(result).toContain('"index":0');
+  });
+
+  it('병렬 tool call은 event.index를 보존', () => {
+    const result = formatAsSSE(
+      { type: 'tool_use', toolCallId: 'call_2', toolName: 'scroll', input: '{}', index: 1 },
+      'chatcmpl-test-123',
+      'gpt-4',
+    );
+    expect(result).toContain('"index":1');
+  });
+
+  it('partial tool_use는 id/type/name 생략, arguments delta만 전송', () => {
+    const result = formatAsSSE(
+      { type: 'tool_use', toolCallId: '', toolName: '', input: '{"sel', isPartial: true, index: 0 },
+      'chatcmpl-test-123',
+      'gpt-4',
+    );
+    // SSE data 라인을 파싱하여 tool_call 객체 자체를 검사 (봉투의 id와 구분)
+    const json = JSON.parse(result!.replace(/^data: /, '').trim());
+    const tc = json.choices[0].delta.tool_calls[0];
+    expect(tc.function.arguments).toBe('{"sel');
+    expect(tc.id).toBeUndefined();
+    expect(tc.type).toBeUndefined();
+    expect(tc.function.name).toBeUndefined();
+  });
+
+  it('done(tool_use)는 finish_reason tool_calls로 변환', () => {
+    const result = formatAsSSE(
+      { type: 'done', finishReason: 'tool_use' },
+      'chatcmpl-test-123',
+      'gpt-4',
+    );
+    expect(result).toContain('"finish_reason":"tool_calls"');
+    expect(result).toContain('data: [DONE]');
+  });
 });
 
 describe('createRequestId', () => {

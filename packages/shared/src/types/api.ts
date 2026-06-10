@@ -9,11 +9,43 @@ export interface ChatMessageContentPart {
 
 export type ChatMessageContent = string | ChatMessageContentPart[];
 
+// === Function calling (OpenAI 호환) ===
+
+// 도구(함수) 정의. parameters는 JSON Schema 객체.
+export interface FunctionDefinition {
+  name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface ChatCompletionTool {
+  type: 'function';
+  function: FunctionDefinition;
+}
+
+// tool_choice: 'none'|'auto'|'required' 또는 특정 함수 강제
+export type ToolChoice =
+  | 'none'
+  | 'auto'
+  | 'required'
+  | { type: 'function'; function: { name: string } };
+
+// 모델이 요청한 도구 호출 (비스트리밍 응답 message.tool_calls / 멀티턴 히스토리).
+// arguments는 JSON 문자열 (OpenAI 스펙).
+export interface ChatMessageToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+  index?: number;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'developer' | 'tool';
   content: ChatMessageContent;
   name?: string;            // tool role: 함수/도구 이름
   tool_call_id?: string;    // tool role: 연관된 tool_call ID
+  // assistant role: 모델이 요청한 도구 호출 목록 (멀티턴 도구 대화 시 백엔드로 그대로 전달).
+  tool_calls?: ChatMessageToolCall[];
   // assistant 응답에만 사용: 추론 모델의 thinking/CoT 본문. content와 분리되어 보존됨.
   // OpenAI 공식 스펙 외 비표준 확장 (vLLM/sglang/OpenRouter 등과 호환).
   reasoning_content?: string;
@@ -27,6 +59,9 @@ export interface ChatCompletionRequest {
   temperature?: number;
   top_p?: number;
   stop?: string | string[];
+  // OpenAI 호환 function calling. HTTP provider는 백엔드로 패스스루, CLI provider는 무시.
+  tools?: ChatCompletionTool[];
+  tool_choice?: ToolChoice;
   // OpenAI 호환 추론 수준. 지정 시 model_mapping의 값보다 우선.
   reasoning_effort?: string;
   // 추론 본문(thinking)을 응답에 포함할지. 우선순위: body > mapping > 전역 default(false).
@@ -36,7 +71,7 @@ export interface ChatCompletionRequest {
 export interface ChatCompletionChoice {
   index: number;
   message: ChatMessage;
-  finish_reason: 'stop' | 'length' | 'content_filter' | null;
+  finish_reason: 'stop' | 'length' | 'content_filter' | 'tool_calls' | null;
 }
 
 export interface UsageInfo {
@@ -73,7 +108,7 @@ export interface ChatCompletionChunkDelta {
 export interface ChatCompletionChunkChoice {
   index: number;
   delta: ChatCompletionChunkDelta;
-  finish_reason: 'stop' | 'length' | 'content_filter' | null;
+  finish_reason: 'stop' | 'length' | 'content_filter' | 'tool_calls' | null;
 }
 
 export interface ChatCompletionChunk {

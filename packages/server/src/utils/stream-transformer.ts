@@ -386,7 +386,7 @@ function formatProviderEventAsSSE(
     case 'tool_use':
       return makeChunk({
         tool_calls: [{
-          index: 0,
+          index: event.index ?? 0,
           id: event.isPartial ? undefined : event.toolCallId,
           type: event.isPartial ? undefined : 'function',
           function: {
@@ -410,7 +410,8 @@ function formatProviderEventAsSSE(
       return null;
 
     case 'done': {
-      const finishReason = event.finishReason === 'tool_use' ? 'stop'
+      // tool_use → OpenAI 'tool_calls' finish_reason (에이전트가 도구 실행 여부 판단에 사용).
+      const finishReason = event.finishReason === 'tool_use' ? 'tool_calls'
         : event.finishReason === 'length' ? 'length'
         : 'stop';
       return makeChunk({}, finishReason) + 'data: [DONE]\n\n';
