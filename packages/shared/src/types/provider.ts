@@ -1,6 +1,6 @@
 // Provider 추상화 타입 정의
 
-import type { ChatMessage } from './api.js';
+import type { ChatMessage, ChatCompletionTool, ToolChoice, ChatMessageToolCall } from './api.js';
 
 // 빌트인 프로바이더 (메인 코드에 포함)
 export const BUILTIN_PROVIDERS = ['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok'] as const;
@@ -114,6 +114,9 @@ export interface ExecuteOptions {
   // 백엔드 비표준 필드 패스스루 (HTTP provider 전용). chat_template_kwargs/think/top_k 등.
   // CLI provider는 무시.
   extraBody?: Record<string, unknown>;
+  // OpenAI 호환 function calling. HTTP provider만 백엔드로 전달, CLI provider는 무시.
+  tools?: ChatCompletionTool[];
+  toolChoice?: ToolChoice;
   // Image generation passthrough (OpenAI Images API)
   responseFormat?: 'url' | 'b64_json';
   n?: number;
@@ -200,8 +203,10 @@ export interface ExecuteResult {
   content: string;
   /** 추론 모델의 thinking/CoT 본문. content와 분리되어 보존됨 (있을 때만). */
   reasoning?: string;
+  /** 모델이 요청한 도구 호출 (function calling). 있을 때만 — HTTP provider 비스트리밍. */
+  toolCalls?: ChatMessageToolCall[];
   usage: TokenUsage;
-  finishReason: 'stop' | 'length' | 'error';
+  finishReason: 'stop' | 'length' | 'tool_calls' | 'error';
   meta?: ExecuteMeta;  // provider별 부가 메타데이터 (codex thread_id 등)
 }
 
@@ -218,6 +223,7 @@ export interface ProviderToolUseEvent {
   toolName: string;
   input: string;        // JSON string (완전한 인자 또는 스트리밍 delta)
   isPartial?: boolean;  // true = 스트리밍 JSON delta
+  index?: number;       // 병렬 tool call 구분용 인덱스 (OpenAI delta.tool_calls[].index)
 }
 
 export interface ProviderThinkingEvent {

@@ -457,6 +457,8 @@ export function registerChatCompletionsRoute(
               reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
               providerOverrides: route.providerOverrides,
               extraBody: route.extraBody,
+              tools: body.tools,
+              toolChoice: body.tool_choice,
             });
 
             // text_delta 안의 마커를 splitter로 잘라서 thinking/text_delta로 재분배하는 헬퍼.
@@ -606,6 +608,8 @@ export function registerChatCompletionsRoute(
               reasoningEffort: bodyReasoningEffort ?? route.reasoningEffort,
               providerOverrides: route.providerOverrides,
               extraBody: route.extraBody,
+              tools: body.tools,
+              toolChoice: body.tool_choice,
             }),
           );
 
@@ -626,11 +630,18 @@ export function registerChatCompletionsRoute(
 
           // include_reasoning 우선순위 결정: body > mapping > 기본값(false).
           const effectiveInclude = bodyIncludeReasoning ?? (route.includeReasoning ?? false);
+          const hasToolCalls = !!result.toolCalls && result.toolCalls.length > 0;
           const assistantMessage: ChatCompletionResponse['choices'][0]['message'] = {
             role: 'assistant',
             content,
+            ...(hasToolCalls ? { tool_calls: result.toolCalls } : {}),
             ...(effectiveInclude && reasoning ? { reasoning_content: reasoning } : {}),
           };
+
+          // tool_calls가 있으면 finish_reason을 'tool_calls'로 정규화 (일부 백엔드가 'stop' 반환).
+          const finishReason: ChatCompletionResponse['choices'][0]['finish_reason'] = hasToolCalls
+            ? 'tool_calls'
+            : result.finishReason === 'error' ? 'stop' : result.finishReason;
 
           const response: ChatCompletionResponse = {
             id: requestId,
@@ -640,7 +651,7 @@ export function registerChatCompletionsRoute(
             choices: [{
               index: 0,
               message: assistantMessage,
-              finish_reason: result.finishReason === 'error' ? 'stop' : result.finishReason,
+              finish_reason: finishReason,
             }],
             usage: {
               prompt_tokens: result.usage.promptTokens,

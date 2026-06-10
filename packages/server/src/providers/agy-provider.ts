@@ -93,7 +93,8 @@ export class AgyProvider extends BaseProvider {
     };
     yield {
       type: 'done',
-      finishReason: result.finishReason ?? 'stop',
+      // ExecuteResult(OpenAI 'tool_calls') → ProviderDoneEvent('tool_use') 매핑. CLI는 실제로 미발생.
+      finishReason: result.finishReason === 'tool_calls' ? 'tool_use' : (result.finishReason ?? 'stop'),
     };
   }
 
