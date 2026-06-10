@@ -145,6 +145,17 @@ function normalizeMessageContent(content: unknown): ChatMessageContent {
   return sanitizeString(stringifyUnknown(content));
 }
 
+// 백엔드(vLLM 등) 에러가 function calling(tools) 미지원 신호인지 판별.
+// 백엔드마다 문구가 달라(vLLM: "tool choice requires --enable-auto-tool-choice ...",
+// 일부: "does not support tools") 도구 키워드 + 실패 지시어 조합으로 감지.
+// 클라이언트가 표준 code(tools_not_supported)로 감지해 일반 채팅 폴백할 수 있게 한다.
+export function isToolsUnsupportedError(message: string): boolean {
+  const t = (message || '').toLowerCase();
+  const mentionsTools = /tool[_ -]?call|tool[_ -]?choice|tool[_ -]?parser|tool[_ -]?use|enable-auto-tool-choice|function[_ ]?call|\btools?\b/.test(t);
+  const failure = /not\s+support|unsupport|requires|must be set|to be set|no .*parser|not enabled|disabled|invalid/.test(t);
+  return mentionsTools && failure;
+}
+
 // CLI 에러 메시지에서 내부 정보 제거 (파일 경로, 스택 트레이스 등)
 // 클라이언트에 노출되는 에러 응답에만 적용 — 내부 로그는 원본 유지
 function sanitizeProviderError(message: string): string {
@@ -761,6 +772,20 @@ export function registerChatCompletionsRoute(
           deps.healthChecker.onRequestFailure(route.provider);
           continue;
         }
+      }
+
+      // 모든 provider 실패 + 마지막 에러가 도구 미지원이면 502 대신 400 + tools_not_supported.
+      // 클라이언트가 안정적으로 감지해 tools 없이 일반 채팅으로 폴백할 수 있게 한다.
+      if (body.tools && body.tools.length > 0 && lastError && isToolsUnsupportedError(lastError.message)) {
+        return reply.status(400).send({
+          error: {
+            message: `Model "${body.model}" does not support tool calling. The backend rejected the 'tools' request. `
+              + `If self-hosting vLLM, start it with --enable-auto-tool-choice and a matching --tool-call-parser.`,
+            type: 'invalid_request_error',
+            param: 'tools',
+            code: 'tools_not_supported',
+          },
+        });
       }
 
       // ADD-03: 타임아웃 여부에 따라 504/502 구분
