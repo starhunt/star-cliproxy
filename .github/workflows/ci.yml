@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build (shared + server + dashboard)
+        run: npm run build
+
+      # 의존성 취약점 점검 (운영 의존성). 정보성 — 신규 advisory 발생 시 로그로 확인.
+      - name: Audit (production deps, informational)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
