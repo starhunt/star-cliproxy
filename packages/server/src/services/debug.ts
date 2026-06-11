@@ -1,19 +1,29 @@
 import { nanoid } from 'nanoid';
-import { and, desc, eq, like, or, sql } from 'drizzle-orm';
+import { and, desc, eq, like, lt, or, sql } from 'drizzle-orm';
 import { getDatabase } from '../db/client.js';
 import { debugLogs } from '../db/schema.js';
 
 // 디버그 페이로드 최대 크기 (10KB)
 const MAX_FIELD_LENGTH = 10_000;
+// 디버그 로그 보존 기간(일). 민감 데이터(프롬프트/응답)가 무기한 저장되지 않도록 제한.
+const DEBUG_LOG_RETENTION_DAYS = 14;
 const SECRET_PATTERNS: Array<[RegExp, string]> = [
+  // 프록시 자체 키 (구체 패턴 먼저)
   [/\bsk-proxy-[a-zA-Z0-9]+\b/g, 'sk-proxy-[redacted]'],
   [/\bBearer\s+[A-Za-z0-9._\-]+\b/g, 'Bearer [redacted]'],
   [/"x-admin-token"\s*:\s*"[^"]+"/gi, '"x-admin-token":"[redacted]"'],
   [/"authorization"\s*:\s*"[^"]+"/gi, '"authorization":"[redacted]"'],
   [/([A-Z_]*(TOKEN|KEY|SECRET)[A-Z_]*=)[^\s"']+/g, '$1[redacted]'],
+  // 서드파티 키 형식 (프롬프트/응답 본문에 포함될 수 있는 백엔드 키)
+  [/\bsk-[a-zA-Z0-9_-]{20,}\b/g, 'sk-[redacted]'],          // OpenAI/Anthropic (sk-, sk-ant-, sk-proj-)
+  [/\bAKIA[0-9A-Z]{16}\b/g, 'AKIA[redacted]'],               // AWS access key id
+  [/\bAIza[0-9A-Za-z_-]{35}\b/g, 'AIza[redacted]'],          // Google API key
+  [/\bgh[pousr]_[A-Za-z0-9]{36,}\b/g, 'gh_[redacted]'],      // GitHub token
+  [/\bxai-[A-Za-z0-9]{20,}\b/g, 'xai-[redacted]'],           // xAI key
 ];
 
-function redactSecrets(value: string): string {
+// 테스트 가능하도록 export. 디버그 로그 저장 시 시크릿 마스킹에 사용.
+export function redactSecrets(value: string): string {
   let redacted = value;
   for (const [pattern, replacement] of SECRET_PATTERNS) {
     redacted = redacted.replace(pattern, replacement);
@@ -106,10 +116,21 @@ export class DebugService {
         status: 'pending',
         createdAt: new Date().toISOString(),
       });
+      // 보존 기간 초과 로그 정리 (best-effort, 실패해도 요청 흐름에 영향 없음)
+      await this.pruneExpiredLogs();
     } catch (err) {
       console.error('Failed to save debug log start:', err);
     }
     return id;
+  }
+
+  // 보존 기간(DEBUG_LOG_RETENTION_DAYS)을 초과한 디버그 로그 삭제.
+  // 민감 데이터(프롬프트/응답)의 무기한 보관을 방지한다.
+  private async pruneExpiredLogs(): Promise<void> {
+    const cutoff = new Date(Date.now() - DEBUG_LOG_RETENTION_DAYS * 86_400_000).toISOString();
+    const db = getDatabase();
+    // createdAt은 ISO 8601 문자열이라 사전식 비교가 시간순 비교와 일치
+    await db.delete(debugLogs).where(lt(debugLogs.createdAt, cutoff));
   }
 
   // 응답 완료 시 UPDATE
