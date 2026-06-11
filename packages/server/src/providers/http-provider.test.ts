@@ -177,4 +177,36 @@ describe('HttpProvider.executeStream - function calling', () => {
     const doneEvent = events.find((e) => e.type === 'done');
     expect(doneEvent).toMatchObject({ type: 'done', finishReason: 'tool_use' });
   });
+
+  it("'done' 수신 후 reader.cancel()로 백엔드 스트림을 취소하고 잔여 바이트를 방출하지 않는다", async () => {
+    const encoder = new TextEncoder();
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n'));
+        controller.enqueue(encoder.encode('data: [DONE]\n'));
+        // [DONE] 이후 추가 바이트: generator가 done에서 return하면 소비되면 안 됨.
+        // close()를 호출하지 않으므로 명시적 cancel()이 없으면 스트림이 열린 채 유지된다.
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"leak"}}]}\n'));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { entries: () => [] as [string, string][], get: () => null },
+      body: stream,
+    } as unknown as Response)));
+
+    const provider = new HttpProvider('test', { ...baseConfig });
+    const events: ProviderEvent[] = [];
+    for await (const ev of provider.executeStream(makeOptions({ stream: true }))) {
+      events.push(ev);
+    }
+
+    expect(cancelled).toBe(true);
+    expect(events.some((e) => e.type === 'text_delta' && e.text === 'leak')).toBe(false);
+  });
 });

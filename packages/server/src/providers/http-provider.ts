@@ -344,7 +344,10 @@ export class HttpProvider extends BaseProvider {
           for (const event of events) yield event;
         }
       } finally {
-        reader.releaseLock();
+        // SSE 'done' 수신으로 조기 return하거나 소비자가 generator를 조기 종료한 경우,
+        // releaseLock만으로는 fetch body 스트림이 취소되지 않아 백엔드 소켓이 timeout까지 잔류한다.
+        // cancel()은 스트림을 명시적으로 닫고 lock도 해제한다(정상 완료 시엔 no-op).
+        await reader.cancel().catch(() => {});
       }
     } finally {
       clearTimeout(timeoutId);
