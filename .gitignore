@@ -22,3 +22,6 @@ coverage/
 plugins/*/
 !plugins/example-plugin/
 !plugins/README.md
+
+# TypeScript 증분 빌드 캐시
+*.tsbuildinfo
