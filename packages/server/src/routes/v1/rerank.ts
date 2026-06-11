@@ -88,7 +88,22 @@ export function registerRerankRoute(
       const apiKeyId = (request as unknown as { apiKeyId?: string }).apiKeyId;
       const keyLimits = (request as unknown as { apiKeyRateLimits?: { rpm?: number | null; rpd?: number | null } }).apiKeyRateLimits;
 
+      // === 레이트 리밋: 글로벌/키 단위는 요청당 1회만 차감 (폴백 루프 진입 전) ===
+      const gkResult = deps.rateLimiter.checkGlobalAndKey(apiKeyId ?? 'anonymous', keyLimits);
+      if (!gkResult.allowed) {
+        reply.header('Retry-After', String(gkResult.retryAfterSeconds ?? 30));
+        return reply.status(429).send({
+          error: {
+            message: `Rate limit exceeded. Retry after ${gkResult.retryAfterSeconds} seconds.`,
+            type: 'rate_limit_error',
+            param: null,
+            code: 'rate_limit_exceeded',
+          },
+        });
+      }
+
       let lastError: Error | null = null;
+      let rateLimitRetryAfter: number | null = null;
 
       for (const route of routes) {
         const healthy = await deps.healthChecker.isHealthy(route.provider);
@@ -97,22 +112,12 @@ export function registerRerankRoute(
           continue;
         }
 
-        const rateResult = deps.rateLimiter.checkAndIncrement(
-          apiKeyId ?? 'anonymous',
-          route.provider,
-          keyLimits,
-        );
-
-        if (!rateResult.allowed) {
-          reply.header('Retry-After', String(rateResult.retryAfterSeconds ?? 30));
-          return reply.status(429).send({
-            error: {
-              message: `Rate limit exceeded. Retry after ${rateResult.retryAfterSeconds} seconds.`,
-              type: 'rate_limit_error',
-              param: null,
-              code: 'rate_limit_exceeded',
-            },
-          });
+        // 프로바이더 단위 한도는 시도하는 프로바이더별로 차감. 초과 시 다음 프로바이더로 폴백.
+        const provRate = deps.rateLimiter.checkProvider(route.provider);
+        if (!provRate.allowed) {
+          rateLimitRetryAfter = provRate.retryAfterSeconds ?? 30;
+          lastError = new Error(`Provider ${route.provider} rate limit exceeded`);
+          continue;
         }
 
         const provider = deps.registry.get(route.provider);
@@ -258,6 +263,19 @@ export function registerRerankRoute(
           deps.healthChecker.onRequestFailure(route.provider);
           continue;
         }
+      }
+
+      // 모든 provider가 프로바이더 단위 한도로 소진되었으면 502 대신 429 반환.
+      if (rateLimitRetryAfter !== null) {
+        reply.header('Retry-After', String(rateLimitRetryAfter));
+        return reply.status(429).send({
+          error: {
+            message: `Rate limit exceeded. Retry after ${rateLimitRetryAfter} seconds.`,
+            type: 'rate_limit_error',
+            param: null,
+            code: 'rate_limit_exceeded',
+          },
+        });
       }
 
       const isTimeout = lastError?.message.includes('timed out') ?? false;
