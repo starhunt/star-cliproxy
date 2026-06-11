@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # build가 shared → server → dashboard 순으로 tsc 빌드하며 전체 타입체크를 수행한다.
+      # (shared의 .d.ts를 먼저 생성해야 server/dashboard 타입 해석이 가능하므로 typecheck보다 선행)
+      - name: Build (shared + server + dashboard)
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      # 의존성 취약점 점검 (운영 의존성). 정보성 — 신규 advisory 발생 시 로그로 확인.
+      - name: Audit (production deps, informational)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

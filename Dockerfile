@@ -26,8 +26,14 @@ RUN npm run build --workspace=packages/shared
 # ── 서버 (기본 타겟) ────────────────────────────────────
 FROM base AS server
 COPY packages/server packages/server
-RUN mkdir -p /app/data
+# 비root 실행: node 이미지의 내장 node 사용자(uid 1000)로 권한 강등.
+# SQLite/로그 기록 경로(data, logs)만 소유권 부여 (node_modules는 read-only 사용).
+RUN mkdir -p /app/data /app/logs && chown -R node:node /app/data /app/logs
+USER node
 EXPOSE 8300
+# busybox wget(alpine 내장)으로 헬스 엔드포인트 확인
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:8300/health || exit 1
 CMD ["npx", "tsx", "packages/server/src/index.ts"]
 
 # ── 대시보드 빌드 ───────────────────────────────────────
