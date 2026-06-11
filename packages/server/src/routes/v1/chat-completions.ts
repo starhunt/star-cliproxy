@@ -413,8 +413,12 @@ export function registerChatCompletionsRoute(
           if (body.stream) {
             // 클라이언트 연결 끊김 감지용 AbortController (큐 외부에서 생성하여 대기 중에도 감지)
             const abortController = new AbortController();
-            request.raw.on('close', () => abortController.abort());
+            // 이른 스트리밍 실패로 폴백할 때 close 리스너가 누적되지 않도록 named handler로 등록하고
+            // 스트리밍 종료(성공/에러/예외) 시 finally에서 반드시 제거한다.
+            const onClientClose = () => abortController.abort();
+            request.raw.once('close', onClientClose);
 
+            try {
             // 스트리밍도 큐를 통해 동시성 제한 적용 (BUG-01 수정)
             await deps.queue.enqueue(route.provider, async () => {
             // 큐 대기 중 클라이언트가 이미 연결을 끊었으면 조기 종료
@@ -603,6 +607,9 @@ export function registerChatCompletionsRoute(
             }); // queue.enqueue 끝
 
             return;
+            } finally {
+              request.raw.removeListener('close', onClientClose);
+            }
           }
 
           // Non-streaming 응답
