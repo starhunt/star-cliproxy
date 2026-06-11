@@ -13,6 +13,22 @@ import type {
 import type { CodexAppServerProcess } from './codex-appserver-process.js';
 import type { CodexAppServerSessionManager } from './codex-appserver-session-manager.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
+import { KeyedMutex } from '../utils/keyed-mutex.js';
+
+// thread당 turn 직렬화 (#24)
+// 단일 프로세스를 공유하므로 같은 thread에 turn이 동시 진행되면
+// threadId 기반 알림 필터가 두 요청을 구분하지 못해 응답이 교차 오염된다.
+// 프로세스 인스턴스별로 뮤텍스를 유지해 같은 threadId의 turn을 FIFO 직렬화한다.
+const turnMutexes = new WeakMap<CodexAppServerProcess, KeyedMutex>();
+
+function getTurnMutex(proc: CodexAppServerProcess): KeyedMutex {
+  let mutex = turnMutexes.get(proc);
+  if (!mutex) {
+    mutex = new KeyedMutex();
+    turnMutexes.set(proc, mutex);
+  }
+  return mutex;
+}
 
 // --- 설정 인터페이스 ---
 
@@ -412,84 +428,90 @@ async function executeTurn(
   const { threadId: rawThreadId, reused } = await getOrCreateThread(proc, existingThreadId, timeoutMs);
   const threadId = requireThreadIdForTurn(rawThreadId, 'getOrCreateThread');
 
-  // 결과 수집용 변수
-  let content = '';
-  let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-  const deltaChunks: string[] = [];
-
-  // turn/completed 대기용 Promise
-  const turnCompleted = new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`turn/completed 타임아웃 (${timeoutMs}ms)`));
-    }, timeoutMs);
-
-    // abort signal 연결
-    if (signal) {
-      signal.addEventListener('abort', () => {
-        clearTimeout(timer);
-        reject(new Error('요청이 취소되었습니다'));
-      }, { once: true });
-    }
-
-    // 알림 핸들러 등록
+  // 같은 thread의 turn 직렬화 (#24): 핸들러 등록~turn 완료까지 락 안에서 수행
+  return getTurnMutex(proc).runExclusive(threadId, async () => {
+    // 결과 수집용 변수
+    let content = '';
+    let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    const deltaChunks: string[] = [];
     const cleanups: (() => void)[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
-    // item/agentMessage/delta: 텍스트 청크 수집
-    cleanups.push(proc.onNotification('item/agentMessage/delta', (params) => {
-      const p = params as AgentMessageDeltaParams;
-      if (p.threadId === threadId) {
-        deltaChunks.push(p.delta);
-      }
-    }));
+    try {
+      // turn/completed 대기용 Promise
+      const turnCompleted = new Promise<void>((resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`turn/completed 타임아웃 (${timeoutMs}ms)`));
+        }, timeoutMs);
 
-    // item/completed: agentMessage의 전체 텍스트 추출
-    cleanups.push(proc.onNotification('item/completed', (params) => {
-      const p = params as ItemCompletedParams;
-      if (p.threadId === threadId && p.item.type === 'agentMessage' && p.item.text) {
-        content = p.item.text;
-      }
-    }));
+        // abort signal 연결
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            reject(new Error('요청이 취소되었습니다'));
+          }, { once: true });
+        }
 
-    // thread/tokenUsage/updated: usage 추출
-    cleanups.push(proc.onNotification('thread/tokenUsage/updated', (params) => {
-      const p = params as TokenUsageUpdatedParams;
-      if (p.threadId === threadId) {
-        const last = p.tokenUsage.last;
-        usage = {
-          promptTokens: last.inputTokens,
-          completionTokens: last.outputTokens,
-          totalTokens: last.totalTokens,
-        };
-      }
-    }));
+        // 알림 핸들러 등록
 
-    // turn/completed: 종료 신호
-    cleanups.push(proc.onNotification('turn/completed', (params) => {
-      const p = params as TurnCompletedParams;
-      if (p.threadId === threadId) {
-        clearTimeout(timer);
-        // 핸들러 정리
-        for (const cleanup of cleanups) cleanup();
-        resolve();
+        // item/agentMessage/delta: 텍스트 청크 수집
+        cleanups.push(proc.onNotification('item/agentMessage/delta', (params) => {
+          const p = params as AgentMessageDeltaParams;
+          if (p.threadId === threadId) {
+            deltaChunks.push(p.delta);
+          }
+        }));
+
+        // item/completed: agentMessage의 전체 텍스트 추출
+        cleanups.push(proc.onNotification('item/completed', (params) => {
+          const p = params as ItemCompletedParams;
+          if (p.threadId === threadId && p.item.type === 'agentMessage' && p.item.text) {
+            content = p.item.text;
+          }
+        }));
+
+        // thread/tokenUsage/updated: usage 추출
+        cleanups.push(proc.onNotification('thread/tokenUsage/updated', (params) => {
+          const p = params as TokenUsageUpdatedParams;
+          if (p.threadId === threadId) {
+            const last = p.tokenUsage.last;
+            usage = {
+              promptTokens: last.inputTokens,
+              completionTokens: last.outputTokens,
+              totalTokens: last.totalTokens,
+            };
+          }
+        }));
+
+        // turn/completed: 종료 신호
+        cleanups.push(proc.onNotification('turn/completed', (params) => {
+          const p = params as TurnCompletedParams;
+          if (p.threadId === threadId) {
+            resolve();
+          }
+        }));
+      });
+
+      // turn/start 전송 (v2 스키마: input은 UserInput 배열)
+      await proc.request('turn/start', {
+        threadId,
+        input: buildUserInput(prompt),
+      }, timeoutMs);
+
+      // turn/completed 대기
+      await turnCompleted;
+
+      // content 결정: item/completed의 text 또는 delta 조합
+      if (!content && deltaChunks.length > 0) {
+        content = deltaChunks.join('');
       }
-    }));
+
+      return { threadId, threadReused: reused, content, usage };
+    } finally {
+      // 타임아웃/취소/에러 경로에서도 타이머와 알림 핸들러 누수 방지
+      if (timer) clearTimeout(timer);
+      for (const cleanup of cleanups) cleanup();
+    }
   });
-
-  // turn/start 전송 (v2 스키마: input은 UserInput 배열)
-  await proc.request('turn/start', {
-    threadId,
-    input: buildUserInput(prompt),
-  }, timeoutMs);
-
-  // turn/completed 대기
-  await turnCompleted;
-
-  // content 결정: item/completed의 text 또는 delta 조합
-  if (!content && deltaChunks.length > 0) {
-    content = deltaChunks.join('');
-  }
-
-  return { threadId, threadReused: reused, content, usage };
 }
 
 // --- Streaming 실행 ---
@@ -564,6 +586,9 @@ async function* executeStreamTurn(
   const { threadId: rawThreadId, reused } = await getOrCreateThread(proc, existingThreadId, timeoutMs);
   const threadId = requireThreadIdForTurn(rawThreadId, 'getOrCreateThread');
 
+  // 같은 thread의 turn 직렬화 (#24): 핸들러 등록 전에 락 획득, 모든 종료 경로에서 해제
+  const releaseTurnLock = await getTurnMutex(proc).acquire(threadId);
+
   // 콜백→AsyncGenerator 브릿지 채널
   const channel = new AsyncChannel<ProviderEvent>();
   const cleanups: (() => void)[] = [];
@@ -625,6 +650,7 @@ async function* executeStreamTurn(
   } catch (err) {
     clearTimeout(timer);
     for (const cleanup of cleanups) cleanup();
+    releaseTurnLock();
     throw err;
   }
 
@@ -671,8 +697,9 @@ async function* executeStreamTurn(
       retried: false,
     });
   } finally {
-    // 핸들러 정리
+    // 핸들러 정리 (소비자가 제너레이터를 조기 종료해도 락 해제 보장)
     clearTimeout(timer);
     for (const cleanup of cleanups) cleanup();
+    releaseTurnLock();
   }
 }
