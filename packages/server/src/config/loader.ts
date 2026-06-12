@@ -1,7 +1,9 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { z } from 'zod';
 import type { AppConfig, ProviderConfigYaml, PluginEntry, ProviderOverrides, ReasoningEffort } from '@star-cliproxy/shared';
+import { rawConfigSchema, type RawProviderConfig } from './schema.js';
 import {
   DEFAULT_SERVER_PORT,
   DEFAULT_DASHBOARD_PORT,
@@ -89,7 +91,7 @@ const BUILTIN_DEFAULTS: Record<string, { cliPath: string; defaultModel: string }
 export function loadConfig(configPath?: string): AppConfig {
   const resolvedPath = configPath ?? resolve(process.cwd(), 'config.yaml');
 
-  let rawConfig: Record<string, unknown> = {};
+  let rawConfig: unknown = {};
 
   if (existsSync(resolvedPath)) {
     const content = readFileSync(resolvedPath, 'utf-8');
@@ -97,22 +99,31 @@ export function loadConfig(configPath?: string): AppConfig {
     rawConfig = parseYaml(substituted) ?? {};
   }
 
-  const server = rawConfig.server as Record<string, unknown> | undefined;
-  const dashboard = rawConfig.dashboard as Record<string, unknown> | undefined;
-  const database = rawConfig.database as Record<string, unknown> | undefined;
-  const auth = rawConfig.auth as Record<string, unknown> | undefined;
-  const providers = rawConfig.providers as Record<string, Record<string, unknown>> | undefined;
-  const rateLimits = rawConfig.rate_limits as Record<string, unknown> | undefined;
-  const cache = rawConfig.cache as Record<string, unknown> | undefined;
-  const validation = rawConfig.validation as Record<string, unknown> | undefined;
-  const modelMappings = rawConfig.model_mappings as Array<Record<string, string | undefined>> | undefined;
-  const rawPlugins = rawConfig.plugins as Array<Record<string, unknown>> | undefined;
+  // Zod 스키마 검증 (#30): 잘못된 타입/범위는 기동 시점에 경로 포함 에러로 거부
+  const parsed = rawConfigSchema.safeParse(rawConfig);
+  if (!parsed.success) {
+    throw new Error(
+      `config 검증 실패 (${resolvedPath}):\n${z.prettifyError(parsed.error)}`,
+    );
+  }
 
-  const corsObj = server?.cors as Record<string, unknown> | undefined;
-  const globalLimits = rateLimits?.global as Record<string, number> | undefined;
-  const perProvider = rateLimits?.per_provider as Record<string, Record<string, number>> | undefined;
+  const {
+    server,
+    dashboard,
+    database,
+    auth,
+    providers,
+    rate_limits: rateLimits,
+    cache,
+    validation,
+    model_mappings: modelMappings,
+    plugins: rawPlugins,
+  } = parsed.data;
 
-  const initialKeys = (auth?.initial_keys as Array<Record<string, string>> | undefined) ?? [];
+  const globalLimits = rateLimits?.global;
+  const perProvider = rateLimits?.per_provider;
+
+  const initialKeys = auth?.initial_keys ?? [];
 
   // 빌트인 프로바이더 설정 병합
   const providerConfigs: Record<string, ProviderConfigYaml> = {};
@@ -138,29 +149,29 @@ export function loadConfig(configPath?: string): AppConfig {
 
   // 플러그인 엔트리 파싱
   const plugins: PluginEntry[] = (rawPlugins ?? []).map((p) => ({
-    path: (p.path as string) ?? '',
+    path: p.path,
     config: p.config as Partial<ProviderConfigYaml> | undefined,
   }));
 
   return {
     server: {
-      port: (server?.port as number) ?? DEFAULT_SERVER_PORT,
-      host: (server?.host as string) ?? DEFAULT_HOST,
+      port: server?.port ?? DEFAULT_SERVER_PORT,
+      host: server?.host ?? DEFAULT_HOST,
       cors: {
-        origins: (corsObj?.origins as string[]) ?? [`http://localhost:${DEFAULT_DASHBOARD_PORT}`],
+        origins: server?.cors?.origins ?? [`http://localhost:${DEFAULT_DASHBOARD_PORT}`],
       },
     },
     dashboard: {
-      port: (dashboard?.port as number) ?? DEFAULT_DASHBOARD_PORT,
-      host: (dashboard?.host as string) ?? DEFAULT_HOST,
+      port: dashboard?.port ?? DEFAULT_DASHBOARD_PORT,
+      host: dashboard?.host ?? DEFAULT_HOST,
     },
     database: {
       // DB 경로를 config.yaml이 있는 디렉토리 기준으로 해석
-      path: resolve(dirname(resolvedPath), (database?.path as string) ?? './data/cliproxy.db'),
+      path: resolve(dirname(resolvedPath), database?.path ?? './data/cliproxy.db'),
     },
     auth: {
-      enabled: (auth?.enabled as boolean) ?? true,
-      adminToken: (auth?.admin_token as string) ?? process.env.ADMIN_TOKEN ?? '',
+      enabled: auth?.enabled ?? true,
+      adminToken: auth?.admin_token ?? process.env.ADMIN_TOKEN ?? '',
       initialKeys: initialKeys.map((k) => ({
         name: k.name ?? 'default',
         key: k.key ?? process.env.PROXY_API_KEY ?? '',
@@ -176,21 +187,21 @@ export function loadConfig(configPath?: string): AppConfig {
       perProvider: perProviderConfig,
     },
     cache: {
-      enabled: (cache?.enabled as boolean) ?? true,
-      ttlSeconds: (cache?.ttl_seconds as number) ?? DEFAULT_CACHE_TTL_SECONDS,
-      maxEntries: (cache?.max_entries as number) ?? DEFAULT_CACHE_MAX_ENTRIES,
+      enabled: cache?.enabled ?? true,
+      ttlSeconds: cache?.ttl_seconds ?? DEFAULT_CACHE_TTL_SECONDS,
+      maxEntries: cache?.max_entries ?? DEFAULT_CACHE_MAX_ENTRIES,
     },
     validation: {
-      maxMessageCount: (validation?.max_message_count as number) ?? DEFAULT_MAX_MESSAGE_COUNT,
-      maxMessageLength: (validation?.max_message_length as number) ?? DEFAULT_MAX_MESSAGE_LENGTH,
-      maxPromptLength: (validation?.max_prompt_length as number) ?? DEFAULT_MAX_PROMPT_LENGTH,
-      maxResponseLength: (validation?.max_response_length as number) ?? DEFAULT_MAX_RESPONSE_LENGTH,
-      bodyLimitBytes: (validation?.body_limit_bytes as number) ?? DEFAULT_BODY_LIMIT_BYTES,
+      maxMessageCount: validation?.max_message_count ?? DEFAULT_MAX_MESSAGE_COUNT,
+      maxMessageLength: validation?.max_message_length ?? DEFAULT_MAX_MESSAGE_LENGTH,
+      maxPromptLength: validation?.max_prompt_length ?? DEFAULT_MAX_PROMPT_LENGTH,
+      maxResponseLength: validation?.max_response_length ?? DEFAULT_MAX_RESPONSE_LENGTH,
+      bodyLimitBytes: validation?.body_limit_bytes ?? DEFAULT_BODY_LIMIT_BYTES,
     },
     modelMappings: modelMappings?.map((m) => ({
-      alias: m.alias as string,
-      provider: m.provider as string,
-      actual_model: (m.actual_model as string | undefined) ?? '',
+      alias: m.alias,
+      provider: m.provider,
+      actual_model: m.actual_model ?? '',
       reasoning_effort: normalizeReasoningEffort(m.reasoning_effort),
       provider_overrides: normalizeProviderOverrides(m.provider_overrides),
     })) ?? [
@@ -212,57 +223,29 @@ export function loadConfig(configPath?: string): AppConfig {
 }
 
 function mergeProviderConfig(
-  raw: Record<string, unknown> | undefined,
+  raw: RawProviderConfig | undefined,
   cliPath: string,
   defaultModel: string,
 ): ProviderConfigYaml {
   const defaults = defaultProviderConfig(cliPath, defaultModel);
   if (!raw) return defaults;
 
-  // SDK 옵션 파싱
-  const rawSdkOptions = raw.sdk_options as Record<string, unknown> | undefined;
-  const sdkOptions = rawSdkOptions ? {
-    max_turns: rawSdkOptions.max_turns as number | undefined,
-    permission_mode: rawSdkOptions.permission_mode as string | undefined,
-    allowed_tools: rawSdkOptions.allowed_tools as string[] | undefined,
-    disallowed_tools: rawSdkOptions.disallowed_tools as string[] | undefined,
-    max_budget_usd: rawSdkOptions.max_budget_usd as number | undefined,
-    session_ttl_ms: rawSdkOptions.session_ttl_ms as number | undefined,
-    enable_session_reuse: rawSdkOptions.enable_session_reuse as boolean | undefined,
-    persist_session: rawSdkOptions.persist_session as boolean | undefined,
-  } : undefined;
-
-  // App Server 옵션 파싱 (Codex app-server 모드)
-  const rawAppServerOptions = raw.app_server_options as Record<string, unknown> | undefined;
-  const appServerOptions = rawAppServerOptions ? {
-    transport: (rawAppServerOptions.transport as 'stdio' | 'websocket') ?? 'stdio',
-    websocket_url: rawAppServerOptions.websocket_url as string | undefined,
-    session_ttl_ms: rawAppServerOptions.session_ttl_ms as number | undefined,
-    enable_session_reuse: rawAppServerOptions.enable_session_reuse as boolean | undefined,
-    max_turns: rawAppServerOptions.max_turns as number | undefined,
-    auto_restart: rawAppServerOptions.auto_restart as boolean | undefined,
-    max_restart_count: rawAppServerOptions.max_restart_count as number | undefined,
-  } : undefined;
-
-  // CLI 옵션 파싱 (Codex CLI 모드)
-  const rawCliOptions = raw.cli_options as Record<string, unknown> | undefined;
-  const cliOptions = rawCliOptions ? {
-    ephemeral: rawCliOptions.ephemeral as boolean | undefined,
-    enable_session_reuse: rawCliOptions.enable_session_reuse as boolean | undefined,
-    session_ttl_ms: rawCliOptions.session_ttl_ms as number | undefined,
-  } : undefined;
+  // App Server 옵션: transport만 기본값 주입 (나머지는 스키마 검증된 값 그대로)
+  const appServerOptions = raw.app_server_options
+    ? { ...raw.app_server_options, transport: raw.app_server_options.transport ?? 'stdio' as const }
+    : undefined;
 
   return {
-    enabled: (raw.enabled as boolean) ?? defaults.enabled,
-    cli_path: (raw.cli_path as string) ?? defaults.cli_path,
-    default_model: (raw.default_model as string) ?? defaults.default_model,
-    max_concurrent: (raw.max_concurrent as number) ?? defaults.max_concurrent,
-    timeout_ms: (raw.timeout_ms as number) ?? defaults.timeout_ms,
-    extra_args: (raw.extra_args as string[]) ?? defaults.extra_args,
-    working_dir: (raw.working_dir as string) ?? undefined,
-    mode: (raw.mode as 'cli' | 'sdk' | 'app-server') ?? undefined,
-    sdk_options: sdkOptions,
+    enabled: raw.enabled ?? defaults.enabled,
+    cli_path: raw.cli_path ?? defaults.cli_path,
+    default_model: raw.default_model ?? defaults.default_model,
+    max_concurrent: raw.max_concurrent ?? defaults.max_concurrent,
+    timeout_ms: raw.timeout_ms ?? defaults.timeout_ms,
+    extra_args: raw.extra_args ?? defaults.extra_args,
+    working_dir: raw.working_dir ?? undefined,
+    mode: raw.mode ?? undefined,
+    sdk_options: raw.sdk_options,
     app_server_options: appServerOptions,
-    cli_options: cliOptions,
+    cli_options: raw.cli_options,
   };
 }
