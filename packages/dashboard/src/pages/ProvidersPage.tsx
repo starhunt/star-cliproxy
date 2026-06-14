@@ -24,8 +24,14 @@ import {
   type HttpProviderInfo,
   type EndpointType,
   type ClaudeSdkOptions,
+  type ClaudeChannelOptions,
   type CodexAppServerOptions,
   type CodexCliOptions,
+  type ChannelBridgeStatus,
+  fetchChannelBridgeStatus,
+  startChannelBridge,
+  stopChannelBridge,
+  restartChannelBridge,
 } from '../api/client';
 
 // HTTP 엔드포인트 타입 옵션 (셀렉트 표시용)
@@ -179,6 +185,7 @@ export default function ProvidersPage() {
             timeout_ms: payload.timeout_ms,
             mode: payload.mode,
             sdk_options: payload.sdk_options,
+            channel_options: payload.channel_options,
             app_server_options: payload.app_server_options,
             cli_options: payload.cli_options,
           }
@@ -1186,15 +1193,22 @@ function AddProviderForm({
   );
 }
 
-// Claude 프로바이더 전용: SDK 모드 설정 섹션
+// Claude 프로바이더 전용: 실행 모드(CLI / SDK / Channel) 설정 섹션
 function ClaudeSdkSettings({ draft, setDraft, setMessage, t }: {
   draft: Partial<ProviderConfig>;
   setDraft: React.Dispatch<React.SetStateAction<Partial<ProviderConfig>>>;
   setMessage: React.Dispatch<React.SetStateAction<{ type: 'success' | 'error'; text: string } | null>>;
   t: (key: string) => string;
 }) {
-  const isSDKMode = draft.mode === 'sdk';
+  const mode = draft.mode ?? 'cli';
+  const isSDKMode = mode === 'sdk';
+  const isChannelMode = mode === 'channel-worker';
   const sdkOpts = draft.sdk_options ?? {};
+
+  const setMode = (m: 'cli' | 'sdk' | 'channel-worker') => {
+    setDraft((prev) => ({ ...prev, mode: m }));
+    setMessage(null);
+  };
 
   const updateSdkOption = (key: keyof ClaudeSdkOptions, value: unknown) => {
     setDraft((prev) => ({
@@ -1207,42 +1221,43 @@ function ClaudeSdkSettings({ draft, setDraft, setMessage, t }: {
   const labelCls = 'text-xs text-gray-500 dark:text-gray-400 block mb-1.5';
   const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200';
 
+  const MODE_BUTTONS: { value: 'cli' | 'sdk' | 'channel-worker'; label: string; active: string }[] = [
+    { value: 'cli', label: 'CLI', active: 'bg-blue-600 text-white border-blue-600' },
+    { value: 'sdk', label: 'SDK', active: 'bg-purple-600 text-white border-purple-600' },
+    { value: 'channel-worker', label: 'Channel', active: 'bg-teal-600 text-white border-teal-600' },
+  ];
+
   return (
     <div className="space-y-4 border-t border-dashed border-gray-300 dark:border-gray-700 pt-4">
-      {/* 실행 모드 토글 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-            {t('providers.executionMode')}
-          </p>
-          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-0.5">
-            {t('providers.sdkNote')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-medium ${!isSDKMode ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-600'}`}>
-            {t('providers.modeCli')}
-          </span>
-          <button
-            onClick={() => {
-              setDraft((prev) => ({ ...prev, mode: isSDKMode ? 'cli' : 'sdk' }));
-              setMessage(null);
-            }}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              isSDKMode ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'
-            }`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                isSDKMode ? 'translate-x-4' : 'translate-x-0.5'
+      {/* 실행 모드 선택 (3-way) */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">
+          {t('providers.executionMode')}
+        </p>
+        <div className="inline-flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-700">
+          {MODE_BUTTONS.map((m) => (
+            <button
+              key={m.value}
+              onClick={() => setMode(m.value)}
+              className={`px-4 py-1.5 text-xs font-medium border-r last:border-r-0 border-gray-300 dark:border-gray-700 transition-colors ${
+                mode === m.value
+                  ? m.active
+                  : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
-            />
-          </button>
-          <span className={`text-xs font-medium ${isSDKMode ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-gray-600'}`}>
-            {t('providers.modeSdk')}
-          </span>
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
+        <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1">
+          {t('providers.modeHint')}
+        </p>
       </div>
+
+      {/* Channel 모드 옵션 + bridge 라이프사이클 제어 */}
+      {isChannelMode && (
+        <ChannelSettings draft={draft} setDraft={setDraft} setMessage={setMessage} labelCls={labelCls} inputCls={inputCls} />
+      )}
 
       {/* SDK 옵션 (SDK 모드일 때만 표시) */}
       {isSDKMode && (
@@ -1327,6 +1342,249 @@ function ClaudeSdkSettings({ draft, setDraft, setMessage, t }: {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Claude Channel 모드 옵션 + bridge 라이프사이클 제어
+function ChannelSettings({ draft, setDraft, setMessage, labelCls, inputCls }: {
+  draft: Partial<ProviderConfig>;
+  setDraft: React.Dispatch<React.SetStateAction<Partial<ProviderConfig>>>;
+  setMessage: React.Dispatch<React.SetStateAction<{ type: 'success' | 'error'; text: string } | null>>;
+  labelCls: string;
+  inputCls: string;
+}) {
+  const { t } = useTranslation();
+  const ch: ClaudeChannelOptions = draft.channel_options ?? {};
+  const managed = ch.managed === true;
+
+  const update = <K extends keyof ClaudeChannelOptions>(key: K, value: ClaudeChannelOptions[K]) => {
+    setDraft((prev) => ({ ...prev, channel_options: { ...prev.channel_options, [key]: value } }));
+    setMessage(null);
+  };
+
+  return (
+    <div className="space-y-3 pl-3 border-l-2 border-teal-300 dark:border-teal-600/40">
+      <p className="text-xs font-semibold text-teal-600 dark:text-teal-400 uppercase tracking-wider">
+        {t('providers.channelOptions')}
+      </p>
+
+      <div className="px-3 py-2 rounded-lg border bg-teal-50 dark:bg-teal-500/10 border-teal-200 dark:border-teal-500/20 text-teal-700 dark:text-teal-300 text-[11px] leading-relaxed">
+        {t('providers.channelIntro')}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className={labelCls}>{t('providers.channelEndpointUrl')}</label>
+          <input
+            type="text"
+            value={ch.endpoint_url ?? ''}
+            onChange={(e) => update('endpoint_url', e.target.value || undefined)}
+            placeholder={managed ? t('providers.channelEndpointAutoPlaceholder', { port: ch.bridge_port ?? 8788 }) : 'http://127.0.0.1:8788'}
+            className={inputCls}
+          />
+          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1">
+            {t('providers.channelEndpointHint')}
+          </p>
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.channelApiKey')} <span className="text-gray-400 dark:text-gray-600">{t('providers.channelApiKeyNote')}</span></label>
+          <input
+            type="password"
+            value={ch.api_key ?? ''}
+            onChange={(e) => update('api_key', e.target.value || undefined)}
+            placeholder="••••••"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.channelPollInterval')}</label>
+          <input
+            type="number"
+            min="50"
+            value={ch.poll_interval_ms ?? 500}
+            onChange={(e) => update('poll_interval_ms', parseInt(e.target.value) || undefined)}
+            className={inputCls}
+          />
+          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1">
+            {t('providers.channelPollHint')}
+          </p>
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.channelResultTimeout')}</label>
+          <input
+            type="number"
+            min="1000"
+            step="1000"
+            value={ch.result_timeout_ms ?? 300000}
+            onChange={(e) => update('result_timeout_ms', parseInt(e.target.value) || undefined)}
+            className={inputCls}
+          />
+          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1">
+            {t('providers.channelTimeoutHint')}
+          </p>
+        </div>
+        <div>
+          <label className={labelCls}>{t('providers.channelIsolation')}</label>
+          <select
+            value={ch.isolation ?? 'external'}
+            onChange={(e) => update('isolation', e.target.value as ClaudeChannelOptions['isolation'])}
+            className={inputCls}
+          >
+            <option value="external">{t('providers.channelIsolationExternal')}</option>
+            <option value="one-job-per-worker">{t('providers.channelIsolationPerWorker')}</option>
+            <option value="shared-session">{t('providers.channelIsolationShared')}</option>
+          </select>
+          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1">
+            {t('providers.channelIsolationHint')}
+          </p>
+        </div>
+      </div>
+
+      {/* managed: star-cliproxy가 내장 bridge를 직접 관리 */}
+      <div className="space-y-3 border-t border-dashed border-gray-300 dark:border-gray-700 pt-3">
+        <div className="flex items-center gap-2">
+          <ToggleSwitch enabled={managed} onToggle={() => update('managed', !managed)} />
+          <span className="text-sm text-gray-700 dark:text-gray-300">
+            {t('providers.channelManaged')} <span className="text-gray-400 dark:text-gray-600 text-xs">{t('providers.channelManagedNote')}</span>
+          </span>
+        </div>
+        <p className="text-[10px] text-gray-400 dark:text-gray-600 -mt-1">
+          {t('providers.channelManagedHint')}
+        </p>
+
+        {managed ? (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>{t('providers.channelBridgePort')}</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="65535"
+                  value={ch.bridge_port ?? 8788}
+                  onChange={(e) => update('bridge_port', parseInt(e.target.value) || undefined)}
+                  className={inputCls}
+                />
+              </div>
+              <div className="flex items-end pb-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                  <ToggleSwitch enabled={ch.auto_start === true} onToggle={() => update('auto_start', !ch.auto_start)} />
+                  {t('providers.channelAutoStart')}
+                </label>
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>
+                {t('providers.channelCustomCommand')} <span className="text-gray-400 dark:text-gray-600">{t('providers.channelCustomCommandNote')}</span>
+              </label>
+              <input
+                type="text"
+                value={ch.bridge_command ?? ''}
+                onChange={(e) => update('bridge_command', e.target.value || undefined)}
+                placeholder="node my-bridge.js --port 8788"
+                className={`${inputCls} font-mono`}
+              />
+            </div>
+            <div className="px-3 py-2 rounded-lg border bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300 text-[11px]">
+              ⚠️ {t('providers.channelSaveWarning')}
+            </div>
+            <ChannelBridgePanel />
+          </>
+        ) : (
+          <p className="text-[11px] text-gray-400 dark:text-gray-600">
+            {t('providers.channelExternalNote')}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 내장 bridge 상태 표시 + start/stop/restart 제어
+function ChannelBridgePanel() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<ChannelBridgeStatus | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refresh = async () => {
+    try {
+      setStatus(await fetchChannelBridgeStatus());
+      setErr(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const runAction = async (fn: () => Promise<ChannelBridgeStatus>, name: string) => {
+    setBusy(name);
+    setErr(null);
+    try {
+      setStatus(await fn());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const running = status?.running === true;
+  const healthy = status?.healthy === true;
+  const dotColor = !running ? 'bg-gray-400 dark:bg-gray-600' : healthy ? 'bg-green-500' : 'bg-amber-500';
+  const btnCls = 'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40';
+
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`w-2.5 h-2.5 rounded-full ${dotColor}`} />
+          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+            Bridge: {!running ? t('providers.bridgeStopped') : healthy ? t('providers.bridgeRunningHealthy') : t('providers.bridgeRunningUnhealthy')}
+          </span>
+          {running && status?.pid != null && (
+            <span className="text-[10px] text-gray-400 dark:text-gray-600">
+              pid {status.pid} · port {status.port}
+              {status.uptimeMs != null ? ` · ${Math.floor(status.uptimeMs / 1000)}s` : ''}
+            </span>
+          )}
+        </div>
+        <button onClick={refresh} className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline">
+          {t('common.refresh')}
+        </button>
+      </div>
+
+      {(err || status?.lastError) && (
+        <div className="text-[11px] text-red-600 dark:text-red-400 break-all">
+          {err ?? status?.lastError}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => runAction(startChannelBridge, 'start')}
+          disabled={busy !== null || running}
+          className={`${btnCls} bg-teal-600 hover:bg-teal-700 text-white`}
+        >
+          {busy === 'start' ? t('providers.bridgeStarting') : t('providers.bridgeStart')}
+        </button>
+        <button
+          onClick={() => runAction(restartChannelBridge, 'restart')}
+          disabled={busy !== null}
+          className={`${btnCls} bg-amber-600 hover:bg-amber-700 text-white`}
+        >
+          {busy === 'restart' ? t('providers.bridgeRestarting') : t('providers.bridgeRestart')}
+        </button>
+        <button
+          onClick={() => runAction(stopChannelBridge, 'stop')}
+          disabled={busy !== null || !running}
+          className={`${btnCls} bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200`}
+        >
+          {busy === 'stop' ? t('providers.bridgeStopping') : t('providers.bridgeStop')}
+        </button>
+      </div>
     </div>
   );
 }

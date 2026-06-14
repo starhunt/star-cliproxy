@@ -188,6 +188,7 @@ export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 // 화이트리스트 기반 provider 옵션 오버라이드 (현재 codex CLI 모드 1차 지원)
 export interface ProviderOverrides {
+  mode?: 'cli' | 'sdk' | 'app-server' | 'channel-worker';
   extra_args?: string[];
   timeout_ms?: number;
   working_dir?: string;
@@ -196,6 +197,8 @@ export interface ProviderOverrides {
     enable_session_reuse?: boolean;
     session_ttl_ms?: number;
   };
+  sdk_options?: Partial<ClaudeSdkOptions>;
+  channel_options?: Partial<ClaudeChannelOptions>;
 }
 
 export interface ModelMapping {
@@ -332,6 +335,19 @@ export interface ClaudeSdkOptions {
   persist_session?: boolean;
 }
 
+export interface ClaudeChannelOptions {
+  endpoint_url?: string;
+  api_key?: string;
+  poll_interval_ms?: number;
+  result_timeout_ms?: number;
+  response_schema?: Record<string, unknown>;
+  isolation?: 'external' | 'one-job-per-worker' | 'shared-session';
+  managed?: boolean;
+  auto_start?: boolean;
+  bridge_port?: number;
+  bridge_command?: string;
+}
+
 export interface CodexAppServerOptions {
   transport?: 'stdio' | 'websocket';
   websocket_url?: string;
@@ -356,8 +372,9 @@ export interface ProviderConfig {
   timeout_ms: number;
   extra_args: string[];
   working_dir?: string;
-  mode?: 'cli' | 'sdk' | 'app-server';
+  mode?: 'cli' | 'sdk' | 'app-server' | 'channel-worker';
   sdk_options?: ClaudeSdkOptions;
+  channel_options?: ClaudeChannelOptions;
   app_server_options?: CodexAppServerOptions;
   cli_options?: CodexCliOptions;
 }
@@ -398,6 +415,35 @@ export function testProvider(name: string) {
   return request<ProviderTestResult>(`/providers/${name}/test`, {
     method: 'POST',
   });
+}
+
+// --- Claude Channel bridge 라이프사이클 ---
+export interface ChannelBridgeStatus {
+  running: boolean;
+  managed: boolean;
+  pid?: number;
+  port?: number;
+  host?: string;
+  uptimeMs?: number;
+  healthy?: boolean;
+  lastError?: string;
+  command?: string;
+}
+
+export function fetchChannelBridgeStatus() {
+  return request<ChannelBridgeStatus>('/providers/claude/channel-bridge/status');
+}
+
+export function startChannelBridge() {
+  return request<ChannelBridgeStatus>('/providers/claude/channel-bridge/start', { method: 'POST' });
+}
+
+export function stopChannelBridge() {
+  return request<ChannelBridgeStatus>('/providers/claude/channel-bridge/stop', { method: 'POST' });
+}
+
+export function restartChannelBridge() {
+  return request<ChannelBridgeStatus>('/providers/claude/channel-bridge/restart', { method: 'POST' });
 }
 
 // Test Model
