@@ -40,6 +40,18 @@ providers:
     #   session_ttl_ms: 1800000        # 세션 TTL (기본 30분)
     #   enable_session_reuse: true     # 세션 재사용 활성화
     #   persist_session: false         # 디스크 세션 저장
+    #
+    # mode: "channel-worker"           # 실험적: 실행 중인 Claude Code Channel bridge로 job 제출
+    # channel_options:
+    #   endpoint_url: "http://127.0.0.1:8788"  # POST /jobs, GET /jobs/:job_id 지원 bridge (managed면 자동 유추)
+    #   poll_interval_ms: 500
+    #   result_timeout_ms: 300000
+    #   isolation: "external"          # bridge 쪽 격리 정책. API 독립성이 필요하면 one-job-per-worker 권장
+    #   # --- 내장 bridge 직접 관리 (대시보드 Claude 설정 화면에서 start/stop/restart 가능) ---
+    #   managed: true                  # star-cliproxy가 내장 bridge 프로세스를 직접 spawn/supervise
+    #   auto_start: true               # 서버 부팅 시 bridge 자동 시작
+    #   bridge_port: 8788              # 내장 bridge 리스닝 포트
+    #   # bridge_command: "node my-bridge.js"  # 커스텀 bridge 실행 커맨드 (비우면 내장 bridge)
 
   codex:
     enabled: true
@@ -187,16 +199,22 @@ model_mappings:
   #   - Gemini  : 미지원 (필드 무시)
   # 생략하면 각 CLI의 기본 동작을 따른다. CLI 모드에서만 적용 (App Server / SDK 모드 제외).
   #
-  # provider_overrides 필드 (선택, codex CLI 모드 1차 지원):
+  # provider_overrides 필드 (선택, provider별 화이트리스트 기반):
   #   동일 프로바이더를 공유하는 매핑마다 옵션을 다르게 적용. 화이트리스트 키만 허용.
   #   허용: extra_args, timeout_ms, working_dir, cli_options.{ephemeral, enable_session_reuse, session_ttl_ms}
-  #   금지: cli_path, enabled, mode, default_model, max_concurrent, sdk_options, app_server_options
+  #   금지: cli_path, enabled, default_model, max_concurrent, app_server_options
   #   예시:
   #     provider_overrides:
   #       cli_options:
   #         enable_session_reuse: true   # 이 매핑만 세션 재사용
   #         session_ttl_ms: 3600000      # 1시간 TTL
   #       extra_args: ["--skip-git-repo-check"]  # 기본 extra_args를 교체 (-s 정책은 첫 호출에만 적용됨)
+  #   Claude도 mode/channel_options override를 지원한다:
+  #     provider_overrides:
+  #       mode: "channel-worker"
+  #       channel_options:
+  #         endpoint_url: "http://127.0.0.1:8788"
+  #         isolation: "external"
 
   # 초기 시드 매핑 — 프로바이더당 최대 2개. 필요하면 대시보드 Models 페이지에서 추가/수정.
   # reasoning_effort, provider_overrides 등 고급 옵션은 별칭을 복제해서 직접 만들면 된다.

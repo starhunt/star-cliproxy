@@ -75,6 +75,12 @@ function parseProviderOverridesInput(value: unknown): { ok: true; value: Provide
   }
   const raw = value as Record<string, unknown>;
   const out: ProviderOverrides = {};
+  if (raw.mode !== undefined) {
+    if (typeof raw.mode !== 'string' || !['cli', 'sdk', 'app-server', 'channel-worker'].includes(raw.mode)) {
+      return { ok: false, reason: 'provider_overrides.mode must be one of: cli, sdk, app-server, channel-worker.' };
+    }
+    out.mode = raw.mode as ProviderOverrides['mode'];
+  }
   if (raw.extra_args !== undefined) {
     if (!Array.isArray(raw.extra_args) || !raw.extra_args.every((a) => typeof a === 'string')) {
       return { ok: false, reason: 'provider_overrides.extra_args must be string[].' };
@@ -114,6 +120,82 @@ function parseProviderOverridesInput(value: unknown): { ok: true; value: Provide
       cli.session_ttl_ms = rawCli.session_ttl_ms;
     }
     if (Object.keys(cli).length > 0) out.cli_options = cli;
+  }
+  if (raw.sdk_options !== undefined) {
+    if (typeof raw.sdk_options !== 'object' || raw.sdk_options === null || Array.isArray(raw.sdk_options)) {
+      return { ok: false, reason: 'provider_overrides.sdk_options must be an object.' };
+    }
+    const rawSdk = raw.sdk_options as Record<string, unknown>;
+    const sdk: NonNullable<ProviderOverrides['sdk_options']> = {};
+    if (rawSdk.max_turns !== undefined) {
+      if (typeof rawSdk.max_turns !== 'number' || rawSdk.max_turns <= 0) return { ok: false, reason: 'sdk_options.max_turns must be a positive number.' };
+      sdk.max_turns = rawSdk.max_turns;
+    }
+    if (rawSdk.permission_mode !== undefined) {
+      if (typeof rawSdk.permission_mode !== 'string') return { ok: false, reason: 'sdk_options.permission_mode must be string.' };
+      sdk.permission_mode = rawSdk.permission_mode;
+    }
+    if (rawSdk.allowed_tools !== undefined) {
+      if (!Array.isArray(rawSdk.allowed_tools) || !rawSdk.allowed_tools.every((a) => typeof a === 'string')) return { ok: false, reason: 'sdk_options.allowed_tools must be string[].' };
+      sdk.allowed_tools = rawSdk.allowed_tools as string[];
+    }
+    if (rawSdk.disallowed_tools !== undefined) {
+      if (!Array.isArray(rawSdk.disallowed_tools) || !rawSdk.disallowed_tools.every((a) => typeof a === 'string')) return { ok: false, reason: 'sdk_options.disallowed_tools must be string[].' };
+      sdk.disallowed_tools = rawSdk.disallowed_tools as string[];
+    }
+    if (rawSdk.max_budget_usd !== undefined) {
+      if (typeof rawSdk.max_budget_usd !== 'number' || rawSdk.max_budget_usd <= 0) return { ok: false, reason: 'sdk_options.max_budget_usd must be a positive number.' };
+      sdk.max_budget_usd = rawSdk.max_budget_usd;
+    }
+    if (rawSdk.session_ttl_ms !== undefined) {
+      if (typeof rawSdk.session_ttl_ms !== 'number' || rawSdk.session_ttl_ms <= 0) return { ok: false, reason: 'sdk_options.session_ttl_ms must be a positive number.' };
+      sdk.session_ttl_ms = rawSdk.session_ttl_ms;
+    }
+    if (rawSdk.enable_session_reuse !== undefined) {
+      if (typeof rawSdk.enable_session_reuse !== 'boolean') return { ok: false, reason: 'sdk_options.enable_session_reuse must be boolean.' };
+      sdk.enable_session_reuse = rawSdk.enable_session_reuse;
+    }
+    if (rawSdk.persist_session !== undefined) {
+      if (typeof rawSdk.persist_session !== 'boolean') return { ok: false, reason: 'sdk_options.persist_session must be boolean.' };
+      sdk.persist_session = rawSdk.persist_session;
+    }
+    if (Object.keys(sdk).length > 0) out.sdk_options = sdk;
+  }
+  if (raw.channel_options !== undefined) {
+    if (typeof raw.channel_options !== 'object' || raw.channel_options === null || Array.isArray(raw.channel_options)) {
+      return { ok: false, reason: 'provider_overrides.channel_options must be an object.' };
+    }
+    const rawChannel = raw.channel_options as Record<string, unknown>;
+    const channel: NonNullable<ProviderOverrides['channel_options']> = {};
+    if (rawChannel.endpoint_url !== undefined) {
+      if (typeof rawChannel.endpoint_url !== 'string' || rawChannel.endpoint_url.trim() === '') return { ok: false, reason: 'channel_options.endpoint_url must be a non-empty string.' };
+      channel.endpoint_url = rawChannel.endpoint_url;
+    }
+    if (rawChannel.api_key !== undefined) {
+      if (typeof rawChannel.api_key !== 'string' || rawChannel.api_key.trim() === '') return { ok: false, reason: 'channel_options.api_key must be a non-empty string.' };
+      channel.api_key = rawChannel.api_key;
+    }
+    if (rawChannel.poll_interval_ms !== undefined) {
+      if (typeof rawChannel.poll_interval_ms !== 'number' || rawChannel.poll_interval_ms <= 0) return { ok: false, reason: 'channel_options.poll_interval_ms must be a positive number.' };
+      channel.poll_interval_ms = rawChannel.poll_interval_ms;
+    }
+    if (rawChannel.result_timeout_ms !== undefined) {
+      if (typeof rawChannel.result_timeout_ms !== 'number' || rawChannel.result_timeout_ms <= 0) return { ok: false, reason: 'channel_options.result_timeout_ms must be a positive number.' };
+      channel.result_timeout_ms = rawChannel.result_timeout_ms;
+    }
+    if (rawChannel.response_schema !== undefined) {
+      if (typeof rawChannel.response_schema !== 'object' || rawChannel.response_schema === null || Array.isArray(rawChannel.response_schema)) {
+        return { ok: false, reason: 'channel_options.response_schema must be an object.' };
+      }
+      channel.response_schema = rawChannel.response_schema as Record<string, unknown>;
+    }
+    if (rawChannel.isolation !== undefined) {
+      if (typeof rawChannel.isolation !== 'string' || !['external', 'one-job-per-worker', 'shared-session'].includes(rawChannel.isolation)) {
+        return { ok: false, reason: 'channel_options.isolation must be one of: external, one-job-per-worker, shared-session.' };
+      }
+      channel.isolation = rawChannel.isolation as NonNullable<ProviderOverrides['channel_options']>['isolation'];
+    }
+    if (Object.keys(channel).length > 0) out.channel_options = channel;
   }
   return { ok: true, value: Object.keys(out).length > 0 ? out : null };
 }

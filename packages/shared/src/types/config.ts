@@ -41,6 +41,23 @@ export interface ClaudeSdkOptions {
   persist_session?: boolean;       // 디스크 세션 저장 (기본 false)
 }
 
+// Claude Code Channel worker 옵션 (mode: 'channel-worker'일 때 사용)
+// 외부에서 실행 중인 Channel bridge에 job을 제출하고 완료 상태를 polling한다.
+// managed=true이면 star-cliproxy가 내장 bridge 프로세스를 직접 spawn/관리한다.
+export interface ClaudeChannelOptions {
+  endpoint_url?: string;            // 예: http://127.0.0.1:8788 (managed면 bridge_port로 자동 유추)
+  api_key?: string;                 // 선택적 Bearer token (managed bridge에도 그대로 주입)
+  poll_interval_ms?: number;        // 상태 polling 간격 (기본 500ms)
+  result_timeout_ms?: number;       // job 완료 대기 시간 (기본 provider timeout_ms)
+  response_schema?: Record<string, unknown>; // bridge에 전달할 선택적 JSON schema
+  isolation?: 'external' | 'one-job-per-worker' | 'shared-session';
+  // --- bridge 라이프사이클 (star-cliproxy가 직접 관리할 때) ---
+  managed?: boolean;                // true면 star-cliproxy가 bridge 프로세스를 spawn/supervise (기본 false=외부 bridge)
+  auto_start?: boolean;             // 서버 부팅 시 managed bridge 자동 시작 (기본 false)
+  bridge_port?: number;             // 내장 bridge 리스닝 포트 (기본 8788)
+  bridge_command?: string;          // 커스텀 bridge 실행 커맨드. 비우면 내장 bridge 사용 (예: "node my-bridge.js")
+}
+
 // Codex App Server 전용 옵션 (mode: 'app-server'일 때만 사용)
 export interface CodexAppServerOptions {
   transport?: 'stdio' | 'websocket';     // 전송 방식 (기본 'stdio', websocket은 실험적)
@@ -67,8 +84,9 @@ export interface ProviderConfigYaml {
   timeout_ms: number;
   extra_args: string[];
   working_dir?: string;
-  mode?: 'cli' | 'sdk' | 'app-server';  // 실행 모드 (기본 'cli')
+  mode?: 'cli' | 'sdk' | 'app-server' | 'channel-worker';  // 실행 모드 (기본 'cli')
   sdk_options?: ClaudeSdkOptions;         // mode: 'sdk'일 때 사용 (Claude)
+  channel_options?: ClaudeChannelOptions;  // mode: 'channel-worker'일 때 사용 (Claude)
   app_server_options?: CodexAppServerOptions; // mode: 'app-server'일 때 사용 (Codex)
   cli_options?: CodexCliOptions;          // mode: 'cli'일 때 사용 (Codex)
 }
@@ -98,10 +116,13 @@ export interface ModelMappingSeed {
 // 모델 매핑 단위 오버라이드. ProviderConfigYaml의 화이트리스트 키만 허용
 // (mergeProviderConfig에서 검증). yaml/DB 모두 동일 구조 사용.
 export interface ProviderOverrides {
+  mode?: ProviderConfigYaml['mode'];
   extra_args?: string[];
   timeout_ms?: number;
   working_dir?: string;
   cli_options?: Partial<CodexCliOptions>;
+  sdk_options?: Partial<ClaudeSdkOptions>;
+  channel_options?: Partial<ClaudeChannelOptions>;
 }
 
 // 오버라이드 화이트리스트 (codex 한정 1차). 화이트리스트 외 키는 silent drop.
@@ -115,6 +136,28 @@ export const CODEX_OVERRIDE_ALLOWED_KEYS = [
   'cli_options.session_ttl_ms',
 ] as const;
 export type CodexOverrideKey = typeof CODEX_OVERRIDE_ALLOWED_KEYS[number];
+
+export const CLAUDE_OVERRIDE_ALLOWED_KEYS = [
+  'mode',
+  'extra_args',
+  'timeout_ms',
+  'working_dir',
+  'sdk_options.max_turns',
+  'sdk_options.permission_mode',
+  'sdk_options.allowed_tools',
+  'sdk_options.disallowed_tools',
+  'sdk_options.max_budget_usd',
+  'sdk_options.session_ttl_ms',
+  'sdk_options.enable_session_reuse',
+  'sdk_options.persist_session',
+  'channel_options.endpoint_url',
+  'channel_options.api_key',
+  'channel_options.poll_interval_ms',
+  'channel_options.result_timeout_ms',
+  'channel_options.response_schema',
+  'channel_options.isolation',
+] as const;
+export type ClaudeOverrideKey = typeof CLAUDE_OVERRIDE_ALLOWED_KEYS[number];
 
 export interface ValidationConfig {
   maxMessageCount: number;       // 메시지 배열 최대 수 (기본 800)

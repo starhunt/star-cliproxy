@@ -19,6 +19,7 @@ import { registerModelMappingsRoutes } from './routes/admin/model-mappings.js';
 import { registerApiKeysRoutes } from './routes/admin/api-keys.js';
 import { registerStatsRoutes } from './routes/admin/stats.js';
 import { registerProvidersRoutes, sanitizeRuntimeProviderConfig } from './routes/admin/providers.js';
+import { registerChannelBridgeRoutes, maybeAutoStartBridge } from './routes/admin/channel-bridge.js';
 import { registerTestModelRoute } from './routes/admin/test-model.js';
 import { registerRateLimitsRoutes, loadRateLimitsFromDb } from './routes/admin/rate-limits.js';
 import { loadProviderConfigFromDb } from './routes/admin/providers.js';
@@ -406,6 +407,9 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
     queueManager,
     defaultConfigs: config.providers,
   });
+  registerChannelBridgeRoutes(app, { defaultConfigs: config.providers });
+  // managed + auto_start면 부팅 시 내장 bridge 자동 시작 (실패해도 서버 부팅은 계속)
+  void maybeAutoStartBridge({ defaultConfigs: config.providers });
   registerTestModelRoute(app, registry);
   registerRateLimitsRoutes(app, rateLimiter, config.rateLimits);
   registerDebugRoutes(app, debug);

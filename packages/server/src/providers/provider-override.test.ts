@@ -93,4 +93,33 @@ describe('mergeProviderConfig', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
+
+  it('claude mode와 channel_options를 whitelist 기반으로 병합한다', () => {
+    const base = baseConfig({
+      cli_path: 'claude',
+      default_model: 'claude-sonnet-4-6',
+      channel_options: {
+        endpoint_url: 'http://old.example',
+        poll_interval_ms: 1000,
+      },
+    });
+    const overrides: ProviderOverrides = {
+      mode: 'channel-worker',
+      channel_options: {
+        endpoint_url: 'http://127.0.0.1:8788',
+        result_timeout_ms: 120000,
+        isolation: 'external',
+      },
+    };
+
+    const merged = mergeProviderConfig(base, overrides, 'claude');
+
+    expect(merged.mode).toBe('channel-worker');
+    expect(merged.channel_options).toEqual({
+      endpoint_url: 'http://127.0.0.1:8788',
+      poll_interval_ms: 1000,
+      result_timeout_ms: 120000,
+      isolation: 'external',
+    });
+  });
 });

@@ -26,6 +26,7 @@ const BUILTIN_RUNTIME_MUTABLE_FIELDS = new Set([
   'timeout_ms',
   'mode',
   'sdk_options',
+  'channel_options',
   'app_server_options',
   'cli_options',
 ]);

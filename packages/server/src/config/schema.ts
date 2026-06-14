@@ -61,6 +61,19 @@ const sdkOptionsSchema = z.object({
   persist_session: opt(z.boolean()),
 });
 
+const channelOptionsSchema = z.object({
+  endpoint_url: opt(z.string()),
+  api_key: opt(z.string()),
+  poll_interval_ms: opt(positiveInt),
+  result_timeout_ms: opt(positiveInt),
+  response_schema: z.record(z.string(), z.unknown()).nullish().transform((v) => v ?? undefined),
+  isolation: opt(z.enum(['external', 'one-job-per-worker', 'shared-session'])),
+  managed: opt(z.boolean()),
+  auto_start: opt(z.boolean()),
+  bridge_port: opt(positiveInt),
+  bridge_command: opt(z.string()),
+});
+
 const appServerOptionsSchema = z.object({
   transport: opt(z.enum(['stdio', 'websocket'])),
   websocket_url: opt(z.string()),
@@ -85,8 +98,9 @@ const providerSchema = z.object({
   timeout_ms: opt(positiveInt),
   extra_args: opt(z.array(z.string())),
   working_dir: opt(z.string()),
-  mode: opt(z.enum(['cli', 'sdk', 'app-server'])),
+  mode: opt(z.enum(['cli', 'sdk', 'app-server', 'channel-worker'])),
   sdk_options: opt(sdkOptionsSchema),
+  channel_options: opt(channelOptionsSchema),
   app_server_options: opt(appServerOptionsSchema),
   cli_options: opt(cliOptionsSchema),
 });
