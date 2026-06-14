@@ -1,0 +1,26 @@
+# 모든 텍스트 파일을 저장소에서 LF로 정규화 (core.autocrlf 설정과 무관하게 일관성 보장)
+* text=auto eol=lf
+
+# 셸 스크립트는 반드시 LF
+*.sh text eol=lf
+
+# Windows 배치 스크립트는 CRLF (해당 파일이 있을 경우)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 바이너리 — 정규화/diff 제외
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.db binary
+*.sqlite binary
+*.node binary
