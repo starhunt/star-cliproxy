@@ -1,0 +1,10 @@
+{
+  "name": "channel-pty-poc",
+  "private": true,
+  "type": "module",
+  "description": "PoC: drive interactive Claude Code via PTY + capture result via MCP report_result tool",
+  "dependencies": {
+    "node-pty": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}
