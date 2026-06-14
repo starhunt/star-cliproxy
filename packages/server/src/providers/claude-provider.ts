@@ -5,6 +5,24 @@ import { executeSdk, executeStreamSdk, type SdkExecutorConfig, type SdkMeta } fr
 import { ClaudeSdkSessionManager } from './claude-sdk-session-manager.js';
 import { executeChannel, executeStreamChannel, type ChannelExecutorConfig } from './claude-channel-executor.js';
 import { mergeProviderConfig } from './provider-override.js';
+import { channelBridgeManager } from '../channel-bridge/manager.js';
+
+// channel-worker 모드 health: bridge /health 확인 (CLI 존재가 아니라 실제 처리 가능 여부)
+async function pingBridgeHealth(baseUrl: string, apiKey?: string): Promise<boolean> {
+  try {
+    const url = `${baseUrl.replace(/\/+$/, '')}/health`;
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(url, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export class ClaudeProvider extends BaseProvider {
   readonly name = 'claude' as const;
@@ -205,7 +223,19 @@ export class ClaudeProvider extends BaseProvider {
   }
 
   override async checkHealth(): Promise<HealthStatus> {
-    // SDK 모드에서도 CLI 바이너리 존재 확인 (SDK가 내부적으로 CLI를 스폰하므로)
+    // channel-worker 모드는 CLI 존재가 아니라 실제 처리 주체인 bridge의 상태를 본다.
+    if (this.config.mode === 'channel-worker') {
+      const ch = this.config.channel_options ?? {};
+      if (ch.managed) {
+        // 내장 bridge: manager가 띄운 프로세스의 running + healthy
+        const status = await channelBridgeManager.status();
+        return status.running && status.healthy ? 'healthy' : 'unhealthy';
+      }
+      // 외부 bridge: endpoint(없으면 bridge_port로 유추) /health ping
+      const baseUrl = ch.endpoint_url ?? `http://127.0.0.1:${ch.bridge_port ?? 8788}`;
+      return (await pingBridgeHealth(baseUrl, ch.api_key)) ? 'healthy' : 'unhealthy';
+    }
+    // cli / sdk 모드: CLI 바이너리 존재 확인 (SDK도 내부적으로 CLI를 스폰)
     return super.checkHealth();
   }
 
