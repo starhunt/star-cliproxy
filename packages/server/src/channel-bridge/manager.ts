@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, exec, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -50,6 +50,32 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// 포트를 물고 있는 것이 우리(고아) bridge인지 health의 service로 확인
+async function isOurBridge(host: string, port: number, apiKey?: string): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`http://${host}:${port}/health`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok) return false;
+    const body = (await res.json().catch(() => ({}))) as { service?: string };
+    return body?.service === 'star-cliproxy-channel-bridge';
+  } catch {
+    return false;
+  }
+}
+
+// 포트를 점유한 프로세스 정리 (mac/linux). EADDRINUSE 방지용.
+function killPort(port: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (process.platform === 'win32') { resolve(); return; }
+    exec(`lsof -ti tcp:${port} | xargs kill -9`, () => resolve());
+  });
+}
+
 export class ChannelBridgeManager {
   private child: ChildProcess | null = null;
   private startedAt = 0;
@@ -68,6 +94,14 @@ export class ChannelBridgeManager {
 
     const host = opts.host || '127.0.0.1';
     const port = opts.port;
+
+    // 백엔드 재시작 등으로 child 핸들을 잃은 고아 bridge가 포트를 물고 있으면 정리한다
+    // (그대로 두면 새 bridge가 EADDRINUSE로 죽고 status만 거짓으로 '실행 중'이 된다).
+    if (await isOurBridge(host, port, opts.apiKey)) {
+      await killPort(port);
+      await sleep(600);
+    }
+
     const readyTimeout = opts.readyTimeoutMs ?? 15_000;
 
     const { cmd, args, useShell, label } = this.resolveCommand(opts);
