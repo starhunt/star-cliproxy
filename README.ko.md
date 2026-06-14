@@ -100,7 +100,7 @@ ANTHROPIC_BASE_URL=http://localhost:8300 ANTHROPIC_API_KEY=sk-proxy-... claude
 | `cli` *(기본)* | 전체 | CLI를 print 모드로 실행 |
 | `sdk` | Claude | Claude Agent SDK — 세션 재사용, 도구 제어, 예산 제한 |
 | `app-server` | Codex | 영구 JSON-RPC 프로세스 |
-| `channel-worker` | Claude | Channel **bridge**에 job 제출 (대시보드에서 실행·관리) |
+| `channel-worker` | Claude | managed bridge로 **interactive** Claude Code 세션 실행 (`claude -p` 미사용), 결과는 MCP 도구로 회수 — 2026‑06‑15 `claude -p`/Agent SDK 빌링 분리를 회피. 대시보드에서 시작/중지. |
 
 ## 대시보드 (`:5300`)
 

@@ -100,7 +100,7 @@ Models are exposed as **aliases** (e.g. `claude-sonnet`, `gpt-5`) mapping to a p
 | `cli` *(default)* | all | runs the CLI in print mode |
 | `sdk` | Claude | Claude Agent SDK — session reuse, tool control, budget caps |
 | `app-server` | Codex | persistent JSON-RPC process |
-| `channel-worker` | Claude | submits jobs to a Channel **bridge**, managed/launched from the dashboard |
+| `channel-worker` | Claude | runs an **interactive** Claude Code session via a managed bridge (no `claude -p`), capturing results through an MCP tool — avoids the 2026‑06‑15 `claude -p`/Agent SDK billing split. Start/stop from the dashboard. |
 
 ## Dashboard (`:5300`)
 
