@@ -30,7 +30,8 @@ for (const k of ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_AC
   delete cleanEnv[k];
 }
 
-const PROMPT = 'Compute 17 multiplied by 23. Then call the report_result tool with just the resulting number as the payload.';
+const PROMPT = process.env.POC_PROMPT || 'Compute 17 multiplied by 23. Then call the report_result tool with just the resulting number as the payload.';
+const MODEL = process.env.POC_MODEL || 'claude-sonnet-4-6';
 
 console.log('[poc] result file :', RESULT_FILE);
 console.log('[poc] mcp config  :', MCP_CONFIG);
@@ -41,7 +42,7 @@ const term = pty.spawn('claude', [
   '--dangerously-skip-permissions',
   '--append-system-prompt',
   'When you finish the task you MUST call the report_result MCP tool with your final answer as the payload. Do not only print the answer in chat — the tool call is how the result is delivered.',
-  '--model', 'claude-sonnet-4-6',
+  '--model', MODEL,
 ], { name: 'xterm-256color', cols: 120, rows: 40, cwd: projectRoot, env: cleanEnv });
 
 let injected = false;

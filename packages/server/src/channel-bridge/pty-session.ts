@@ -55,6 +55,29 @@ function resolveReporterCommand(): { command: string; args: string[] } {
     : { command: process.execPath, args: [entry] };
 }
 
+// interactive claude(`-p` 없음) 세션과 충돌하는 CLI/print 전용 플래그를 제거한다.
+// extra_args는 보통 CLI/SDK 모드용으로 설정되어 PTY interactive 모드엔 부적합하다
+// (예: --no-session-persistence는 --print 전용, --permission-mode는 --dangerously-skip-permissions와 충돌).
+const PTY_DROP_WITH_VALUE = new Set([
+  '--output-format', '--input-format', '--permission-mode', '--model', '--resume', '--agent',
+]);
+const PTY_DROP_FLAGS = new Set([
+  '-p', '--print', '--no-session-persistence', '--dangerously-skip-permissions',
+  '--allow-dangerously-skip-permissions', '--fork-session', '--verbose', '--continue',
+]);
+
+function sanitizeInteractiveArgs(args: string[]): { kept: string[]; dropped: string[] } {
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (PTY_DROP_WITH_VALUE.has(a)) { dropped.push(a, args[i + 1] ?? ''); i++; continue; }
+    if (PTY_DROP_FLAGS.has(a)) { dropped.push(a); continue; }
+    kept.push(a);
+  }
+  return { kept, dropped };
+}
+
 function cleanClaudeEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const k of [
@@ -122,12 +145,17 @@ export async function runClaudeJob(
     sock.listen(socketPath, res);
   });
 
+  const { kept: safeExtraArgs, dropped } = sanitizeInteractiveArgs(config.extraArgs ?? []);
+  if (dropped.length > 0) {
+    console.error(`[channel-bridge] dropped CLI-only extra_args for interactive session: ${dropped.filter(Boolean).join(' ')}`);
+  }
+
   const term = pty.spawn(config.cliPath, [
     '--mcp-config', mcpConfigPath,
     '--dangerously-skip-permissions',
     '--append-system-prompt', SYSTEM_REMINDER,
     '--model', config.model,
-    ...(config.extraArgs ?? []),
+    ...safeExtraArgs,
   ], {
     name: 'xterm-256color',
     cols: 120,
@@ -143,7 +171,9 @@ export async function runClaudeJob(
   const readyMax = config.readyMaxWaitMs ?? 8000;
   const readyIdle = config.readyIdleMs ?? 1500;
 
-  term.onData(() => {
+  const debug = process.env.CHANNEL_BRIDGE_DEBUG === '1';
+  term.onData((data) => {
+    if (debug) process.stderr.write(data);
     const now = Date.now();
     if (!firstDataAt) firstDataAt = now;
     lastDataAt = now;
