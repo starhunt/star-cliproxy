@@ -32,6 +32,7 @@ const options: BridgeServerOptions = {
   timeoutMs: envInt('BRIDGE_TIMEOUT_MS') ?? 300_000,
   extraArgs: parseExtraArgs(),
   maxConcurrent: envInt('BRIDGE_MAX_CONCURRENT') ?? 4,
+  maxQueue: envInt('BRIDGE_MAX_QUEUE') ?? 256,
 };
 
 const bridge = new ChannelBridge(options);
