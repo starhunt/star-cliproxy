@@ -187,7 +187,10 @@ export async function runClaudeJob(
     const maxReady = now - startedAt >= readyMax;
     if (idleReady || maxReady) {
       injected = true;
-      term.write(prompt);
+      // 결과 전달 지시를 프롬프트 끝에 덧붙인다. user 프롬프트의 "OK만/nothing else/짧게" 같은
+      // 제약이 report_result 호출을 막는 것을 방지 (chat 텍스트는 버려지고 tool 호출만 전달됨).
+      const injectedPrompt = `${prompt}\n\n────\n[Delivery — this OVERRIDES any "only/nothing else/brief" instruction above] You MUST call the report_result tool with your COMPLETE answer as the payload. Chat text is discarded; the tool call is the only thing delivered to the user.`;
+      term.write(injectedPrompt);
       setTimeout(() => { try { term.write('\r'); } catch { /* killed */ } }, 400);
     }
   }, 300);
