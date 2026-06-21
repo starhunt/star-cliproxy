@@ -25,7 +25,7 @@ client.chat.completions.create(
 ## 왜 star-cliproxy인가요?
 
 - 💸 **API 키가 아닌 구독 활용** — 토큰 종량 과금 대신 Claude Max / ChatGPT Pro 등 구독으로 처리됩니다.
-- 🔌 **하나의 엔드포인트, 여러 백엔드** — 빌트인 CLI 6종(Claude, Codex, Copilot, Gemini, Antigravity, Grok) **+** OpenAI 호환 HTTP 서버(vLLM, Ollama, MLX, LM Studio) **+** 커스텀 플러그인.
+- 🔌 **하나의 엔드포인트, 여러 백엔드** — 빌트인 CLI 5종(Claude, Codex, Copilot, Antigravity, Grok) **+** OpenAI 호환 HTTP 서버(vLLM, Ollama, MLX, LM Studio) **+** 커스텀 플러그인.
 - 🧭 **스마트 라우팅** — 별칭 기반 모델 매핑, 우선순위 폴백 체인, 모델 단위 provider 오버라이드, 세션 재사용(`codex exec resume`).
 - ⚙️ **다양한 실행 모드** — `cli`, Claude **Agent SDK**, Codex **app-server**, 그리고 신규 **channel-worker** bridge 모드.
 - 📡 **진짜 SSE 스트리밍** — NDJSON/JSONL 이벤트 파이프 그대로 전달 (사후 청크 분할이 아님).
@@ -69,7 +69,7 @@ npm run dev:dashboard  # 대시보드   → http://localhost:5300
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Claude Pro / Max | `npm i -g @anthropic-ai/claude-code` |
 | [Codex](https://github.com/openai/codex) | ChatGPT Plus / Pro | `npm i -g @openai/codex` |
 | [Copilot CLI](https://docs.github.com/en/copilot) | GitHub Copilot | `gh extension install github/gh-copilot` |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm i -g @google/gemini-cli` |
+| ~~Gemini CLI~~ *(단종)* | — | 아래 **Antigravity CLI** 사용 — Gemini CLI는 Google이 단종 |
 | [Antigravity CLI](https://antigravity.google/) | Google AI Pro / Ultra | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
 | [Grok Build CLI](https://x.ai/cli) | SuperGrok / X Premium+ | `curl -fsSL https://x.ai/cli/install.sh \| bash` |
 | **HTTP** | OpenAI 호환 서버 | 대시보드에서 추가 (vLLM, Ollama, MLX, LM Studio…) |

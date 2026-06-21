@@ -25,7 +25,7 @@ client.chat.completions.create(
 ## Why star-cliproxy?
 
 - 💸 **Subscriptions, not API keys** — bill against Claude Max / ChatGPT Pro / etc. instead of metered API tokens.
-- 🔌 **One endpoint, many backends** — 6 built-in CLIs (Claude, Codex, Copilot, Gemini, Antigravity, Grok) **+** any OpenAI-compatible HTTP server (vLLM, Ollama, MLX, LM Studio) **+** custom plugins.
+- 🔌 **One endpoint, many backends** — 5 built-in CLIs (Claude, Codex, Copilot, Antigravity, Grok) **+** any OpenAI-compatible HTTP server (vLLM, Ollama, MLX, LM Studio) **+** custom plugins.
 - 🧭 **Smart routing** — alias-based model mapping with priority fallback chains, per-model provider overrides, and session reuse (`codex exec resume`).
 - ⚙️ **Multiple execution modes** — `cli`, Claude **Agent SDK**, Codex **app-server**, and the new **channel-worker** bridge mode.
 - 📡 **Real SSE streaming** — native NDJSON/JSONL event pipes, not fake post-hoc chunking.
@@ -69,7 +69,7 @@ npm run dev:dashboard  # dashboard   → http://localhost:5300
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Claude Pro / Max | `npm i -g @anthropic-ai/claude-code` |
 | [Codex](https://github.com/openai/codex) | ChatGPT Plus / Pro | `npm i -g @openai/codex` |
 | [Copilot CLI](https://docs.github.com/en/copilot) | GitHub Copilot | `gh extension install github/gh-copilot` |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Google AI Studio | `npm i -g @google/gemini-cli` |
+| ~~Gemini CLI~~ *(discontinued)* | — | use **Antigravity CLI** below — Gemini CLI was discontinued by Google |
 | [Antigravity CLI](https://antigravity.google/) | Google AI Pro / Ultra | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` |
 | [Grok Build CLI](https://x.ai/cli) | SuperGrok / X Premium+ | `curl -fsSL https://x.ai/cli/install.sh \| bash` |
 | **HTTP** | any OpenAI-compatible server | add from the dashboard (vLLM, Ollama, MLX, LM Studio…) |
