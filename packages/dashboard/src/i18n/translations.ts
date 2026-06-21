@@ -565,6 +565,10 @@ export const translations: Record<Lang, Record<string, string>> = {
     'guide.tipHealthDesc': 'GET /health is accessible without authentication',
     'guide.tipContentParts': 'Content parts:',
     'guide.tipContentPartsDesc': 'Messages support array content with text and image_url types (base64 or URL)',
+    'guide.vision': 'Vision / Image Input',
+    'guide.visionDescription': 'For the Antigravity (agy) provider, attach a local image by referencing its file path inline with the @ prefix — agy resolves the @ workspace file reference, attaches the image, and sends it to the Gemini vision backend. Use an absolute path (or one relative to the provider working_dir); the file must be readable by the proxy process.',
+    'guide.visionAgyExample': 'Image input with agy (@ file reference)',
+    'guide.visionNote': 'Prefer @<path> over inlining base64. For agy, image_url / base64 content parts are reduced to a plain [image] marker and are NOT sent as image data — and large base64 needlessly bloats the request. (The gemini provider, if re-enabled, auto-converts standard image_url parts to a temp-file @<path>.)',
   },
   ko: {
     // 사이드바
@@ -1129,5 +1133,9 @@ export const translations: Record<Lang, Record<string, string>> = {
     'guide.tipHealthDesc': 'GET /health는 인증 없이 접근 가능',
     'guide.tipContentParts': 'Content parts:',
     'guide.tipContentPartsDesc': '메시지 content에 text와 image_url 타입의 배열을 지원합니다 (base64 또는 URL)',
+    'guide.vision': '비전 / 이미지 입력',
+    'guide.visionDescription': 'Antigravity(agy) provider에서는 이미지 파일 경로를 텍스트에 @ 접두사로 인라인 참조하면 됩니다 — agy가 @ workspace 파일 참조를 해석해 이미지를 첨부하고 Gemini 비전 백엔드로 전송합니다. 절대 경로(또는 provider working_dir 기준 상대 경로)를 쓰고, 해당 파일은 프록시 프로세스가 읽을 수 있어야 합니다.',
+    'guide.visionAgyExample': 'agy로 이미지 입력 (@ 파일 참조)',
+    'guide.visionNote': 'base64를 인라인하는 것보다 @<경로>를 권장합니다. agy에서는 image_url / base64 content part가 단순 [image] 마커로 치환되어 실제 이미지 데이터로 전송되지 않으며, 큰 base64는 요청을 불필요하게 키웁니다. (gemini provider를 다시 켜면 표준 image_url part를 임시파일 @<경로>로 자동 변환합니다.)',
   },
 };
