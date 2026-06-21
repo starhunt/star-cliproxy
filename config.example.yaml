@@ -92,16 +92,21 @@ providers:
     # working_dir: "/path/to/project"
     # 인증: COPILOT_GITHUB_TOKEN 환경변수 또는 사전 `copilot` OAuth 로그인 필요
 
+  # Gemini CLI (gemini) — DEPRECATED / 단종.
+  # Google이 Gemini CLI를 단종하고 Antigravity CLI(agy)로 대체했습니다(아래 agy 참고).
+  # gemini provider 코드는 유지되어 있으므로, Gemini CLI가 다시 제공되면
+  # enabled: true + cli_path 지정만으로 복구할 수 있습니다.
+  # 빌트인이라 블록을 통째로 지우면 기본값으로 다시 enabled되므로 enabled: false로 명시합니다.
   gemini:
-    enabled: true
-    cli_path: "gemini"
-    default_model: "gemini-2.5-pro"
-    max_concurrent: 10
-    timeout_ms: 300000
-    extra_args:
-      - "--yolo"                       # tool 자동 승인 (headless 모드 필수)
-      - "--skip-trust"                 # headless 실행 시 trusted folder 프롬프트 방지
-    # working_dir: "/path/to/project"  # 에이전틱 파일 작업 시 필수
+    enabled: false
+    # cli_path: "gemini"
+    # default_model: "gemini-2.5-pro"
+    # max_concurrent: 10
+    # timeout_ms: 300000
+    # extra_args:
+    #   - "--yolo"                       # tool 자동 승인 (headless 모드 필수)
+    #   - "--skip-trust"                 # headless 실행 시 trusted folder 프롬프트 방지
+    # working_dir: "/path/to/project"    # 에이전틱 파일 작업 시 필수
 
   # Google Antigravity CLI (agy) — 2026-05-19 Google I/O 2026 발표, 1.0.0 기준.
   # Gemini CLI의 후계자로 Google이 이전 권장. AI Pro/Ultra 구독 + 사전 Google OAuth 로그인 필요
@@ -109,7 +114,7 @@ providers:
   #
   # 1.0.0 한계 (구현 시 반영됨):
   #   - -m/--model 미지원 → 매핑된 actual_model은 응답 메타데이터 표시용으로만 사용.
-  #     agy 자체 백엔드가 모델 선택. 정확한 모델 강제가 필요하면 gemini provider 사용 권장.
+  #     agy 자체 백엔드가 모델 선택(특정 Gemini 모델 강제 불가).
   #   - --json/--stream-json 미지원 → 출력은 plain text. 토큰 사용량은 추정값(estimateTokens).
   #   - 명시적 스트리밍 없음 → 단일-청크 가짜 스트리밍으로 wrap(클라이언트 호환 유지).
   #   - 세션 연속성은 매 호출 신규(messages 전체를 매번 prompt로 직렬화).
@@ -170,8 +175,6 @@ rate_limits:
     codex:
       rpm: 20
     copilot:
-      rpm: 20
-    gemini:
       rpm: 20
     agy:
       rpm: 20
@@ -240,13 +243,8 @@ model_mappings:
   - alias: "copilot-gpt"
     provider: "copilot"
     actual_model: "gpt-5.4"
-  # Gemini models
-  - alias: "gemini-pro"
-    provider: "gemini"
-    actual_model: "gemini-2.5-pro"
-  - alias: "gemini-flash"
-    provider: "gemini"
-    actual_model: "gemini-2.5-flash"
+  # Gemini CLI는 단종됨(agy로 대체) → gemini-pro/gemini-flash 매핑 제거.
+  # gemini provider를 다시 켜면 여기에 매핑을 추가하세요.
   # Antigravity (agy) — 1.0.0은 모델 플래그 없음. actual_model은 표시용.
   - alias: "antigravity"
     provider: "agy"

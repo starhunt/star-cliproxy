@@ -55,6 +55,8 @@ Claude 프로바이더는 두 가지 실행 모드를 지원합니다:
 
 ### Gemini Provider (`gemini-provider.ts`)
 
+> ⚠️ **단종(DEPRECATED)**: Google이 Gemini CLI(`@google/gemini-cli`)를 단종하고 **Antigravity CLI(`agy`)**로 대체했습니다. 기본 설정(`config.example.yaml`)에서 gemini provider는 `enabled: false`로 비활성화되어 있습니다. provider 코드는 복구 가능성을 위해 유지되며, Gemini CLI가 다시 제공되면 config에서 `enabled: true`로 되살릴 수 있습니다. 아래 내용은 유지된 코드의 동작 설명입니다.
+
 | 항목 | 설명 |
 |------|------|
 | CLI | `gemini` |

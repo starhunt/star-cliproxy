@@ -201,7 +201,7 @@ print(response.choices[0].message.content)
 
 # Streaming
 stream = client.chat.completions.create(
-    model="gemini-pro",
+    model="antigravity",
     messages=[{"role": "user", "content": "Write a haiku"}],
     stream=True,
 )
@@ -241,6 +241,25 @@ for await (const chunk of stream) {
 {`curl ${apiBase}/v1/models \\
   -H "Authorization: Bearer sk-proxy-your-key-here"`}
         </CodeBlock>
+      </Section>
+
+      {/* 비전 / 이미지 입력 */}
+      <Section title={t('guide.vision')}>
+        <p className="text-sm text-gray-600 dark:text-gray-400">{t('guide.visionDescription')}</p>
+        <CodeBlock title={t('guide.visionAgyExample')} lang="bash">
+{`curl ${apiBase}/v1/chat/completions \\
+  -H "Authorization: Bearer sk-proxy-your-key-here" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "antigravity",
+    "messages": [
+      {"role": "user", "content": "Describe this image: @/absolute/path/to/image.png"}
+    ]
+  }'`}
+        </CodeBlock>
+        <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 text-sm text-amber-700 dark:text-amber-300">
+          {t('guide.visionNote')}
+        </div>
       </Section>
 
       {/* 응답 형식 */}
