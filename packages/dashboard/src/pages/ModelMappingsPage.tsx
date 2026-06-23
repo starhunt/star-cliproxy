@@ -671,9 +671,9 @@ export default function ModelMappingsPage() {
                 <select
                   value={form.reasoning_effort}
                   onChange={(e) => setForm({ ...form, reasoning_effort: e.target.value as ReasoningEffortValue })}
-                  disabled={form.provider === 'gemini' || form.provider === 'agy' || form.provider === 'grok'}
+                  disabled={form.provider === 'gemini' || form.provider === 'agy'}
                   className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm text-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={(form.provider === 'gemini' || form.provider === 'agy' || form.provider === 'grok') ? t('models.reasoningEffortUnsupported') : t('models.reasoningEffortHelp')}
+                  title={(form.provider === 'gemini' || form.provider === 'agy') ? t('models.reasoningEffortUnsupported') : t('models.reasoningEffortHelp')}
                 >
                   {REASONING_EFFORT_OPTIONS.map((value) => (
                     <option key={value || 'default'} value={value}>

@@ -99,6 +99,47 @@ describe('GrokProvider.buildArgs', () => {
       ),
     ).toThrow(/prompt exceeds/);
   });
+
+  it('reasoningEffort를 --effort로 리맵 없이 그대로 전달', () => {
+    const provider = new GrokProvider(baseConfig());
+    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      const args = (provider as unknown as BuildArgs).buildArgs(
+        baseOptions({ reasoningEffort: effort }),
+      );
+      expect(args[args.indexOf('--effort') + 1]).toBe(effort);
+    }
+  });
+
+  it('reasoningEffort 미지정 시 --effort 플래그 없음', () => {
+    const provider = new GrokProvider(baseConfig());
+    const args = (provider as unknown as BuildArgs).buildArgs(baseOptions());
+    expect(args).not.toContain('--effort');
+  });
+
+  it('extra_args에 --effort가 있으면 reasoningEffort를 중복 추가하지 않음', () => {
+    const provider = new GrokProvider(baseConfig({ extra_args: ['--effort', 'low'] }));
+    const args = (provider as unknown as BuildArgs).buildArgs(
+      baseOptions({ reasoningEffort: 'high' }),
+    );
+    expect(args.filter((a) => a === '--effort')).toHaveLength(1);
+    expect(args).not.toContain('high');
+  });
+
+  it('extra_args에 --reasoning-effort가 있어도 중복 --effort를 추가하지 않음', () => {
+    const provider = new GrokProvider(baseConfig({ extra_args: ['--reasoning-effort', 'low'] }));
+    const args = (provider as unknown as BuildArgs).buildArgs(
+      baseOptions({ reasoningEffort: 'high' }),
+    );
+    expect(args).not.toContain('--effort');
+  });
+
+  it('--effort는 -p prompt 앞에 위치 (print-mode 파싱)', () => {
+    const provider = new GrokProvider(baseConfig());
+    const args = (provider as unknown as BuildArgs).buildArgs(
+      baseOptions({ reasoningEffort: 'high' }),
+    );
+    expect(args.indexOf('--effort')).toBeLessThan(args.indexOf('-p'));
+  });
 });
 
 describe('GrokProvider.execute (plain text 파싱)', () => {
