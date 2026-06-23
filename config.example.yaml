@@ -264,6 +264,13 @@ model_mappings:
   - alias: "gemini-3.5-flash-high"
     provider: "agy"
     actual_model: "Gemini 3.5 Flash (High)"
+  # Gemini 3.1 Pro reasoning 프리셋 (Low/High만 — Medium 없음).
+  - alias: "gemini-3.1-pro-low"
+    provider: "agy"
+    actual_model: "Gemini 3.1 Pro (Low)"
+  - alias: "gemini-3.1-pro-high"
+    provider: "agy"
+    actual_model: "Gemini 3.1 Pro (High)"
 
   # xAI Grok Build — grok-build(reasoning, default) + grok-composer-2.5-fast.
   - alias: "grok-build"
