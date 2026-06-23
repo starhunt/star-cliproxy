@@ -269,8 +269,11 @@ model_mappings:
   - alias: "grok-build"
     provider: "grok"
     actual_model: "grok-build"
-    # grok-build는 --effort 지원. 추론 수준이 필요하면 reasoning_effort를 설정:
-    # reasoning_effort: "high"          # low|medium|high|xhigh|max
   - alias: "grok-composer"
     provider: "grok"
     actual_model: "grok-composer-2.5-fast"   # [주의] effort 미지원 → reasoning_effort 설정 금지
+  # grok-build는 --effort 지원 → reasoning_effort로 추론 수준 프리셋(low|medium|high|xhigh|max).
+  - alias: "grok-build-high"
+    provider: "grok"
+    actual_model: "grok-build"
+    reasoning_effort: "high"
