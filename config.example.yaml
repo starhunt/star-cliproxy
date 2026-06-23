@@ -108,20 +108,22 @@ providers:
     #   - "--skip-trust"                 # headless 실행 시 trusted folder 프롬프트 방지
     # working_dir: "/path/to/project"    # 에이전틱 파일 작업 시 필수
 
-  # Google Antigravity CLI (agy) — 2026-05-19 Google I/O 2026 발표, 1.0.0 기준.
+  # Google Antigravity CLI (agy) — 2026-05-19 Google I/O 2026 발표, 1.0.10 기준.
   # Gemini CLI의 후계자로 Google이 이전 권장. AI Pro/Ultra 구독 + 사전 Google OAuth 로그인 필요
   # (시스템 키체인 저장; SSH 세션은 인가 URL 안내). 설치: curl -fsSL https://antigravity.google/cli/install.sh | bash
   #
-  # 1.0.0 한계 (구현 시 반영됨):
-  #   - -m/--model 미지원 → 매핑된 actual_model은 응답 메타데이터 표시용으로만 사용.
-  #     agy 자체 백엔드가 모델 선택(특정 Gemini 모델 강제 불가).
+  # 1.0.10 사양 (구현 시 반영됨):
+  #   - --model 지원 → 매핑의 actual_model을 --model로 전달. `agy models`가 출력하는
+  #     **표시명 라벨**을 그대로 써야 한다(예: "Gemini 3.5 Flash (Low)"). 잘못된 라벨은
+  #     에러 없이 조용히 기본값(Flash Medium)으로 폴백하니 정확히 기입할 것.
+  #     default_model "antigravity"는 placeholder → --model을 생략해 agy가 자동 선택.
   #   - --json/--stream-json 미지원 → 출력은 plain text. 토큰 사용량은 추정값(estimateTokens).
   #   - 명시적 스트리밍 없음 → 단일-청크 가짜 스트리밍으로 wrap(클라이언트 호환 유지).
   #   - 세션 연속성은 매 호출 신규(messages 전체를 매번 prompt로 직렬화).
   agy:
     enabled: true
     cli_path: "agy"
-    default_model: "antigravity"        # 표시용. 실제 모델은 agy 백엔드가 결정.
+    default_model: "antigravity"        # placeholder → --model 생략, agy 자동 선택.
     max_concurrent: 5                   # AI Pro 쿼터 보호를 위해 보수적 기본값
     timeout_ms: 300000
     extra_args: []
@@ -245,10 +247,20 @@ model_mappings:
     actual_model: "gpt-5.4"
   # Gemini CLI는 단종됨(agy로 대체) → gemini-pro/gemini-flash 매핑 제거.
   # gemini provider를 다시 켜면 여기에 매핑을 추가하세요.
-  # Antigravity (agy) — 1.0.0은 모델 플래그 없음. actual_model은 표시용.
+  # Antigravity (agy) — 1.0.10+. actual_model = `agy models` 표시명 라벨(잘못된 값은 기본값 폴백).
   - alias: "antigravity"
     provider: "agy"
-    actual_model: "antigravity"
+    actual_model: "antigravity"          # placeholder → --model 생략, agy 자동 선택
+  # Gemini 3.5 Flash reasoning effort 프리셋 (effort별 별도 모델).
+  - alias: "gemini-3.5-flash-low"
+    provider: "agy"
+    actual_model: "Gemini 3.5 Flash (Low)"
+  - alias: "gemini-3.5-flash-medium"
+    provider: "agy"
+    actual_model: "Gemini 3.5 Flash (Medium)"
+  - alias: "gemini-3.5-flash-high"
+    provider: "agy"
+    actual_model: "Gemini 3.5 Flash (High)"
 
   # xAI Grok Build — 최신 단일 모델 (grok models의 기본값)
   - alias: "grok-build"

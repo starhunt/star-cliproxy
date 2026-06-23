@@ -65,14 +65,44 @@ describe('AgyProvider.buildArgs', () => {
     expect(args[1]).toBe('ping');
   });
 
-  it('-m/--model 플래그를 추가하지 않음 (1.0.0 미지원)', () => {
+  it('placeholder default_model("antigravity")은 --model을 추가하지 않음 (agy 자동 선택)', () => {
     const provider = new AgyProvider(baseConfig());
     const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
-      baseOptions({ model: 'gemini-3-flash' }),
+      baseOptions({ model: 'antigravity' }),
     );
-    expect(args).not.toContain('-m');
     expect(args).not.toContain('--model');
-    expect(args).not.toContain('gemini-3-flash');
+  });
+
+  it('매핑된 actual_model(표시명 라벨)을 --model로 -p 앞에 전달 (agy 1.0.10+)', () => {
+    const provider = new AgyProvider(baseConfig());
+    const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
+      baseOptions({ model: 'Gemini 3.5 Flash (Low)' }),
+    );
+    const modelIdx = args.indexOf('--model');
+    expect(modelIdx).toBeGreaterThanOrEqual(0);
+    expect(args[modelIdx + 1]).toBe('Gemini 3.5 Flash (Low)');
+    // 모든 플래그는 -p 앞에 와야 함 (agy print-mode 파싱 규칙).
+    expect(modelIdx).toBeLessThan(args.indexOf('-p'));
+  });
+
+  it('빈 model은 --model을 추가하지 않음', () => {
+    const provider = new AgyProvider(baseConfig());
+    const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
+      baseOptions({ model: '   ' }),
+    );
+    expect(args).not.toContain('--model');
+  });
+
+  it('extra_args에 --model이 있으면 중복 추가하지 않고 사용자 값 존중', () => {
+    const provider = new AgyProvider(baseConfig({
+      extra_args: ['--model', 'Gemini 3.1 Pro (High)'],
+    }));
+    const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
+      baseOptions({ model: 'Gemini 3.5 Flash (Low)' }),
+    );
+    expect(args.filter((a) => a === '--model')).toHaveLength(1);
+    expect(args).toContain('Gemini 3.1 Pro (High)');
+    expect(args).not.toContain('Gemini 3.5 Flash (Low)');
   });
 
   it('extra_args를 -p prompt 앞에 그대로 prepend', () => {

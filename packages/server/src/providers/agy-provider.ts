@@ -21,12 +21,19 @@ function estimateTokens(text: string): TokenUsage {
   return { promptTokens: 0, completionTokens, totalTokens: completionTokens };
 }
 
+// agy 백엔드가 모델 선택을 위임받는 표시용 placeholder. 이 값일 때는 --model을 보내지 않아
+// agy가 자동 선택하도록 둔다(기존 동작 보존).
+const MODEL_PLACEHOLDER = 'antigravity';
+
 /**
- * Google Antigravity CLI (agy) provider — 2026-05-19 IO 2026 발표 1.0.0 기준.
+ * Google Antigravity CLI (agy) provider — 2026-05-19 IO 2026 발표, 1.0.10 기준.
  *
- * 1.0.0 제약:
- *  - -m/--model 플래그 미지원 → 매핑된 actual_model은 응답 메타데이터 표시용으로만 사용,
- *    agy는 자체 백엔드 정책으로 모델 선택.
+ * 1.0.10 사양:
+ *  - --model 지원(1.0.0엔 없었음) → `agy models`가 출력하는 **표시명 라벨을 그대로** 받는다.
+ *    예: "Gemini 3.5 Flash (Low)" / "Gemini 3.1 Pro (High)" / "Claude Sonnet 4.6 (Thinking)".
+ *    [gotcha] 알 수 없는 라벨은 에러 없이 조용히 백엔드 기본값(Gemini 3.5 Flash Medium)으로
+ *    폴백한다(로그: resolver.go "not in local config, defaulting"). 따라서 reasoning effort
+ *    선택은 effort 접미사 합성이 아니라 **정확한 표시명 라벨을 actual_model로 매핑**해야 한다.
  *  - --json/--stream-json 플래그 미지원 → 출력은 plain text. NDJSON 파싱 안 함.
  *  - 명시적 스트리밍 API 없음 → executeStream은 단일 text_delta + done으로 가짜 스트리밍 wrap.
  *  - 세션 연속성은 매 호출 신규 (--continue/--conversation은 사용자가 extra_args로만 옵트인).
@@ -52,10 +59,22 @@ export class AgyProvider extends BaseProvider {
       );
     }
 
-    // agy parses print-mode flags before the print prompt. Keep user-provided
-    // flags before -p so options such as --print-timeout apply to this run
-    // instead of being interpreted as prompt text or ignored after the prompt.
-    return [...this.config.extra_args, '-p', prompt];
+    // agy parses print-mode flags before the print prompt. Keep all flags
+    // (extra_args + --model) before -p so options such as --print-timeout and
+    // --model apply to this run instead of being interpreted as prompt text or
+    // ignored after the prompt.
+    const args = [...this.config.extra_args];
+
+    // 매핑된 actual_model을 --model로 전달(agy 1.0.10+). placeholder면 생략해 agy 자동 선택.
+    // 사용자가 extra_args에 --model을 직접 넣었다면 그 값을 존중하고 중복 추가하지 않는다.
+    const model = options.model?.trim();
+    const userSetModel = this.config.extra_args.includes('--model');
+    if (model && model !== MODEL_PLACEHOLDER && !userSetModel) {
+      args.push('--model', model);
+    }
+
+    args.push('-p', prompt);
+    return args;
   }
 
   // agy는 plain text를 stdout으로 흘리므로 BaseProvider의 NDJSON 라인 파싱을 우회.
