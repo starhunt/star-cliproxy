@@ -138,10 +138,13 @@ providers:
   # SuperGrok / X Premium+ 구독 + 사전 로그인 필요 (grok login). 설치 후 `grok models`로 모델 확인.
   # 헤드리스 단발 실행: grok -m <model> -p "<prompt>" → stdout plain text.
   #
-  # 동작 (구현 시 반영됨):
-  #   - -m/--model 지원 → 매핑된 actual_model을 실제로 전달. 현재 `grok models`는 grok-build 1종(default) 노출.
+  # 동작 (구현 시 반영됨, grok 0.2.60 기준):
+  #   - -m/--model 지원 → 매핑된 actual_model을 실제로 전달. `grok models`:
+  #     grok-build(default, reasoning) + grok-composer-2.5-fast.
+  #   - --effort 지원 → 매핑의 reasoning_effort(low/medium/high/xhigh/max)를 그대로 --effort로 전달.
+  #     단 effort는 모델별: grok-build만 지원, grok-composer-2.5-fast는 미지원(설정 시 API 400).
   #   - 출력은 plain text(stdout). 토큰 사용량은 추정값(estimateTokens).
-  #   - 단일-청크 가짜 스트리밍으로 wrap(클라이언트 호환 유지). --reasoning-effort는 미배선(매핑에서 무시).
+  #   - 단일-청크 가짜 스트리밍으로 wrap(클라이언트 호환 유지).
   #   - 세션 연속성은 매 호출 신규(messages 전체를 매번 prompt로 직렬화).
   grok:
     enabled: true
@@ -262,7 +265,12 @@ model_mappings:
     provider: "agy"
     actual_model: "Gemini 3.5 Flash (High)"
 
-  # xAI Grok Build — 최신 단일 모델 (grok models의 기본값)
+  # xAI Grok Build — grok-build(reasoning, default) + grok-composer-2.5-fast.
   - alias: "grok-build"
     provider: "grok"
     actual_model: "grok-build"
+    # grok-build는 --effort 지원. 추론 수준이 필요하면 reasoning_effort를 설정:
+    # reasoning_effort: "high"          # low|medium|high|xhigh|max
+  - alias: "grok-composer"
+    provider: "grok"
+    actual_model: "grok-composer-2.5-fast"   # [주의] effort 미지원 → reasoning_effort 설정 금지

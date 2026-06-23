@@ -26,7 +26,11 @@ function estimateTokens(text: string): TokenUsage {
  * 동작:
  *  - 헤드리스 단발 실행: `grok -m <model> -p <prompt>` → stdout에 응답 plain text 출력 후 종료.
  *  - -m/--model 지원 → 매핑된 actual_model을 실제로 전달 (agy와의 핵심 차이).
- *    `grok models`가 노출하는 모델은 현재 `grok-build` 1종(default).
+ *    `grok models`(0.2.60): `grok-build`(default, reasoning) + `grok-composer-2.5-fast`.
+ *  - --effort 지원(0.2.x) → low/medium/high/xhigh/max가 cliproxy ReasoningEffort와 정확히
+ *    일치해 **리맵 없이 그대로 전달**(copilot/codex와의 차이). 매핑별 reasoning_effort opt-in.
+ *    [gotcha] effort는 모델별 — `grok-composer-2.5-fast`는 effort 미지원(API 400)이라
+ *    composer 매핑에는 reasoning_effort를 설정하지 말 것. reasoning 모델(grok-build)만 지원.
  *  - --output-format은 streaming-json도 지원하나, 안정성·단순성을 위해 plain 단발 후
  *    executeStream에서 단일 text_delta + done으로 가짜 스트리밍 wrap (agy와 동일 전략).
  *  - 세션 연속성은 매 호출 신규 (-c/--continue, -r/--resume은 사용자가 extra_args로만 옵트인).
@@ -53,10 +57,20 @@ export class GrokProvider extends BaseProvider {
       );
     }
 
+    // 추론 수준 주입 (--effort). grok은 low/medium/high/xhigh/max를 모두 지원하므로
+    // ReasoningEffort 값을 리맵 없이 그대로 전달한다. 사용자가 extra_args에 --effort 또는
+    // --reasoning-effort를 이미 넣었으면 건너뛴다.
+    const userHasEffort = this.config.extra_args.some(
+      (arg) => arg === '--effort' || arg === '--reasoning-effort',
+    );
+    const effortArgs = options.reasoningEffort && !userHasEffort
+      ? ['--effort', options.reasoningEffort]
+      : [];
+
     // 사용자 extra_args를 모델/프롬프트 플래그 앞에 배치해 print-mode 옵션이 이 실행에 적용되게 함.
     // -p <prompt>는 마지막에 두어 프롬프트가 마지막 인수가 되도록 보장.
     const modelArgs = model ? ['-m', model] : [];
-    return [...this.config.extra_args, ...modelArgs, '-p', prompt];
+    return [...this.config.extra_args, ...effortArgs, ...modelArgs, '-p', prompt];
   }
 
   // grok은 plain text를 stdout으로 흘리므로 BaseProvider의 NDJSON 라인 파싱을 우회.
