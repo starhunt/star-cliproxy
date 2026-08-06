@@ -179,8 +179,8 @@ providers:
 
 # Tool Bridge Provider (opt-in)
 # 기존 CLI provider 설정을 상속하면서 OpenAI tool_calls만 별도 구조화 출력으로 처리한다.
-# 일반 claude/codex provider 동작에는 영향이 없고, app-server/SDK 상시 실행도 필요하지 않다.
-# driver는 claude-cli와 codex-cli를 지원한다. CLI의 설정·native/MCP 도구는 기본적으로 차단되며,
+# 일반 claude/codex/grok provider 동작에는 영향이 없고, app-server/SDK 상시 실행도 필요하지 않다.
+# driver는 claude-cli, codex-cli, grok-cli를 지원한다. CLI의 설정·native/MCP 도구는 기본적으로 차단되며,
 # 요청에 포함된 client functions는 cliproxy가 실행하지 않고 호출자에게 tool_calls로 반환한다.
 # tool_bridge_providers:
 #   claude-tools:
@@ -197,6 +197,14 @@ providers:
 #     strategy: "structured-output"
 #     disable_native_tools: true
 #     max_concurrent: 2
+#   grok-tools:
+#     base_provider: "grok"
+#     driver: "grok-cli"
+#     strategy: "structured-output"
+#     disable_native_tools: true
+#     max_concurrent: 2
+# AGY 1.1.10은 --json-schema는 지원하지만 native tool 전체 차단 옵션이 없어
+# disable_native_tools:true 계약을 보장할 수 없다. 따라서 agy-cli bridge driver는 아직 지원하지 않는다.
 
 # 플러그인: 커스텀 프로바이더를 코드 수정 없이 추가
 # plugins/ 디렉토리에 플러그인을 만들고 여기에 등록
@@ -227,6 +235,8 @@ rate_limits:
     kimi:
       rpm: 20
     # claude-tools:
+    #   rpm: 10
+    # grok-tools:
     #   rpm: 10
     # codex-tools:
     #   rpm: 10
@@ -287,6 +297,9 @@ model_mappings:
   # - alias: "codex-tools"
   #   provider: "codex-tools"
   #   actual_model: "gpt-5.5"
+  # - alias: "grok-tools"
+  #   provider: "grok-tools"
+  #   actual_model: "grok-4.5"
   # Codex/OpenAI models
   - alias: "gpt-5.5"
     provider: "codex"

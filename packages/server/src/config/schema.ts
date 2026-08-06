@@ -107,7 +107,7 @@ const providerSchema = z.object({
 
 const toolBridgeProviderSchema = providerSchema.extend({
   base_provider: z.string().min(1),
-  driver: opt(z.enum(['claude-cli', 'codex-cli'])),
+  driver: opt(z.enum(['claude-cli', 'codex-cli', 'grok-cli'])),
   strategy: opt(z.enum(['structured-output'])),
   disable_native_tools: opt(z.boolean()),
 });

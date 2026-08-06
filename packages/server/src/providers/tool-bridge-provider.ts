@@ -56,6 +56,23 @@ interface CodexJsonlEvent {
   message?: string;
 }
 
+interface GrokJsonResult {
+  type?: string;
+  text?: unknown;
+  data?: unknown;
+  structuredOutput?: unknown;
+  structured_output?: unknown;
+  error?: string;
+  message?: string;
+  usage?: {
+    input_tokens?: number;
+    cache_read_input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
 interface ToolPolicy {
   tools: ChatCompletionTool[];
   allowedNames: string[];
@@ -433,6 +450,66 @@ export function parseCodexToolBridgeOutput(stdout: string, options: ExecuteOptio
   };
 }
 
+function parseGrokJsonResult(stdout: string): GrokJsonResult {
+  const trimmed = stdout.trim();
+  if (!trimmed) throw new Error('Grok CLI가 빈 응답을 반환했습니다');
+
+  try {
+    return JSON.parse(trimmed) as GrokJsonResult;
+  } catch {
+    const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      try {
+        return JSON.parse(lines[i]) as GrokJsonResult;
+      } catch {
+        // 업데이트 안내 같은 선행 출력이 있으면 마지막 JSON 라인을 계속 탐색한다.
+      }
+    }
+  }
+
+  throw new Error('Grok CLI 응답에서 JSON 결과를 찾을 수 없습니다');
+}
+
+function toGrokTokenUsage(data: GrokJsonResult, fallbackText: string): TokenUsage {
+  const usage = data.usage;
+  if (!usage) {
+    const completionTokens = Math.ceil(fallbackText.length / 4);
+    return { promptTokens: 0, completionTokens, totalTokens: completionTokens };
+  }
+
+  const promptTokens = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
+  const completionTokens = usage.output_tokens ?? 0;
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens: usage.total_tokens ?? (promptTokens + completionTokens),
+  };
+}
+
+export function parseGrokToolBridgeOutput(stdout: string, options: ExecuteOptions): ExecuteResult {
+  const data = parseGrokJsonResult(stdout);
+  if (data.type === 'error' || data.error) {
+    throw new Error(`Grok CLI 오류: ${data.message || data.error || 'unknown error'}`);
+  }
+
+  const envelope = parseStructuredOutput(data.structuredOutput)
+    ?? parseStructuredOutput(data.structured_output)
+    ?? parseStructuredOutput(data.text)
+    ?? parseStructuredOutput(data.data);
+  if (!envelope) {
+    throw new Error('Grok CLI 응답에 structuredOutput이 없습니다');
+  }
+
+  const toolCalls = validateEnvelope(envelope, options);
+  const fallbackText = `${envelope.content}${envelope.tool_calls.map((call) => call.arguments_json).join('')}`;
+  return {
+    content: envelope.content,
+    ...(toolCalls ? { toolCalls } : {}),
+    usage: toGrokTokenUsage(data, fallbackText),
+    finishReason: toolCalls ? 'tool_calls' : 'stop',
+  };
+}
+
 const MANAGED_VALUE_FLAGS = new Set([
   '-p',
   '--print',
@@ -549,13 +626,83 @@ function withoutCodexManagedFlags(args: string[]): string[] {
   return filtered;
 }
 
+const GROK_MANAGED_VALUE_FLAGS = new Set([
+  '-p', '--single',
+  '-m', '--model',
+  '-r', '--resume',
+  '-s', '--session-id',
+  '--agent', '--agents',
+  '--allow', '--allowedTools',
+  '--cwd',
+  '--debug-file',
+  '--deny', '--disallowedTools', '--disallowed-tools',
+  '--json-schema',
+  '--leader-socket',
+  '--max-turns',
+  '--output-format',
+  '--permission-mode',
+  '--prompt-file', '--prompt-json',
+  '--reasoning-effort', '--effort',
+  '--rules',
+  '--sandbox',
+  '--system-prompt-override', '--system-prompt',
+  '--tools',
+  '--worktree-ref', '--ref',
+]);
+
+const GROK_MANAGED_BOOLEAN_FLAGS = new Set([
+  '-c', '--continue',
+  '-w', '--worktree',
+  '--always-approve',
+  '--debug',
+  '--disable-web-search',
+  '--experimental-memory',
+  '--fork-session',
+  '--fullscreen',
+  '--include-partial-messages',
+  '--minimal',
+  '--no-alt-screen',
+  '--no-memory',
+  '--no-plan',
+  '--no-subagents',
+  '--oauth',
+  '--restore-code',
+  '--verbatim',
+]);
+
+const GROK_MANAGED_SHORT_VALUE_FLAGS = ['-p', '-m', '-r', '-s'];
+
+function withoutGrokManagedFlags(args: string[]): string[] {
+  const filtered: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (GROK_MANAGED_BOOLEAN_FLAGS.has(arg)) continue;
+    if ([...GROK_MANAGED_BOOLEAN_FLAGS].some((flag) => arg.startsWith(`${flag}=`))) continue;
+    if (arg.length > 2 && !arg.startsWith('--')
+      && GROK_MANAGED_SHORT_VALUE_FLAGS.some((flag) => arg.startsWith(flag))) continue;
+    if ([...GROK_MANAGED_VALUE_FLAGS].some((flag) => arg.startsWith(`${flag}=`))) continue;
+    if (GROK_MANAGED_VALUE_FLAGS.has(arg)) {
+      i += 1;
+      continue;
+    }
+    filtered.push(arg);
+  }
+  return filtered;
+}
+
 interface CodexBridgeExecutionContext {
   schemaPath: string;
   workingDir: string;
 }
 
+interface GrokBridgeExecutionContext {
+  promptPath: string;
+  workingDir: string;
+}
+
 interface ToolBridgeExecuteOptions extends ExecuteOptions {
   __codexBridge?: CodexBridgeExecutionContext;
+  __grokBridge?: GrokBridgeExecutionContext;
 }
 
 export class ToolBridgeProvider extends BaseProvider {
@@ -579,6 +726,9 @@ export class ToolBridgeProvider extends BaseProvider {
   protected buildArgs(options: ExecuteOptions): string[] {
     if (this.bridgeConfig.driver === 'codex-cli') {
       return this.buildCodexArgs(options as ToolBridgeExecuteOptions);
+    }
+    if (this.bridgeConfig.driver === 'grok-cli') {
+      return this.buildGrokArgs(options as ToolBridgeExecuteOptions);
     }
     return this.buildClaudeArgs(options);
   }
@@ -655,6 +805,43 @@ export class ToolBridgeProvider extends BaseProvider {
     return args;
   }
 
+  private buildGrokArgs(options: ToolBridgeExecuteOptions): string[] {
+    const context = options.__grokBridge;
+    if (!context) {
+      throw new Error('Grok Tool Bridge 실행 컨텍스트가 없습니다');
+    }
+
+    const model = options.model || this.config.default_model;
+    const responseSchema = buildToolBridgeResponseSchema(options);
+    const extraArgs = withoutGrokManagedFlags(this.config.extra_args);
+    const args = [
+      ...extraArgs,
+      '--output-format', 'json',
+      '--json-schema', JSON.stringify(responseSchema),
+      '--prompt-file', context.promptPath,
+      '--cwd', context.workingDir,
+    ];
+
+    if (model) args.push('--model', model);
+    if (options.reasoningEffort) {
+      const effort = options.reasoningEffort === 'xhigh' || options.reasoningEffort === 'max'
+        ? 'high'
+        : options.reasoningEffort;
+      args.push('--reasoning-effort', effort);
+    }
+    if (this.bridgeConfig.disableNativeTools) {
+      args.push(
+        '--tools', '',
+        '--disable-web-search',
+        '--no-subagents',
+        '--no-memory',
+        '--no-plan',
+        '--permission-mode', 'plan',
+      );
+    }
+    return args;
+  }
+
   protected override getStdinData(options: ExecuteOptions): string {
     return buildToolBridgePrompt(options);
   }
@@ -674,6 +861,9 @@ export class ToolBridgeProvider extends BaseProvider {
 
     if (this.bridgeConfig.driver === 'codex-cli') {
       return this.executeCodex(runOptions);
+    }
+    if (this.bridgeConfig.driver === 'grok-cli') {
+      return this.executeGrok(runOptions);
     }
     return this.executeClaude(runOptions);
   }
@@ -717,7 +907,57 @@ export class ToolBridgeProvider extends BaseProvider {
     }
   }
 
+  private async executeGrok(options: ExecuteOptions): Promise<ExecuteResult> {
+    const runDir = await mkdtemp(join(tmpdir(), 'starproxy-grok-tool-bridge-'));
+    const promptPath = join(runDir, 'prompt.txt');
+    try {
+      await writeFile(
+        promptPath,
+        buildToolBridgePrompt(options),
+        { encoding: 'utf8', mode: 0o600, flag: 'wx' },
+      );
+      const extended: ToolBridgeExecuteOptions = {
+        ...options,
+        __grokBridge: { promptPath, workingDir: runDir },
+      };
+      const args = this.buildGrokArgs(extended);
+      const { stdout, stderr, exitCode } = await this.runProcess(args, options.signal);
+      options.onDebug?.({ cliArgs: [this.config.cli_path, ...args], stdout, stderr });
+
+      if (exitCode !== 0) {
+        throw new Error(`${this.name} CLI exited with code ${exitCode}: ${stderr}`);
+      }
+      return parseGrokToolBridgeOutput(stdout, options);
+    } finally {
+      await rm(runDir, { recursive: true, force: true });
+    }
+  }
+
   override async checkHealth(): Promise<HealthStatus> {
+    if (this.bridgeConfig.driver === 'grok-cli') {
+      try {
+        const help = await this.runProcess(['--help'], undefined, 10_000);
+        if (help.exitCode !== 0) return 'unhealthy';
+        const requiredOptions = [
+          '--json-schema',
+          '--output-format',
+          '--prompt-file',
+          '--cwd',
+          '--tools',
+          '--disable-web-search',
+          '--no-subagents',
+          '--no-memory',
+          '--no-plan',
+          '--permission-mode',
+        ];
+        return requiredOptions.every((option) => help.stdout.includes(option))
+          ? 'healthy'
+          : 'unhealthy';
+      } catch {
+        return 'unhealthy';
+      }
+    }
+
     if (this.bridgeConfig.driver !== 'codex-cli') {
       return super.checkHealth();
     }

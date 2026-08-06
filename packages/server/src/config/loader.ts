@@ -214,6 +214,11 @@ export function loadConfig(configPath?: string): AppConfig {
         `tool_bridge_providers.${name}: driver "codex-cli"는 base_provider "codex"만 지원합니다`,
       );
     }
+    if (raw.driver === 'grok-cli' && raw.base_provider !== 'grok') {
+      throw new Error(
+        `tool_bridge_providers.${name}: driver "grok-cli"는 base_provider "grok"만 지원합니다`,
+      );
+    }
 
     const config = mergeToolBridgeProviderConfig(raw, base);
     toolBridgeProviders[name] = config;

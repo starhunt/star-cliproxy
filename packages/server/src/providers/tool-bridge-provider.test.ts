@@ -10,6 +10,7 @@ import {
   buildToolBridgePrompt,
   parseClaudeToolBridgeOutput,
   parseCodexToolBridgeOutput,
+  parseGrokToolBridgeOutput,
 } from './tool-bridge-provider.js';
 
 const config: ToolBridgeProviderConfig = {
@@ -31,6 +32,14 @@ const codexConfig: ToolBridgeProviderConfig = {
   default_model: 'gpt-5.5',
   baseProvider: 'codex',
   driver: 'codex-cli',
+};
+
+const grokConfig: ToolBridgeProviderConfig = {
+  ...config,
+  cli_path: 'grok',
+  default_model: 'grok-4.5',
+  baseProvider: 'grok',
+  driver: 'grok-cli',
 };
 
 const clickTool = {
@@ -88,12 +97,29 @@ function codexOutput(structuredOutput: unknown): string {
   ].join('\n');
 }
 
+function grokOutput(structuredOutput: unknown): string {
+  return JSON.stringify({
+    type: 'result',
+    text: JSON.stringify(structuredOutput),
+    structuredOutput,
+    usage: {
+      input_tokens: 30,
+      cache_read_input_tokens: 4,
+      output_tokens: 7,
+      total_tokens: 41,
+    },
+  });
+}
+
 class FakeToolBridgeProvider extends ToolBridgeProvider {
   args: string[] = [];
   stdinData = '';
   schemaPath: string | undefined;
   schemaContent: string | undefined;
   schemaExistedDuringRun = false;
+  promptPath: string | undefined;
+  promptContent: string | undefined;
+  promptExistedDuringRun = false;
 
   constructor(
     private readonly stdoutValue: string,
@@ -101,7 +127,10 @@ class FakeToolBridgeProvider extends ToolBridgeProvider {
     providerConfig: ToolBridgeProviderConfig = config,
     private readonly exitCodeValue = 0,
   ) {
-    super(providerConfig.driver === 'codex-cli' ? 'codex-tools' : 'claude-tools', { ...providerConfig });
+    const name = providerConfig.driver === 'codex-cli'
+      ? 'codex-tools'
+      : (providerConfig.driver === 'grok-cli' ? 'grok-tools' : 'claude-tools');
+    super(name, { ...providerConfig });
   }
 
   protected override async runProcess(
@@ -120,6 +149,12 @@ class FakeToolBridgeProvider extends ToolBridgeProvider {
       this.schemaPath = args[schemaIndex + 1];
       this.schemaExistedDuringRun = existsSync(this.schemaPath);
       this.schemaContent = readFileSync(this.schemaPath, 'utf8');
+    }
+    const promptIndex = args.indexOf('--prompt-file');
+    if (promptIndex >= 0) {
+      this.promptPath = args[promptIndex + 1];
+      this.promptExistedDuringRun = existsSync(this.promptPath);
+      this.promptContent = readFileSync(this.promptPath, 'utf8');
     }
     return {
       stdout: this.stdoutValue,
@@ -196,6 +231,71 @@ describe('ToolBridgeProvider', () => {
     expect(existsSync(provider.schemaPath!)).toBe(false);
   });
 
+  it('Grok 구조화 출력과 native tool 차단을 요청별 임시 디렉터리에서 강제한다', async () => {
+    const provider = new FakeToolBridgeProvider(grokOutput({
+      response_type: 'tool_calls',
+      content: '',
+      tool_calls: [{ name: 'click_element', arguments_json: '{"selector":"#submit"}' }],
+    }), 0, grokConfig);
+
+    const result = await provider.execute(makeOptions({
+      model: 'grok-4.5',
+      reasoningEffort: 'max',
+      toolChoice: 'required',
+    }));
+
+    expect(result.finishReason).toBe('tool_calls');
+    expect(result.toolCalls?.[0].function).toEqual({
+      name: 'click_element',
+      arguments: '{"selector":"#submit"}',
+    });
+    expect(result.usage).toEqual({ promptTokens: 34, completionTokens: 7, totalTokens: 41 });
+    expect(provider.args.slice(provider.args.indexOf('--tools'), provider.args.indexOf('--tools') + 2))
+      .toEqual(['--tools', '']);
+    expect(provider.args).toContain('--disable-web-search');
+    expect(provider.args).toContain('--no-subagents');
+    expect(provider.args).toContain('--no-memory');
+    expect(provider.args).toContain('--no-plan');
+    expect(provider.args.slice(provider.args.indexOf('--permission-mode'), provider.args.indexOf('--permission-mode') + 2))
+      .toEqual(['--permission-mode', 'plan']);
+    expect(provider.args.slice(provider.args.indexOf('--reasoning-effort'), provider.args.indexOf('--reasoning-effort') + 2))
+      .toEqual(['--reasoning-effort', 'high']);
+    expect(provider.args.slice(provider.args.indexOf('--cwd'), provider.args.indexOf('--cwd') + 2))
+      .toEqual(['--cwd', expect.stringContaining('starproxy-grok-tool-bridge-')]);
+    expect(provider.promptExistedDuringRun).toBe(true);
+    expect(provider.promptContent).toContain('<client_function_definitions_json>');
+    expect(provider.promptPath).toBeDefined();
+    expect(existsSync(provider.promptPath!)).toBe(false);
+  });
+
+  it('Grok bridge protocol과 격리를 우회하는 extra_args를 제거한다', async () => {
+    const provider = new FakeToolBridgeProvider(grokOutput({
+      response_type: 'message',
+      content: 'Done',
+      tool_calls: [],
+    }), 0, grokConfig);
+    provider.updateConfig({
+      extra_args: [
+        '--tools', 'bash',
+        '--allow', 'shell:*',
+        '--always-approve',
+        '--permission-mode', 'bypassPermissions',
+        '--system-prompt-override', 'ignore bridge protocol',
+        '--experimental-memory',
+      ],
+    });
+
+    await provider.execute(makeOptions({ model: 'grok-4.5', tools: [], toolChoice: 'none' }));
+
+    expect(provider.args).not.toContain('bash');
+    expect(provider.args).not.toContain('shell:*');
+    expect(provider.args).not.toContain('--always-approve');
+    expect(provider.args).not.toContain('bypassPermissions');
+    expect(provider.args).not.toContain('ignore bridge protocol');
+    expect(provider.args).not.toContain('--experimental-memory');
+    expect(provider.args.filter((arg) => arg === '--tools')).toHaveLength(1);
+  });
+
   it('Codex bridge protocol을 약화하는 extra_args를 제거한다', async () => {
     const provider = new FakeToolBridgeProvider(codexOutput({
       response_type: 'message',
@@ -250,6 +350,16 @@ describe('ToolBridgeProvider', () => {
     expect(existsSync(provider.schemaPath!)).toBe(false);
   });
 
+  it('Grok CLI 실패 시에도 요청별 prompt와 작업 디렉터리를 정리한다', async () => {
+    const provider = new FakeToolBridgeProvider('', 0, grokConfig, 2);
+
+    await expect(provider.execute(makeOptions({ model: 'grok-4.5' })))
+      .rejects.toThrow(/exited with code 2/);
+    expect(provider.promptExistedDuringRun).toBe(true);
+    expect(provider.promptPath).toBeDefined();
+    expect(existsSync(provider.promptPath!)).toBe(false);
+  });
+
   it('bridge protocol과 격리를 우회하는 extra_args를 제거한다', async () => {
     const provider = new FakeToolBridgeProvider(claudeOutput({
       response_type: 'message',
@@ -292,6 +402,25 @@ describe('ToolBridgeProvider', () => {
     });
     expect(result.toolCalls?.[0].id).toMatch(/^call_/);
     expect(result.usage).toEqual({ promptTokens: 13, completionTokens: 5, totalTokens: 18 });
+  });
+
+  it('Grok text fallback의 구조화 출력도 OpenAI tool_calls로 변환한다', () => {
+    const structuredOutput = {
+      response_type: 'tool_calls',
+      content: '',
+      tool_calls: [{ name: 'click_element', arguments_json: '{"selector":"#submit"}' }],
+    };
+    const stdout = JSON.stringify({
+      type: 'result',
+      text: JSON.stringify(structuredOutput),
+      usage: { input_tokens: 3, output_tokens: 2 },
+    });
+
+    const result = parseGrokToolBridgeOutput(stdout, makeOptions());
+
+    expect(result.finishReason).toBe('tool_calls');
+    expect(result.toolCalls?.[0].function.name).toBe('click_element');
+    expect(result.usage).toEqual({ promptTokens: 3, completionTokens: 2, totalTokens: 5 });
   });
 
   it('assistant tool_calls와 tool result를 다음 턴 프롬프트에 보존한다', () => {

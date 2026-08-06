@@ -95,7 +95,7 @@ export interface ProviderConfigYaml {
 // 기존 provider 설정을 상속하되 런타임 등록 이름은 독립적이다.
 export interface ToolBridgeProviderConfig extends ProviderConfigYaml {
   baseProvider: string;
-  driver: 'claude-cli' | 'codex-cli';
+  driver: 'claude-cli' | 'codex-cli' | 'grok-cli';
   strategy: 'structured-output';
   disableNativeTools: boolean;
 }

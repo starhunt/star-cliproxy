@@ -230,6 +230,40 @@ model_mappings:
     expect(config.modelMappings[0].provider).toBe('codex-tools');
   });
 
+  it('Grok Tool Bridge가 grok-cli driver로 독립 등록된다', () => {
+    const path = writeConfig(`
+providers:
+  grok:
+    cli_path: "/opt/bin/grok"
+    default_model: "grok-4.5"
+    timeout_ms: 150000
+tool_bridge_providers:
+  grok-tools:
+    base_provider: "grok"
+    driver: "grok-cli"
+    max_concurrent: 2
+model_mappings:
+  - alias: "grok-tools"
+    provider: "grok-tools"
+    actual_model: "grok-4.5"
+`);
+    const config = loadConfig(path);
+
+    expect(config.toolBridgeProviders['grok-tools']).toMatchObject({
+      baseProvider: 'grok',
+      driver: 'grok-cli',
+      strategy: 'structured-output',
+      disableNativeTools: true,
+      cli_path: '/opt/bin/grok',
+      default_model: 'grok-4.5',
+      timeout_ms: 150000,
+      max_concurrent: 2,
+      extra_args: [],
+      mode: 'cli',
+    });
+    expect(config.modelMappings[0].provider).toBe('grok-tools');
+  });
+
   it('Tool Bridge 이름이 기존 provider와 충돌하면 거부한다', () => {
     const path = writeConfig(`
 tool_bridge_providers:
@@ -256,6 +290,26 @@ tool_bridge_providers:
     driver: "codex-cli"
 `);
     expect(() => loadConfig(path)).toThrow(/base_provider "codex"만 지원/);
+  });
+
+  it('grok-cli driver에 다른 base provider를 지정하면 거부한다', () => {
+    const path = writeConfig(`
+tool_bridge_providers:
+  agy-tools:
+    base_provider: "agy"
+    driver: "grok-cli"
+`);
+    expect(() => loadConfig(path)).toThrow(/base_provider "grok"만 지원/);
+  });
+
+  it('native tool 차단을 보장할 수 없는 agy-cli driver는 등록을 거부한다', () => {
+    const path = writeConfig(`
+tool_bridge_providers:
+  agy-tools:
+    base_provider: "agy"
+    driver: "agy-cli"
+`);
+    expect(() => loadConfig(path)).toThrow(/Invalid option.*grok-cli/);
   });
 
   it('reasoning_effort 미지원 값은 조용히 무시한다 (기존 동작)', () => {
