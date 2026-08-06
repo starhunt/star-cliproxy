@@ -177,6 +177,27 @@ providers:
     extra_args: []
     # working_dir: "/path/to/isolated-workspace" # 에이전틱 파일/명령 실행을 고려해 격리 디렉터리 권장
 
+# Tool Bridge Provider (opt-in)
+# 기존 CLI provider 설정을 상속하면서 OpenAI tool_calls만 별도 구조화 출력으로 처리한다.
+# 일반 claude/codex provider 동작에는 영향이 없고, app-server/SDK 상시 실행도 필요하지 않다.
+# driver는 claude-cli와 codex-cli를 지원한다. CLI의 설정·native/MCP 도구는 기본적으로 차단되며,
+# 요청에 포함된 client functions는 cliproxy가 실행하지 않고 호출자에게 tool_calls로 반환한다.
+# tool_bridge_providers:
+#   claude-tools:
+#     base_provider: "claude"
+#     driver: "claude-cli"
+#     strategy: "structured-output"
+#     disable_native_tools: true
+#     max_concurrent: 2              # 생략 시 providers.claude 설정 상속
+#     timeout_ms: 300000             # 생략 시 providers.claude 설정 상속
+#   codex-tools:
+#     enabled: true                  # providers.codex가 disabled여도 bridge만 별도 활성화 가능
+#     base_provider: "codex"
+#     driver: "codex-cli"
+#     strategy: "structured-output"
+#     disable_native_tools: true
+#     max_concurrent: 2
+
 # 플러그인: 커스텀 프로바이더를 코드 수정 없이 추가
 # plugins/ 디렉토리에 플러그인을 만들고 여기에 등록
 # 자세한 가이드: plugins/README.md, 예제: plugins/example-plugin/
@@ -205,6 +226,10 @@ rate_limits:
       rpm: 20
     kimi:
       rpm: 20
+    # claude-tools:
+    #   rpm: 10
+    # codex-tools:
+    #   rpm: 10
 
 cache:
   enabled: true
@@ -255,6 +280,13 @@ model_mappings:
   - alias: "claude-haiku"
     provider: "claude"
     actual_model: "claude-haiku-4-5-20251001"
+  # Tool Bridge를 활성화한 경우 tool-calling 클라이언트는 이 요청 모델명 사용:
+  # - alias: "claude-tools"
+  #   provider: "claude-tools"
+  #   actual_model: "claude-sonnet-4-6"
+  # - alias: "codex-tools"
+  #   provider: "codex-tools"
+  #   actual_model: "gpt-5.5"
   # Codex/OpenAI models
   - alias: "gpt-5.5"
     provider: "codex"

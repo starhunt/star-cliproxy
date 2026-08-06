@@ -8,6 +8,8 @@ import type { HealthChecker } from '../../services/health-checker.js';
 import type { QueueManager } from '../../services/queue.js';
 import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import { readCodexCliDefaults } from '../../providers/codex-toml-defaults.js';
+import { HttpProvider } from '../../providers/http-provider.js';
+import { ToolBridgeProvider } from '../../providers/tool-bridge-provider.js';
 
 interface ProviderDeps {
   registry: ProviderRegistry;
@@ -19,6 +21,7 @@ interface ProviderDeps {
 // DB 키 접두사
 const PROVIDER_CONFIG_PREFIX = 'provider_config:';
 const BUILTIN_PROVIDER_NAMES = new Set(['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok', 'kimi']);
+type ProviderKind = 'builtin' | 'tool-bridge' | 'http' | 'plugin';
 const BUILTIN_RUNTIME_MUTABLE_FIELDS = new Set([
   'enabled',
   'default_model',
@@ -116,9 +119,18 @@ export function registerProvidersRoutes(app: FastifyInstance, deps: ProviderDeps
     const providers = deps.registry.getAll().map((p) => {
       const health = healthMap.get(p.name);
       const queueStatus = deps.queueManager.getStatus(p.name);
+      const kind: ProviderKind = BUILTIN_PROVIDER_NAMES.has(p.name)
+        ? 'builtin'
+        : (p instanceof ToolBridgeProvider
+          ? 'tool-bridge'
+          : (p instanceof HttpProvider ? 'http' : 'plugin'));
 
       return {
         name: p.name,
+        kind,
+        ...(p instanceof ToolBridgeProvider
+          ? { driver: p.driver, baseProvider: p.baseProvider }
+          : {}),
         status: health?.status ?? 'unknown',
         lastCheckAt: health?.lastCheckAt,
         lastSuccessAt: health?.lastSuccessAt,

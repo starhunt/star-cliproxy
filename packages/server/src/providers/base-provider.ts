@@ -205,7 +205,7 @@ export abstract class BaseProvider {
     return child;
   }
 
-  private async runProcess(
+  protected async runProcess(
     args: string[],
     signal?: AbortSignal,
     timeoutMs?: number,

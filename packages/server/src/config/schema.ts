@@ -105,6 +105,13 @@ const providerSchema = z.object({
   cli_options: opt(cliOptionsSchema),
 });
 
+const toolBridgeProviderSchema = providerSchema.extend({
+  base_provider: z.string().min(1),
+  driver: opt(z.enum(['claude-cli', 'codex-cli'])),
+  strategy: opt(z.enum(['structured-output'])),
+  disable_native_tools: opt(z.boolean()),
+});
+
 const rateLimitsSchema = z.object({
   global: opt(
     z.object({
@@ -150,6 +157,7 @@ export const rawConfigSchema = z.object({
   database: opt(databaseSchema),
   auth: opt(authSchema),
   providers: opt(z.record(z.string(), opt(providerSchema))),
+  tool_bridge_providers: opt(z.record(z.string(), opt(toolBridgeProviderSchema))),
   plugins: opt(z.array(pluginSchema)),
   rate_limits: opt(rateLimitsSchema),
   cache: opt(cacheSchema),
@@ -159,3 +167,4 @@ export const rawConfigSchema = z.object({
 
 export type RawConfig = z.infer<typeof rawConfigSchema>;
 export type RawProviderConfig = z.infer<typeof providerSchema>;
+export type RawToolBridgeProviderConfig = z.infer<typeof toolBridgeProviderSchema>;

@@ -37,9 +37,6 @@ import {
 // HTTP 엔드포인트 타입 옵션 (셀렉트 표시용)
 const ENDPOINT_TYPE_OPTIONS: EndpointType[] = ['chat', 'embeddings', 'rerank', 'images', 'tts'];
 
-// 빌트인 프로바이더 목록
-const BUILTIN_PROVIDERS = new Set(['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok', 'kimi']);
-
 interface ProviderState {
   info: ProviderInfo;
   config: ProviderConfig | null;
@@ -63,9 +60,6 @@ const DEFAULT_GENERIC_CONFIG: Omit<GenericCliProviderConfig, 'enabled'> & { enab
 
 // Generic 프로바이더 이름인지 (DB에서 로드된 커스텀)
 const genericProviderNames = new Set<string>();
-
-// HTTP 프로바이더 이름
-const httpProviderNames = new Set<string>();
 
 // HTTP 프로바이더 폼 기본값
 const DEFAULT_HTTP_CONFIG: Partial<HttpProviderConfig> = {
@@ -116,8 +110,6 @@ export default function ProvidersPage() {
       genericProviderNames.clear();
       for (const g of generics) genericProviderNames.add(g.name);
 
-      httpProviderNames.clear();
-      for (const h of https) httpProviderNames.add(h.name);
       setHttpProviders(https);
 
       const states: ProviderState[] = infos.map((info) => ({
@@ -177,7 +169,8 @@ export default function ProvidersPage() {
         ...draft,
         extra_args: extraArgsText.split('\n').filter(Boolean),
       };
-      const safePayload = BUILTIN_PROVIDERS.has(name)
+      const providerKind = providers.find((p) => p.info.name === name)?.info.kind;
+      const safePayload = providerKind === 'builtin'
         ? {
             enabled: payload.enabled,
             default_model: payload.default_model,
@@ -189,7 +182,18 @@ export default function ProvidersPage() {
             app_server_options: payload.app_server_options,
             cli_options: payload.cli_options,
           }
-        : payload;
+        : providerKind === 'tool-bridge'
+          ? {
+              enabled: payload.enabled,
+              cli_path: payload.cli_path,
+              default_model: payload.default_model,
+              max_concurrent: payload.max_concurrent,
+              timeout_ms: payload.timeout_ms,
+              extra_args: payload.extra_args,
+              working_dir: payload.working_dir,
+              disableNativeTools: payload.disableNativeTools,
+            }
+          : payload;
       // enabled는 boolean으로 전달
       const result = await updateProviderConfig(name, safePayload);
 
@@ -376,15 +380,14 @@ export default function ProvidersPage() {
 
       {/* 프로바이더 카드 목록 */}
       {(() => {
-        const builtinProviders = providers.filter((p) => BUILTIN_PROVIDERS.has(p.info.name));
-        // HTTP 프로바이더는 전용 섹션에서 렌더되므로 plugin/custom 섹션에서 제외 (중복 표시 방지)
-        const customProviders = providers.filter(
-          (p) => !BUILTIN_PROVIDERS.has(p.info.name) && !httpProviderNames.has(p.info.name),
-        );
+        const builtinProviders = providers.filter((p) => p.info.kind === 'builtin');
+        const toolBridgeProviders = providers.filter((p) => p.info.kind === 'tool-bridge');
+        const customProviders = providers.filter((p) => p.info.kind === 'plugin');
 
         const renderProviderCard = ({ info, config, loading }: ProviderState) => {
           const isExpanded = expandedProvider === info.name;
-          const isBuiltin = BUILTIN_PROVIDERS.has(info.name);
+          const isBuiltin = info.kind === 'builtin';
+          const isToolBridge = info.kind === 'tool-bridge';
           const isBuiltinRestricted = isBuiltin;
           const isEnabled = config?.enabled !== false;
           const statusColor =
@@ -402,7 +405,9 @@ export default function ProvidersPage() {
               className={`bg-white dark:bg-gray-900 border rounded-xl overflow-hidden transition-colors ${
                 isBuiltin
                   ? 'border-blue-200 dark:border-blue-500/30'
-                  : 'border-gray-200 dark:border-gray-800'
+                  : isToolBridge
+                    ? 'border-teal-200 dark:border-teal-500/30'
+                    : 'border-gray-200 dark:border-gray-800'
               } ${!isEnabled ? 'opacity-60' : ''}`}
             >
               {/* 카드 헤더 */}
@@ -418,6 +423,11 @@ export default function ProvidersPage() {
                   {isBuiltin && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 font-medium">
                       Built-in
+                    </span>
+                  )}
+                  {isToolBridge && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300 font-medium">
+                      {t('providers.toolBridgeBadge')}
                     </span>
                   )}
                   {config && (
@@ -473,6 +483,12 @@ export default function ProvidersPage() {
                   {isBuiltinRestricted && (
                     <div className="px-4 py-3 rounded-lg border bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300 text-xs">
                       {t('providers.runtimeRestricted')}
+                    </div>
+                  )}
+                  {isToolBridge && (
+                    <div className="px-4 py-3 rounded-lg border bg-teal-50 dark:bg-teal-500/10 border-teal-200 dark:border-teal-500/20 text-teal-800 dark:text-teal-300 text-xs space-y-1">
+                      <p className="font-medium">{t('providers.toolBridgeSettings')}</p>
+                      <p className="text-teal-700 dark:text-teal-400">{t('providers.toolBridgeIntro')}</p>
                     </div>
                   )}
 
@@ -567,6 +583,62 @@ export default function ProvidersPage() {
                       }`}
                     />
                   </div>
+
+                  {isToolBridge && (
+                    <div className="rounded-lg border border-teal-200 dark:border-teal-500/20 bg-teal-50/50 dark:bg-teal-500/5 p-4 space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1.5">
+                            {t('providers.bridgeBaseProvider')}
+                          </label>
+                          <input
+                            type="text"
+                            value={draft.baseProvider ?? info.baseProvider ?? ''}
+                            disabled
+                            className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-500 rounded px-3 py-2 text-sm cursor-not-allowed"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1.5">
+                            {t('providers.bridgeDriver')}
+                          </label>
+                          <input
+                            type="text"
+                            value={draft.driver ?? info.driver ?? ''}
+                            disabled
+                            className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-500 rounded px-3 py-2 text-sm cursor-not-allowed"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1.5">
+                            {t('providers.bridgeStrategy')}
+                          </label>
+                          <input
+                            type="text"
+                            value={draft.strategy ?? 'structured-output'}
+                            disabled
+                            className="w-full bg-gray-100 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-500 rounded px-3 py-2 text-sm cursor-not-allowed"
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={draft.disableNativeTools !== false}
+                          onChange={(e) => updateDraft('disableNativeTools', e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        <span>
+                          <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">
+                            {t('providers.bridgeDisableNativeTools')}
+                          </span>
+                          <span className="block mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {t('providers.bridgeDisableNativeToolsHint')}
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
 
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1.5">
@@ -691,6 +763,25 @@ export default function ProvidersPage() {
                 {builtinProviders.map(renderProviderCard)}
               </div>
             )}
+
+            {/* Tool Bridge 프로바이더 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-semibold text-teal-700 dark:text-teal-300 uppercase tracking-wider">
+                  {t('providers.toolBridgeSection')}
+                </h3>
+                <div className="flex-1 h-px bg-teal-200 dark:bg-teal-500/20" />
+              </div>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {t('providers.toolBridgeSectionDesc')}
+              </p>
+              {toolBridgeProviders.map(renderProviderCard)}
+              {toolBridgeProviders.length === 0 && (
+                <p className="text-xs text-gray-400 dark:text-gray-600 text-center py-4">
+                  {t('providers.noToolBridge')}
+                </p>
+              )}
+            </div>
 
             {/* 커스텀/플러그인 프로바이더 */}
             <div className="space-y-3">

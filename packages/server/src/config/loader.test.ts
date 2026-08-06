@@ -48,6 +48,7 @@ describe('loadConfig — 기존 동작 보존', () => {
     expect(config.dashboard.port).toBe(DEFAULT_DASHBOARD_PORT);
     expect(config.providers.claude.cli_path).toBe('claude');
     expect(config.providers.claude.max_concurrent).toBe(DEFAULT_MAX_CONCURRENT);
+    expect(config.toolBridgeProviders).toEqual({});
     expect(config.rateLimits.global.rpm).toBe(DEFAULT_RATE_LIMIT_RPM);
     expect(config.modelMappings.length).toBeGreaterThan(0);
     expect(
@@ -148,6 +149,113 @@ providers:
     expect(config.providers['my-ollama'].default_model).toBe('llama3');
     expect(config.providers.claude).toBeDefined();
     expect(config.rateLimits.perProvider['my-ollama']).toEqual({ rpm: 20 });
+  });
+
+  it('Tool Bridge가 base provider CLI 설정을 상속하고 독립 provider로 등록된다', () => {
+    const path = writeConfig(`
+providers:
+  claude:
+    cli_path: "/opt/bin/claude"
+    default_model: "claude-custom"
+    timeout_ms: 90000
+    extra_args: ["--permission-mode", "bypassPermissions"]
+tool_bridge_providers:
+  claude-tools:
+    base_provider: "claude"
+    max_concurrent: 1
+rate_limits:
+  per_provider:
+    claude-tools:
+      rpm: 7
+model_mappings:
+  - alias: "claude-tools"
+    provider: "claude-tools"
+    actual_model: "claude-sonnet-4-6"
+`);
+    const config = loadConfig(path);
+
+    expect(config.toolBridgeProviders['claude-tools']).toMatchObject({
+      baseProvider: 'claude',
+      driver: 'claude-cli',
+      strategy: 'structured-output',
+      disableNativeTools: true,
+      cli_path: '/opt/bin/claude',
+      default_model: 'claude-custom',
+      timeout_ms: 90000,
+      max_concurrent: 1,
+      extra_args: [],
+      mode: 'cli',
+    });
+    expect(config.providers['claude-tools']).toBe(config.toolBridgeProviders['claude-tools']);
+    expect(config.rateLimits.perProvider['claude-tools']).toEqual({ rpm: 7 });
+    expect(config.modelMappings[0].provider).toBe('claude-tools');
+  });
+
+  it('Codex Tool Bridge가 codex-cli driver로 독립 등록된다', () => {
+    const path = writeConfig(`
+providers:
+  codex:
+    enabled: false
+    cli_path: "/opt/bin/codex"
+    default_model: "gpt-5.5"
+    timeout_ms: 120000
+    extra_args: ["--sandbox", "workspace-write"]
+tool_bridge_providers:
+  codex-tools:
+    enabled: true
+    base_provider: "codex"
+    driver: "codex-cli"
+    max_concurrent: 2
+model_mappings:
+  - alias: "codex-tools"
+    provider: "codex-tools"
+    actual_model: "gpt-5.5"
+`);
+    const config = loadConfig(path);
+
+    expect(config.providers.codex.enabled).toBe(false);
+    expect(config.toolBridgeProviders['codex-tools']).toMatchObject({
+      enabled: true,
+      baseProvider: 'codex',
+      driver: 'codex-cli',
+      strategy: 'structured-output',
+      disableNativeTools: true,
+      cli_path: '/opt/bin/codex',
+      default_model: 'gpt-5.5',
+      timeout_ms: 120000,
+      max_concurrent: 2,
+      extra_args: [],
+      mode: 'cli',
+    });
+    expect(config.modelMappings[0].provider).toBe('codex-tools');
+  });
+
+  it('Tool Bridge 이름이 기존 provider와 충돌하면 거부한다', () => {
+    const path = writeConfig(`
+tool_bridge_providers:
+  claude:
+    base_provider: "claude"
+`);
+    expect(() => loadConfig(path)).toThrow(/이름이 이미 사용 중/);
+  });
+
+  it('claude-cli driver에 다른 base provider를 지정하면 거부한다', () => {
+    const path = writeConfig(`
+tool_bridge_providers:
+  codex-tools:
+    base_provider: "codex"
+`);
+    expect(() => loadConfig(path)).toThrow(/base_provider "claude"만 지원/);
+  });
+
+  it('codex-cli driver에 다른 base provider를 지정하면 거부한다', () => {
+    const path = writeConfig(`
+tool_bridge_providers:
+  claude-tools:
+    base_provider: "claude"
+    driver: "codex-cli"
+`);
+    expect(() => loadConfig(path)).toThrow(/base_provider "codex"만 지원/);
   });
 
   it('reasoning_effort 미지원 값은 조용히 무시한다 (기존 동작)', () => {

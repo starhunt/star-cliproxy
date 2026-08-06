@@ -67,7 +67,7 @@ export class ModelRouter {
       // 매핑이 없으면 alias를 그대로 모델명으로 사용 시도
       // provider를 alias에서 추론
       const inferredProvider = this.inferProvider(modelAlias);
-      if (inferredProvider) {
+      if (inferredProvider && this.registry.getProviderConfig(inferredProvider)?.enabled !== false) {
         return [{ provider: inferredProvider, actualModel: modelAlias }];
       }
       return [];
@@ -75,7 +75,10 @@ export class ModelRouter {
 
     // 활성화된 provider만 필터링
     return mappings
-      .filter((m) => this.registry.has(m.provider))
+      .filter((m) => (
+        this.registry.has(m.provider)
+        && this.registry.getProviderConfig(m.provider)?.enabled !== false
+      ))
       .map((m) => ({
         provider: m.provider,
         actualModel: m.actualModel,

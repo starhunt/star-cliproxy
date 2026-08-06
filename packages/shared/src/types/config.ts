@@ -91,6 +91,15 @@ export interface ProviderConfigYaml {
   cli_options?: CodexCliOptions;          // mode: 'cli'일 때 사용 (Codex)
 }
 
+// OpenAI tool_calls를 지원하지 않는 CLI를 구조화 출력으로 감싸는 별도 프로바이더.
+// 기존 provider 설정을 상속하되 런타임 등록 이름은 독립적이다.
+export interface ToolBridgeProviderConfig extends ProviderConfigYaml {
+  baseProvider: string;
+  driver: 'claude-cli' | 'codex-cli';
+  strategy: 'structured-output';
+  disableNativeTools: boolean;
+}
+
 export interface RateLimitConfig {
   global: {
     rpm: number;
@@ -178,6 +187,7 @@ export interface AppConfig {
   database: DatabaseConfig;
   auth: AuthConfig;
   providers: Record<string, ProviderConfigYaml>;
+  toolBridgeProviders: Record<string, ToolBridgeProviderConfig>;
   plugins: PluginEntry[];
   rateLimits: RateLimitConfig;
   cache: CacheConfig;

@@ -11,7 +11,9 @@ interface Props {
   totalTokens: number;
 }
 
-type ProviderKind = 'builtin' | 'plugin' | 'http';
+type ProviderKind = 'builtin' | 'tool-bridge' | 'plugin' | 'http';
+
+const PROVIDER_KINDS: ProviderKind[] = ['builtin', 'tool-bridge', 'plugin', 'http'];
 
 const COMPACT_THRESHOLD = 8;
 
@@ -23,17 +25,23 @@ const KIND_STYLE: Record<ProviderKind, { chip: string; dot: string; pill: string
     pill: 'text-blue-600 dark:text-blue-400',
     order: 0,
   },
+  'tool-bridge': {
+    chip: 'bg-cyan-100 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-300/60 dark:border-cyan-500/30',
+    dot: 'bg-cyan-400 dark:bg-cyan-500',
+    pill: 'text-cyan-600 dark:text-cyan-400',
+    order: 1,
+  },
   plugin: {
     chip: 'bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-300/60 dark:border-violet-500/30',
     dot: 'bg-violet-400 dark:bg-violet-500',
     pill: 'text-violet-600 dark:text-violet-400',
-    order: 1,
+    order: 2,
   },
   http: {
     chip: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300/60 dark:border-amber-500/30',
     dot: 'bg-amber-400 dark:bg-amber-500',
     pill: 'text-amber-600 dark:text-amber-400',
-    order: 2,
+    order: 3,
   },
 };
 
@@ -56,14 +64,19 @@ export function SystemStatus({ providers, cache, rateLimits, totalTokens }: Prop
         acc[k]++;
         return acc;
       },
-      { builtin: 0, plugin: 0, http: 0 } as Record<ProviderKind, number>,
+      { builtin: 0, 'tool-bridge': 0, plugin: 0, http: 0 } as Record<ProviderKind, number>,
     );
   }, [providers]);
 
   // 펼침 모드에서 kind별로 그룹화한 정렬된 목록
   // 우선순위: 같은 kind 내에서 unhealthy → unknown → healthy 순으로 가독성 ↑
   const groupedByKind = useMemo(() => {
-    const out: Record<ProviderKind, DashboardData['providers']> = { builtin: [], plugin: [], http: [] };
+    const out: Record<ProviderKind, DashboardData['providers']> = {
+      builtin: [],
+      'tool-bridge': [],
+      plugin: [],
+      http: [],
+    };
     const statusOrder = (s: string) => s === 'unhealthy' ? 0 : s === 'healthy' ? 2 : 1;
     for (const p of providers) {
       const k = (p.kind ?? 'builtin') as ProviderKind;
@@ -84,8 +97,11 @@ export function SystemStatus({ providers, cache, rateLimits, totalTokens }: Prop
     return t('common.unknown');
   };
 
-  const kindLabel = (k: ProviderKind) => t(`systemStatus.kind${k.charAt(0).toUpperCase()}${k.slice(1)}`);
-  const kindShort = (k: ProviderKind) => t(`systemStatus.kind${k.charAt(0).toUpperCase()}${k.slice(1)}Short`);
+  const kindKey = (k: ProviderKind) => k === 'tool-bridge'
+    ? 'ToolBridge'
+    : `${k.charAt(0).toUpperCase()}${k.slice(1)}`;
+  const kindLabel = (k: ProviderKind) => t(`systemStatus.kind${kindKey(k)}`);
+  const kindShort = (k: ProviderKind) => t(`systemStatus.kind${kindKey(k)}Short`);
 
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
@@ -123,9 +139,9 @@ export function SystemStatus({ providers, cache, rateLimits, totalTokens }: Prop
         />
       </div>
 
-      {/* 2행: kind 분포 (기본/플러그인/HTTP) — 매핑 이해 보조 */}
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        {(['builtin', 'plugin', 'http'] as ProviderKind[]).map((k) => (
+      {/* 2행: kind 분포 — 매핑 이해 보조 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+        {PROVIDER_KINDS.map((k) => (
           <KindPill
             key={k}
             label={kindLabel(k)}
@@ -151,7 +167,7 @@ export function SystemStatus({ providers, cache, rateLimits, totalTokens }: Prop
       {/* 펼침 모드: kind별 서브헤더로 그룹 표시 */}
       {!compactMode && (
         <div className="space-y-3 mb-3 pb-3 border-b border-gray-200 dark:border-gray-800 max-h-72 overflow-y-auto pr-1">
-          {(['builtin', 'plugin', 'http'] as ProviderKind[]).map((k) => {
+          {PROVIDER_KINDS.map((k) => {
             const list = groupedByKind[k];
             if (list.length === 0) return null;
             return (
@@ -239,6 +255,14 @@ function ProviderRow({
           </span>
         )}
         <span className="text-gray-700 dark:text-gray-300 truncate font-mono text-xs">{p.name}</span>
+        {kind === 'tool-bridge' && p.driver && (
+          <span
+            className="text-[9px] px-1 py-0.5 rounded bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-mono shrink-0"
+            title={`${p.baseProvider ?? 'unknown'} → ${p.driver}`}
+          >
+            {p.driver}
+          </span>
+        )}
         {queueBusy && (
           <span className="text-[10px] px-1 py-0.5 rounded bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 shrink-0">
             {p.queue!.pending}+

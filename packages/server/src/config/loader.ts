@@ -2,8 +2,19 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
-import type { AppConfig, ProviderConfigYaml, PluginEntry, ProviderOverrides, ReasoningEffort } from '@star-cliproxy/shared';
-import { rawConfigSchema, type RawProviderConfig } from './schema.js';
+import type {
+  AppConfig,
+  ProviderConfigYaml,
+  PluginEntry,
+  ProviderOverrides,
+  ReasoningEffort,
+  ToolBridgeProviderConfig,
+} from '@star-cliproxy/shared';
+import {
+  rawConfigSchema,
+  type RawProviderConfig,
+  type RawToolBridgeProviderConfig,
+} from './schema.js';
 import {
   DEFAULT_SERVER_PORT,
   DEFAULT_DASHBOARD_PORT,
@@ -148,6 +159,7 @@ export function loadConfig(configPath?: string): AppConfig {
     database,
     auth,
     providers,
+    tool_bridge_providers: rawToolBridgeProviders,
     rate_limits: rateLimits,
     cache,
     validation,
@@ -174,6 +186,38 @@ export function loadConfig(configPath?: string): AppConfig {
       if (name in BUILTIN_DEFAULTS) continue;
       providerConfigs[name] = mergeProviderConfig(raw, name, '');
     }
+  }
+
+  // Tool Bridge는 기존 프로바이더와 이름 공간을 공유하지만 별도 종류로 등록한다.
+  const toolBridgeProviders: Record<string, ToolBridgeProviderConfig> = {};
+  for (const [name, raw] of Object.entries(rawToolBridgeProviders ?? {})) {
+    if (!raw) {
+      throw new Error(`tool_bridge_providers.${name}: 설정 객체가 필요합니다`);
+    }
+    if (providerConfigs[name]) {
+      throw new Error(`tool_bridge_providers.${name}: provider 이름이 이미 사용 중입니다`);
+    }
+
+    const base = providerConfigs[raw.base_provider];
+    if (!base) {
+      throw new Error(
+        `tool_bridge_providers.${name}.base_provider: 알 수 없는 provider "${raw.base_provider}"`,
+      );
+    }
+    if ((raw.driver ?? 'claude-cli') === 'claude-cli' && raw.base_provider !== 'claude') {
+      throw new Error(
+        `tool_bridge_providers.${name}: driver "claude-cli"는 base_provider "claude"만 지원합니다`,
+      );
+    }
+    if (raw.driver === 'codex-cli' && raw.base_provider !== 'codex') {
+      throw new Error(
+        `tool_bridge_providers.${name}: driver "codex-cli"는 base_provider "codex"만 지원합니다`,
+      );
+    }
+
+    const config = mergeToolBridgeProviderConfig(raw, base);
+    toolBridgeProviders[name] = config;
+    providerConfigs[name] = config;
   }
 
   // perProvider rate limits: 빌트인 + 커스텀 모두 동적으로 구성
@@ -213,6 +257,7 @@ export function loadConfig(configPath?: string): AppConfig {
       })),
     },
     providers: providerConfigs,
+    toolBridgeProviders,
     plugins,
     rateLimits: {
       global: {
@@ -258,6 +303,34 @@ export function loadConfig(configPath?: string): AppConfig {
       { alias: 'kimi-k3', provider: 'kimi', actual_model: 'kimi-code/k3' },
       { alias: 'kimi-coding', provider: 'kimi', actual_model: 'kimi-code/kimi-for-coding' },
     ],
+  };
+}
+
+function mergeToolBridgeProviderConfig(
+  raw: RawToolBridgeProviderConfig,
+  base: ProviderConfigYaml,
+): ToolBridgeProviderConfig {
+  return {
+    ...base,
+    enabled: raw.enabled ?? base.enabled,
+    cli_path: raw.cli_path ?? base.cli_path,
+    default_model: raw.default_model ?? base.default_model,
+    max_concurrent: raw.max_concurrent ?? base.max_concurrent,
+    timeout_ms: raw.timeout_ms ?? base.timeout_ms,
+    // 일반 CLI provider의 권한/agent flags를 브리지에 암묵적으로 전파하지 않는다.
+    // 필요한 비관리 플래그는 bridge 항목에 명시적으로 지정한다.
+    extra_args: raw.extra_args ?? [],
+    working_dir: raw.working_dir ?? base.working_dir,
+    // 브리지는 자체 실행 전략을 사용하므로 base provider의 sdk/app-server mode를 상속하지 않는다.
+    mode: 'cli',
+    sdk_options: undefined,
+    channel_options: undefined,
+    app_server_options: undefined,
+    cli_options: undefined,
+    baseProvider: raw.base_provider,
+    driver: raw.driver ?? 'claude-cli',
+    strategy: raw.strategy ?? 'structured-output',
+    disableNativeTools: raw.disable_native_tools ?? true,
   };
 }
 

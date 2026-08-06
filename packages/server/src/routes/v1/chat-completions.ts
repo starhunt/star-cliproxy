@@ -152,8 +152,16 @@ function normalizeMessageContent(content: unknown): ChatMessageContent {
 export function isToolsUnsupportedError(message: string): boolean {
   const t = (message || '').toLowerCase();
   const mentionsTools = /tool[_ -]?call|tool[_ -]?choice|tool[_ -]?parser|tool[_ -]?use|enable-auto-tool-choice|function[_ ]?call|\btools?\b/.test(t);
-  const failure = /not\s+support|unsupport|requires|must be set|to be set|no .*parser|not enabled|disabled|invalid/.test(t);
+  // "invalid tool schema/arguments"는 provider가 tools 자체를 지원하지 않는다는
+  // 뜻이 아니므로 generic invalid는 포함하지 않는다.
+  const failure = /not\s+support|unsupport|requires|must be set|to be set|no .*parser|not enabled|disabled/.test(t);
   return mentionsTools && failure;
+}
+
+export function isInvalidToolSchemaError(message: string): boolean {
+  const t = (message || '').toLowerCase();
+  return /parameters json schema/.test(t)
+    && /(컴파일할 수 없|compile|schema is invalid|invalid schema)/.test(t);
 }
 
 // CLI 에러 메시지에서 내부 정보 제거 (파일 경로, 스택 트레이스 등)
@@ -308,7 +316,9 @@ export function registerChatCompletionsRoute(
       const clientKey = extractClientKey(request, apiKeyId);
 
       // === 캐시 조회 (non-streaming만) ===
-      const requestHash = !body.stream
+      // tool call에는 매 요청마다 새 call ID가 필요하고 tools/tool_choice도 기존 캐시 키에
+      // 포함되지 않으므로 캐시하지 않는다. 일반 텍스트 요청의 기존 캐시 동작은 유지한다.
+      const requestHash = !body.stream && !(body.tools && body.tools.length > 0)
         ? deps.cache.generateHash(body.model, body.messages)
         : undefined;
 
@@ -796,6 +806,19 @@ export function registerChatCompletionsRoute(
             type: 'rate_limit_error',
             param: null,
             code: 'rate_limit_exceeded',
+          },
+        });
+      }
+
+      // Tool Bridge가 요청에 포함된 함수 schema를 컴파일하지 못한 경우는
+      // provider 장애가 아니라 클라이언트 요청 오류다.
+      if (body.tools && body.tools.length > 0 && lastError && isInvalidToolSchemaError(lastError.message)) {
+        return reply.status(400).send({
+          error: {
+            message: sanitizeProviderError(lastError.message),
+            type: 'invalid_request_error',
+            param: 'tools',
+            code: 'invalid_tool_schema',
           },
         });
       }

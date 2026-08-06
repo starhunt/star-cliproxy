@@ -74,6 +74,7 @@ npm run dev:dashboard  # dashboard   → http://localhost:5300
 | [Grok Build CLI](https://x.ai/cli) | SuperGrok / X Premium+ | `curl -fsSL https://x.ai/cli/install.sh \| bash` |
 | [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) | Kimi Code membership / API key | `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash` |
 | **HTTP** | any OpenAI-compatible server | add from the dashboard (vLLM, Ollama, MLX, LM Studio…) |
+| **Tool Bridge** | Claude/Codex CLI + client-side OpenAI tools | [Tool Bridge Guide](./docs/tool-bridge-provider.md) |
 | **Plugin** | custom CLI | [Plugin Guide](./plugins/README.md) |
 
 ### Antigravity, Grok, and Kimi compatibility
@@ -128,7 +129,7 @@ Live request monitoring & trends, **Playground**, model-mapping editor, provider
 
 ## Documentation
 
-[Plugin Guide](./plugins/README.md) · [Provider Architecture](./docs/provider-architecture.md) · [Session Reuse](./docs/client-integration-session-reuse.md) · [Image Generation](./docs/codex-image-generation.md)
+[Tool Bridge](./docs/tool-bridge-provider.md) · [Plugin Guide](./plugins/README.md) · [Provider Architecture](./docs/provider-architecture.md) · [Session Reuse](./docs/client-integration-session-reuse.md) · [Image Generation](./docs/codex-image-generation.md)
 
 ## Security
 

@@ -115,7 +115,8 @@ export interface ExecuteOptions {
   // 백엔드 비표준 필드 패스스루 (HTTP provider 전용). chat_template_kwargs/think/top_k 등.
   // CLI provider는 무시.
   extraBody?: Record<string, unknown>;
-  // OpenAI 호환 function calling. HTTP provider만 백엔드로 전달, CLI provider는 무시.
+  // OpenAI 호환 function calling. HTTP provider는 패스스루, Tool Bridge는 구조화 출력으로 변환.
+  // 일반 CLI provider는 기존 호환성을 위해 무시한다.
   tools?: ChatCompletionTool[];
   toolChoice?: ToolChoice;
   // Image generation passthrough (OpenAI Images API)

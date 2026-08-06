@@ -34,6 +34,7 @@ import { registerGenericProviderRoutes } from './routes/admin/generic-providers.
 import { registerHttpProviderRoutes } from './routes/admin/http-providers.js';
 import { loadGenericProviders } from './providers/generic-provider-loader.js';
 import { loadHttpProviders } from './providers/http-provider-loader.js';
+import { ToolBridgeProvider } from './providers/tool-bridge-provider.js';
 import { seedDatabase } from './db/seed.js';
 import { loadPlugins } from './plugins/plugin-loader.js';
 import type { ValidationConfig } from '@star-cliproxy/shared';
@@ -52,6 +53,13 @@ export async function createApp(config: AppConfig, projectRoot?: string) {
 
   // Provider 레지스트리 (빌트인)
   const registry = createProviderRegistry(config.providers);
+
+  // 기존 CLI provider와 분리된 Tool Bridge 인스턴스 등록
+  for (const [name, bridgeConfig] of Object.entries(config.toolBridgeProviders)) {
+    if (bridgeConfig.enabled) {
+      registry.register(new ToolBridgeProvider(name, bridgeConfig));
+    }
+  }
 
   // 플러그인 로드 (config.yaml의 plugins 섹션)
   if (config.plugins.length > 0) {

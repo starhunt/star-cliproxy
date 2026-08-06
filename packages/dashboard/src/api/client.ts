@@ -55,7 +55,9 @@ export interface DashboardData {
   modelMappings: { total: number; active: number };
   providers: Array<{
     name: string;
-    kind: 'builtin' | 'http' | 'plugin';
+    kind: 'builtin' | 'tool-bridge' | 'http' | 'plugin';
+    driver?: 'claude-cli' | 'codex-cli';
+    baseProvider?: string;
     status: string;
     lastCheckAt: string | null;
     consecutiveFailures: number;
@@ -306,6 +308,9 @@ export function deleteApiKey(id: string) {
 // Providers
 export interface ProviderInfo {
   name: string;
+  kind: 'builtin' | 'tool-bridge' | 'http' | 'plugin';
+  driver?: 'claude-cli' | 'codex-cli';
+  baseProvider?: string;
   status: string;
   lastCheckAt: string | null;
   lastSuccessAt: string | null;
@@ -377,6 +382,11 @@ export interface ProviderConfig {
   channel_options?: ClaudeChannelOptions;
   app_server_options?: CodexAppServerOptions;
   cli_options?: CodexCliOptions;
+  // Tool Bridge 전용. API 응답은 런타임에서 사용하는 camelCase 형태다.
+  baseProvider?: string;
+  driver?: 'claude-cli' | 'codex-cli';
+  strategy?: 'structured-output';
+  disableNativeTools?: boolean;
 }
 
 export interface ProviderTestResult {

@@ -74,6 +74,7 @@ npm run dev:dashboard  # 대시보드   → http://localhost:5300
 | [Grok Build CLI](https://x.ai/cli) | SuperGrok / X Premium+ | `curl -fsSL https://x.ai/cli/install.sh \| bash` |
 | [Kimi Code CLI](https://github.com/MoonshotAI/kimi-code) | Kimi Code 멤버십 / API key | `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash` |
 | **HTTP** | OpenAI 호환 서버 | 대시보드에서 추가 (vLLM, Ollama, MLX, LM Studio…) |
+| **Tool Bridge** | Claude/Codex CLI + 클라이언트측 OpenAI 도구 | [Tool Bridge 가이드](./docs/tool-bridge-provider.md) |
 | **Plugin** | 커스텀 CLI | [플러그인 가이드](./plugins/README.md) |
 
 ### Antigravity·Grok·Kimi 호환성
@@ -128,7 +129,7 @@ ANTHROPIC_BASE_URL=http://localhost:8300 ANTHROPIC_API_KEY=sk-proxy-... claude
 
 ## 문서
 
-[플러그인 가이드](./plugins/README.md) · [Provider 아키텍처](./docs/provider-architecture.md) · [세션 재사용](./docs/client-integration-session-reuse.md) · [이미지 생성](./docs/codex-image-generation.md)
+[Tool Bridge](./docs/tool-bridge-provider.md) · [플러그인 가이드](./plugins/README.md) · [Provider 아키텍처](./docs/provider-architecture.md) · [세션 재사용](./docs/client-integration-session-reuse.md) · [이미지 생성](./docs/codex-image-generation.md)
 
 ## 보안
 

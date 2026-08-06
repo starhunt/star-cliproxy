@@ -6,10 +6,11 @@ import type { ProviderRegistry } from '../../providers/provider-registry.js';
 import type { QueueManager } from '../../services/queue.js';
 import type { ActiveRequestTracker } from '../../services/active-requests.js';
 import { HttpProvider } from '../../providers/http-provider.js';
+import { ToolBridgeProvider } from '../../providers/tool-bridge-provider.js';
 
 // 빌트인 프로바이더 — kind 분류용. 다른 곳의 동일 상수와 동기 유지 필요.
 const BUILTIN_PROVIDER_NAMES = new Set(['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok', 'kimi']);
-type ProviderKind = 'builtin' | 'http' | 'plugin';
+type ProviderKind = 'builtin' | 'tool-bridge' | 'http' | 'plugin';
 
 interface DashboardDeps {
   registry: ProviderRegistry;
@@ -98,10 +99,15 @@ export function registerDashboardRoute(app: FastifyInstance, deps: DashboardDeps
       const queue = deps.queueManager.getStatus(p.name);
       const kind: ProviderKind = BUILTIN_PROVIDER_NAMES.has(p.name)
         ? 'builtin'
-        : (p instanceof HttpProvider ? 'http' : 'plugin');
+        : (p instanceof ToolBridgeProvider
+          ? 'tool-bridge'
+          : (p instanceof HttpProvider ? 'http' : 'plugin'));
       return {
         name: p.name,
         kind,
+        ...(p instanceof ToolBridgeProvider
+          ? { driver: p.driver, baseProvider: p.baseProvider }
+          : {}),
         status: health?.status ?? 'unknown',
         lastCheckAt: health?.lastCheckAt,
         consecutiveFailures: health?.consecutiveFailures ?? 0,

@@ -59,7 +59,7 @@ export interface ChatCompletionRequest {
   temperature?: number;
   top_p?: number;
   stop?: string | string[];
-  // OpenAI 호환 function calling. HTTP provider는 백엔드로 패스스루, CLI provider는 무시.
+  // OpenAI 호환 function calling. HTTP provider와 Tool Bridge가 지원하며 일반 CLI provider는 무시.
   tools?: ChatCompletionTool[];
   tool_choice?: ToolChoice;
   // OpenAI 호환 추론 수준. 지정 시 model_mapping의 값보다 우선.
