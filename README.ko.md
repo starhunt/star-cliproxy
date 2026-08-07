@@ -129,7 +129,7 @@ ANTHROPIC_BASE_URL=http://localhost:8300 ANTHROPIC_API_KEY=sk-proxy-... claude
 
 ## 문서
 
-[Tool Bridge](./docs/tool-bridge-provider.md) · [플러그인 가이드](./plugins/README.md) · [Provider 아키텍처](./docs/provider-architecture.md) · [세션 재사용](./docs/client-integration-session-reuse.md) · [이미지 생성](./docs/codex-image-generation.md)
+[Tool Bridge](./docs/tool-bridge-provider.md) · [Tool Bridge 설계 분석](./docs/tool-bridge-design-analysis.md) · [플러그인 가이드](./plugins/README.md) · [Provider 아키텍처](./docs/provider-architecture.md) · [세션 재사용](./docs/client-integration-session-reuse.md) · [이미지 생성](./docs/codex-image-generation.md)
 
 ## 보안
 

@@ -4,6 +4,8 @@ Tool Bridge는 일반 CLI provider와 분리된 opt-in provider입니다. OpenAI
 
 기존 `claude`, `codex`, `grok` provider의 동작이나 설정은 바뀌지 않습니다. Tool Bridge는 요청마다 일반 CLI 프로세스를 실행하므로 Codex app-server, Claude Agent SDK, 별도 상주 bridge 서버가 필요하지 않습니다.
 
+> 현재의 별도 provider와 `-tools` alias는 안전 경계와 운영 상태를 명시적으로 표현하는 구현 선택입니다. 반드시 별도 alias여야 하는 것은 아니며, 향후에는 같은 alias 안에서 격리 runner로 자동 분기할 수도 있습니다. 필수인 분리와 선택적인 분리, 구체적인 실패 사례는 [`Tool Bridge 경계 설계 분석`](./tool-bridge-design-analysis.md)을 참고하세요.
+
 ## 설정
 
 ```yaml
