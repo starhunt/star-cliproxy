@@ -1,4 +1,5 @@
 import type {
+  ChatResponseFormat,
   ExecuteOptions,
   ExecuteResult,
   EmbeddingOptions,
@@ -102,6 +103,12 @@ export class HttpProvider extends BaseProvider {
     'model', 'messages', 'stream', 'max_tokens', 'temperature', 'tools', 'tool_choice',
   ]);
 
+  // OpenAI 호환 백엔드가 response_format을 직접 해석하므로 세 타입 모두 그대로 전달한다.
+  // 백엔드가 실제로 지원하는지는 백엔드 응답(에러)으로 드러난다.
+  override supportsResponseFormat(_format: ChatResponseFormat): boolean {
+    return true;
+  }
+
   private buildRequestBody(options: ExecuteOptions, stream: boolean): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: options.model,
@@ -121,6 +128,10 @@ export class HttpProvider extends BaseProvider {
       body.tools = options.tools;
       if (options.toolChoice !== undefined) body.tool_choice = options.toolChoice;
     }
+    // structured output 패스스루: OpenAI 호환 백엔드가 스키마를 직접 강제한다.
+    // RESERVED_BODY_KEYS에는 넣지 않는다 — 이 필드가 배선되기 전부터 extra_body로
+    // response_format을 지정해 온 설정을 조용히 무력화하지 않기 위해서다.
+    if (options.chatResponseFormat) body.response_format = options.chatResponseFormat;
     // max_tokens 미지정 시 필드 자체를 생략 → 서버 기본값 사용 (vLLM 등의 max_total_tokens 제한 회피)
     const maxTokens = options.maxTokens ?? this.httpConfig.default_max_tokens;
     if (maxTokens !== undefined) body.max_tokens = maxTokens;

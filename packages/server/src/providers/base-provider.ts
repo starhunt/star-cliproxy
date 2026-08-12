@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import type {
+  ChatResponseFormat,
   ExecuteOptions,
   ExecuteResult,
   EmbeddingOptions,
@@ -62,6 +63,15 @@ export abstract class BaseProvider {
 
   getConfig(): ProviderConfigYaml {
     return { ...this.config };
+  }
+
+  /**
+   * 이 프로바이더가 주어진 response_format(structured output)을 백엔드에 실제로
+   * 강제하거나 전달할 수 있는지. 기본값 false — 요청은 그대로 처리하되 라우트가
+   * X-Unsupported-Params 헤더로 클라이언트에 알린다.
+   */
+  supportsResponseFormat(_format: ChatResponseFormat): boolean {
+    return false;
   }
 
   protected initParser() {

@@ -69,6 +69,20 @@ function agyJson(
   });
 }
 
+const jsonSchemaFormat = {
+  type: 'json_schema' as const,
+  json_schema: {
+    name: 'answer_shape',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: { answer: { type: 'string' } },
+      required: ['answer'],
+      additionalProperties: false,
+    },
+  },
+};
+
 beforeEach(() => {
   spawnMock.mockReset();
 });
@@ -181,6 +195,55 @@ describe('AgyProvider.buildArgs', () => {
     expect(args).not.toContain('text');
   });
 
+  it('response_format=json_schema는 중첩 schema만 --json-schema로 -p 앞에 전달', () => {
+    const provider = new AgyProvider(baseConfig());
+    const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
+      baseOptions({ chatResponseFormat: jsonSchemaFormat }),
+    );
+    const idx = args.indexOf('--json-schema');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    // OpenAI 래퍼(name/strict)가 아니라 중첩 schema만 전달해야 agy가 그대로 강제한다.
+    expect(JSON.parse(args[idx + 1])).toEqual(jsonSchemaFormat.json_schema.schema);
+    expect(idx).toBeLessThan(args.indexOf('-p'));
+  });
+
+  it('response_format=json_object/text는 --json-schema를 추가하지 않음', () => {
+    const provider = new AgyProvider(baseConfig());
+    for (const format of [{ type: 'json_object' as const }, { type: 'text' as const }]) {
+      const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
+        baseOptions({ chatResponseFormat: format }),
+      );
+      expect(args).not.toContain('--json-schema');
+    }
+  });
+
+  it('extra_args에 --json-schema가 있으면 중복 추가하지 않고 사용자 값 존중', () => {
+    const provider = new AgyProvider(baseConfig({
+      extra_args: ['--json-schema', '/etc/schemas/custom.json'],
+    }));
+    const args = (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
+      baseOptions({ chatResponseFormat: jsonSchemaFormat }),
+    );
+    expect(args.filter((arg) => arg === '--json-schema')).toHaveLength(1);
+    expect(args).toContain('/etc/schemas/custom.json');
+  });
+
+  it('prompt + schema 합계가 ARG_MAX 한도를 넘으면 throw', () => {
+    const provider = new AgyProvider(baseConfig());
+    const hugeSchema = {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'huge',
+        schema: { type: 'object', description: 'x'.repeat(799_000) },
+      },
+    };
+    expect(() =>
+      (provider as unknown as { buildArgs(opts: ExecuteOptions): string[] }).buildArgs(
+        baseOptions({ messages: [{ role: 'user', content: 'y'.repeat(2_000) }], chatResponseFormat: hugeSchema }),
+      ),
+    ).toThrow(/exceeds/);
+  });
+
   it('800KB 초과 prompt는 빌드 단계에서 즉시 throw (ARG_MAX 보호)', () => {
     const provider = new AgyProvider(baseConfig());
     const huge = 'x'.repeat(800_001);
@@ -222,6 +285,39 @@ describe('AgyProvider.execute (JSON 결과 파싱)', () => {
     })));
     const provider = new AgyProvider(baseConfig());
     await expect(provider.execute(baseOptions())).rejects.toThrow(/invalid model/);
+  });
+
+  it('json_schema 요청은 오염된 response 대신 structured_output을 content로 반환', async () => {
+    spawnMock.mockReturnValue(fakeChild(JSON.stringify({
+      status: 'SUCCESS',
+      // 실측: response에는 프로즈와 스키마 외 필드가 섞여 유효한 JSON이 아니다.
+      response: 'Blue\n{"answer":"Blue","toolAction":"Finish task"}\n',
+      structured_output: { answer: 'Blue' },
+      usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+    })));
+    const provider = new AgyProvider(baseConfig());
+    const result = await provider.execute(baseOptions({ chatResponseFormat: jsonSchemaFormat }));
+    expect(result.content).toBe('{"answer":"Blue"}');
+    expect(JSON.parse(result.content)).toEqual({ answer: 'Blue' });
+  });
+
+  it('json_schema 요청인데 structured_output이 없으면 throw (오염된 response 폴백 금지)', async () => {
+    spawnMock.mockReturnValue(fakeChild(agyJson('Blue\n{"answer":"Blue"}')));
+    const provider = new AgyProvider(baseConfig());
+    await expect(provider.execute(baseOptions({ chatResponseFormat: jsonSchemaFormat })))
+      .rejects.toThrow(/structured_output/);
+  });
+
+  it('response_format이 없으면 structured_output이 있어도 기존 response 경로 유지', async () => {
+    spawnMock.mockReturnValue(fakeChild(JSON.stringify({
+      status: 'SUCCESS',
+      response: 'plain answer',
+      structured_output: { answer: 'ignored' },
+      usage: { total_tokens: 3 },
+    })));
+    const provider = new AgyProvider(baseConfig());
+    const result = await provider.execute(baseOptions());
+    expect(result.content).toBe('plain answer');
   });
 
   it('실제 input/output/thinking/cache token usage를 변환', async () => {
@@ -291,6 +387,75 @@ describe('AgyProvider.executeStream (stream-json)', () => {
     await expect(consume()).rejects.toThrow(/quota exceeded/);
   });
 
+  it('json_schema 요청 시 프로즈 delta를 억제하고 최종 structured_output만 emit', async () => {
+    // 실측(agy 1.1.12): 스키마를 줘도 agent_response delta는 프로즈("Blue")를 먼저 흘리고
+    // 마지막 turn에서 스키마 외 필드가 섞인 JSON을 뱉는다. 둘을 이어붙이면 유효한 JSON이 아니다.
+    spawnMock.mockReturnValue(fakeChild([
+      JSON.stringify({
+        event: 'step_update',
+        step_update: { step_type: 'agent_response', state: 'ACTIVE', text_delta: 'Blue' },
+      }),
+      JSON.stringify({
+        event: 'step_update',
+        step_update: {
+          step_type: 'agent_response',
+          state: 'DONE',
+          text_delta: '\n{"answer":"Blue","toolAction":"Finish task"}\n',
+        },
+      }),
+      JSON.stringify({
+        event: 'result',
+        result: {
+          status: 'SUCCESS',
+          response: 'Blue\n{"answer":"Blue","toolAction":"Finish task"}\n',
+          structured_output: { answer: 'Blue' },
+          usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+        },
+      }),
+    ].join('\n')));
+    const provider = new AgyProvider(baseConfig());
+    const events: ProviderEvent[] = [];
+    for await (const event of provider.executeStream(baseOptions({ stream: true, chatResponseFormat: jsonSchemaFormat }))) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(['text_delta', 'usage', 'done']);
+    expect((events[0] as { type: 'text_delta'; text: string }).text).toBe('{"answer":"Blue"}');
+  });
+
+  it('json_schema 요청인데 structured_output이 없으면 throw', async () => {
+    spawnMock.mockReturnValue(fakeChild(JSON.stringify({
+      event: 'result',
+      result: { status: 'SUCCESS', response: 'plain prose', usage: { total_tokens: 3 } },
+    })));
+    const provider = new AgyProvider(baseConfig());
+    const consume = async () => {
+      for await (const _event of provider.executeStream(baseOptions({ stream: true, chatResponseFormat: jsonSchemaFormat }))) {
+        // consume
+      }
+    };
+    await expect(consume()).rejects.toThrow(/structured_output/);
+  });
+
+  it('response_format이 없으면 기존 delta 스트리밍 동작 유지', async () => {
+    spawnMock.mockReturnValue(fakeChild([
+      JSON.stringify({
+        event: 'step_update',
+        step_update: { step_type: 'agent_response', state: 'ACTIVE', text_delta: 'streamed' },
+      }),
+      JSON.stringify({
+        event: 'result',
+        result: { status: 'SUCCESS', response: 'streamed', structured_output: { a: 1 }, usage: { total_tokens: 3 } },
+      }),
+    ].join('\n')));
+    const provider = new AgyProvider(baseConfig());
+    const events: ProviderEvent[] = [];
+    for await (const event of provider.executeStream(baseOptions({ stream: true }))) {
+      events.push(event);
+    }
+    expect((events[0] as { type: 'text_delta'; text: string }).text).toBe('streamed');
+  });
+
   it('delta가 없는 호환 출력은 최종 response를 text_delta로 보존', async () => {
     spawnMock.mockReturnValue(fakeChild(JSON.stringify({
       event: 'result',
@@ -307,5 +472,14 @@ describe('AgyProvider.executeStream (stream-json)', () => {
     }
     expect(events.map((event) => event.type)).toEqual(['text_delta', 'usage', 'done']);
     expect((events[0] as { type: 'text_delta'; text: string }).text).toBe('fallback response');
+  });
+});
+
+describe('AgyProvider.supportsResponseFormat', () => {
+  it('json_schema만 강제 가능하다고 선언 (agy --json-schema)', () => {
+    const provider = new AgyProvider(baseConfig());
+    expect(provider.supportsResponseFormat(jsonSchemaFormat)).toBe(true);
+    expect(provider.supportsResponseFormat({ type: 'json_object' })).toBe(false);
+    expect(provider.supportsResponseFormat({ type: 'text' })).toBe(false);
   });
 });

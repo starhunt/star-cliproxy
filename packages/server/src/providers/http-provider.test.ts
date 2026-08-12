@@ -349,3 +349,57 @@ describe('HttpProvider.executeRerank - 업스트림 규격 협상', () => {
     expect(r.results[0].document).toBe('doc-a');
   });
 });
+
+describe('HttpProvider - structured output (response_format)', () => {
+  const jsonSchemaFormat = {
+    type: 'json_schema' as const,
+    json_schema: {
+      name: 'answer_shape',
+      strict: true,
+      schema: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'] },
+    },
+  };
+
+  it('chatResponseFormat을 OpenAI 호환 body의 response_format으로 패스스루', async () => {
+    const captured = mockFetch({
+      choices: [{ message: { content: '{"answer":"Blue"}' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+    const provider = new HttpProvider('test', { ...baseConfig });
+
+    await provider.execute(makeOptions({ chatResponseFormat: jsonSchemaFormat }));
+
+    expect(captured.body.response_format).toEqual(jsonSchemaFormat);
+  });
+
+  it('스트리밍 요청에도 response_format을 전달', async () => {
+    const captured = mockFetch({ choices: [{ message: { content: 'x' } }] });
+    const provider = new HttpProvider('test', { ...baseConfig });
+
+    // 스트리밍 body 빌드만 검증하면 되므로 첫 청크 수신 후 즉시 중단한다.
+    const iterator = provider.executeStream(makeOptions({ stream: true, chatResponseFormat: { type: 'json_object' } }));
+    try {
+      for await (const _event of iterator) break;
+    } catch {
+      // mock 응답은 SSE가 아니므로 파싱 실패는 무시 — 검증 대상은 요청 body다.
+    }
+
+    expect(captured.body.response_format).toEqual({ type: 'json_object' });
+  });
+
+  it('response_format 미지정 시 body에 필드 없음', async () => {
+    const captured = mockFetch({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] });
+    const provider = new HttpProvider('test', { ...baseConfig });
+
+    await provider.execute(makeOptions({}));
+
+    expect(captured.body.response_format).toBeUndefined();
+  });
+
+  it('모든 response_format 타입을 강제 가능하다고 선언 (백엔드 패스스루)', () => {
+    const provider = new HttpProvider('test', { ...baseConfig });
+    expect(provider.supportsResponseFormat(jsonSchemaFormat)).toBe(true);
+    expect(provider.supportsResponseFormat({ type: 'json_object' })).toBe(true);
+    expect(provider.supportsResponseFormat({ type: 'text' })).toBe(true);
+  });
+});
