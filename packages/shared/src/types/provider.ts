@@ -1,6 +1,6 @@
 // Provider 추상화 타입 정의
 
-import type { ChatMessage, ChatCompletionTool, ToolChoice, ChatMessageToolCall } from './api.js';
+import type { ChatMessage, ChatCompletionTool, ChatResponseFormat, ToolChoice, ChatMessageToolCall } from './api.js';
 
 // 빌트인 프로바이더 (메인 코드에 포함)
 export const BUILTIN_PROVIDERS = ['claude', 'codex', 'copilot', 'gemini', 'agy', 'grok', 'kimi'] as const;
@@ -119,6 +119,10 @@ export interface ExecuteOptions {
   // 일반 CLI provider는 기존 호환성을 위해 무시한다.
   tools?: ChatCompletionTool[];
   toolChoice?: ToolChoice;
+  // OpenAI 호환 structured output (Chat Completions의 response_format).
+  // 아래 이미지 전용 responseFormat과 의미가 완전히 다르므로 필드를 분리했다.
+  // HTTP provider는 요청 body로 패스스루, agy는 --json-schema로 변환한다.
+  chatResponseFormat?: ChatResponseFormat;
   // Image generation passthrough (OpenAI Images API)
   responseFormat?: 'url' | 'b64_json';
   n?: number;

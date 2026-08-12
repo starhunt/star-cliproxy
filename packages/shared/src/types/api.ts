@@ -51,6 +51,25 @@ export interface ChatMessage {
   reasoning_content?: string;
 }
 
+// === Structured output (OpenAI 호환 response_format) ===
+
+// json_schema 모드의 스키마 봉투. name/strict는 OpenAI 래퍼이고,
+// 백엔드/CLI에 실제로 전달되는 것은 중첩된 schema뿐이다.
+export interface ChatJsonSchema {
+  name: string;
+  description?: string;
+  strict?: boolean;
+  schema: Record<string, unknown>;
+}
+
+// 세 타입 모두 요청으로 받아들이되, 스키마 강제는 json_schema에서만 일어난다.
+// text/json_object는 지원 백엔드(HTTP provider)로 패스스루만 하며,
+// 강제하지 못하는 프로바이더로 라우팅되면 X-Unsupported-Params 헤더로 알린다.
+export type ChatResponseFormat =
+  | { type: 'text' }
+  | { type: 'json_object' }
+  | { type: 'json_schema'; json_schema: ChatJsonSchema };
+
 export interface ChatCompletionRequest {
   model: string;
   messages: ChatMessage[];
@@ -66,6 +85,9 @@ export interface ChatCompletionRequest {
   reasoning_effort?: string;
   // 추론 본문(thinking)을 응답에 포함할지. 우선순위: body > mapping > 전역 default(false).
   include_reasoning?: boolean;
+  // OpenAI 호환 structured output. HTTP provider는 패스스루, agy는 --json-schema로 변환.
+  // 강제하지 못하는 프로바이더는 무시하고 X-Unsupported-Params 헤더로 알린다.
+  response_format?: ChatResponseFormat;
 }
 
 export interface ChatCompletionChoice {
