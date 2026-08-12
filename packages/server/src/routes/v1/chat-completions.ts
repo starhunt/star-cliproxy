@@ -187,6 +187,31 @@ function safeWrite(raw: NodeJS.WritableStream, data: string): boolean {
   }
 }
 
+// response_format(structured output) 형태 검증.
+// 잘못된 형태를 프로바이더까지 내려보내면 CLI 인수/백엔드 단계에서 원인 파악이 어려운
+// 에러가 되므로 라우트에서 400으로 잘라낸다. 반환값은 에러 메시지 (유효하면 null).
+export function validateResponseFormat(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return 'response_format must be an object.';
+  }
+
+  const format = value as Record<string, unknown>;
+  if (format.type !== 'text' && format.type !== 'json_object' && format.type !== 'json_schema') {
+    return 'response_format.type must be one of: text, json_object, json_schema.';
+  }
+  if (format.type !== 'json_schema') return null;
+
+  const wrapper = format.json_schema;
+  if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper)) {
+    return 'response_format.json_schema is required and must be an object when type is "json_schema".';
+  }
+  const schema = (wrapper as Record<string, unknown>).schema;
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return 'response_format.json_schema.schema must be a JSON Schema object.';
+  }
+  return null;
+}
+
 function makeValidationError(message: string, param?: string) {
   return {
     error: {
@@ -265,6 +290,21 @@ export function registerChatCompletionsRoute(
       // model명 sanitize
       body.model = sanitizeString(body.model);
 
+      // structured output 요청 형태 검증 (프로바이더 지원 여부는 라우팅 후 판단)
+      if (body.response_format != null) {
+        const formatError = validateResponseFormat(body.response_format);
+        if (formatError) {
+          return reply.status(400).send({
+            error: {
+              message: formatError,
+              type: 'invalid_request_error',
+              param: 'response_format',
+              code: 'invalid_response_format',
+            },
+          });
+        }
+      }
+
       // ADD-06: CLI에서 지원하지 않는 파라미터 감지
       const unsupportedParams: string[] = [];
       if (body.temperature != null) unsupportedParams.push('temperature');
@@ -306,6 +346,10 @@ export function registerChatCompletionsRoute(
         bodyReasoningEffort = normalized;
       }
 
+      // 스키마 준수 JSON은 reasoning 마커 분리 대상에서 제외한다 — 값 안에 마커와 같은
+      // 문자열이 들어 있으면 splitter가 잘라내 유효하지 않은 JSON이 되기 때문.
+      const structuredRequested = body.response_format?.type === 'json_schema';
+
       // include_reasoning: body > mapping > 전역 default(false). undefined는 폴백.
       const bodyIncludeReasoning: boolean | undefined = typeof body.include_reasoning === 'boolean'
         ? body.include_reasoning
@@ -317,8 +361,11 @@ export function registerChatCompletionsRoute(
 
       // === 캐시 조회 (non-streaming만) ===
       // tool call에는 매 요청마다 새 call ID가 필요하고 tools/tool_choice도 기존 캐시 키에
-      // 포함되지 않으므로 캐시하지 않는다. 일반 텍스트 요청의 기존 캐시 동작은 유지한다.
-      const requestHash = !body.stream && !(body.tools && body.tools.length > 0)
+      // 포함되지 않으므로 캐시하지 않는다. response_format도 캐시 키 밖이라, 캐시했다면
+      // 스키마 없는 응답과 스키마 준수 응답이 서로 섞여 반환된다. 일반 텍스트 요청의 기존 캐시 동작은 유지한다.
+      const requestHash = !body.stream
+        && !(body.tools && body.tools.length > 0)
+        && !body.response_format
         ? deps.cache.generateHash(body.model, body.messages)
         : undefined;
 
@@ -393,6 +440,13 @@ export function registerChatCompletionsRoute(
           continue;
         }
 
+        // structured output을 강제하지 못하는 프로바이더로 라우팅됐으면 요청은 그대로 진행하되
+        // 헤더로 알린다 (temperature/max_tokens와 같은 처리). 폴백 대상마다 달라지므로 루프 안에서 계산.
+        const routeUnsupportedParams = body.response_format
+          && !provider.supportsResponseFormat(body.response_format)
+          ? [...unsupportedParams, 'response_format']
+          : unsupportedParams;
+
         // 활성 요청 추적 시작
         deps.activeRequests.start({
           requestId,
@@ -450,7 +504,7 @@ export function registerChatCompletionsRoute(
               'X-Request-ID': requestId,
               ...(origin ? { 'Access-Control-Allow-Origin': origin } : {}),
               ...(routes.indexOf(route) > 0 ? { 'X-Fallback-Provider': route.provider } : {}),
-              ...(unsupportedParams.length > 0 ? { 'X-Unsupported-Params': unsupportedParams.join(',') } : {}),
+              ...(routeUnsupportedParams.length > 0 ? { 'X-Unsupported-Params': routeUnsupportedParams.join(',') } : {}),
             });
 
             // 스트림 단위 include_reasoning 결정 (body > mapping > false)
@@ -461,7 +515,7 @@ export function registerChatCompletionsRoute(
             const reasoningExplicit = bodyIncludeReasoning !== undefined
               || (route.includeReasoning !== null && route.includeReasoning !== undefined);
             // splitter는 백엔드가 reasoning을 별도 필드로 분리하지 않고 content에 마커와 함께 보내는 경우를 위함.
-            const streamSplitter = reasoningExplicit ? new ReasoningSplitter() : null;
+            const streamSplitter = reasoningExplicit && !structuredRequested ? new ReasoningSplitter() : null;
 
             const roleChunk = formatAsSSE(
               { type: 'delta', content: '' },
@@ -490,6 +544,7 @@ export function registerChatCompletionsRoute(
               extraBody: route.extraBody,
               tools: body.tools,
               toolChoice: body.tool_choice,
+              chatResponseFormat: body.response_format,
             });
 
             // text_delta 안의 마커를 splitter로 잘라서 thinking/text_delta로 재분배하는 헬퍼.
@@ -644,13 +699,14 @@ export function registerChatCompletionsRoute(
               extraBody: route.extraBody,
               tools: body.tools,
               toolChoice: body.tool_choice,
+              chatResponseFormat: body.response_format,
             }),
           );
 
           // 추론 본문 분리: provider가 reasoning을 분리해 보냈으면 그대로, 아니면 content 안의 마커로 split.
           let content = result.content;
           let reasoning = result.reasoning ?? '';
-          if (!reasoning) {
+          if (!reasoning && !structuredRequested) {
             const split = splitReasoning(content);
             if (split.reasoning) {
               reasoning = split.reasoning;
@@ -699,8 +755,8 @@ export function registerChatCompletionsRoute(
           }
           reply.header('X-Request-ID', requestId);
           reply.header('X-Cache', 'MISS');
-          if (unsupportedParams.length > 0) {
-            reply.header('X-Unsupported-Params', unsupportedParams.join(','));
+          if (routeUnsupportedParams.length > 0) {
+            reply.header('X-Unsupported-Params', routeUnsupportedParams.join(','));
           }
           // codex CLI 세션 재사용 시 thread_id 노출 (참고용). 자동 재사용은 X-Cliproxy-Session-Id 기반.
           if (result.meta?.threadId) {
