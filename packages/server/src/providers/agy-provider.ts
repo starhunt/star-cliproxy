@@ -1,5 +1,6 @@
 import type { ChatResponseFormat, ExecuteOptions, ExecuteResult, ProviderConfigYaml, ProviderEvent, TokenUsage } from '@star-cliproxy/shared';
 import { BaseProvider, gracefulKill, trackProcess } from './base-provider.js';
+import { requireStructuredOutput, schemaArgument, wantsSchemaEnforcement } from './structured-output.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -39,26 +40,6 @@ interface AgyResultPayload {
   json_schema?: unknown;
   error?: string;
   usage?: AgyUsage;
-}
-
-// 이 요청이 agy에 스키마 강제를 요구하는지. json_object/text는 agy가 강제하지 못하므로 제외.
-function wantsSchemaEnforcement(format: ChatResponseFormat | undefined): format is Extract<ChatResponseFormat, { type: 'json_schema' }> {
-  return format?.type === 'json_schema';
-}
-
-// structured_output을 OpenAI message.content로 쓸 JSON 문자열로 직렬화한다.
-// 값이 없으면 오염된 response로 폴백하지 않고 실패시킨다 — 클라이언트가
-// 유효하지 않은 JSON을 스키마 준수 응답으로 오인하는 편보다 폴백 라우팅이 낫다.
-function requireStructuredOutput(result: AgyResultPayload): string {
-  if (result.structured_output === undefined || result.structured_output === null) {
-    throw new Error(
-      'agy CLI가 structured_output을 반환하지 않았습니다 (response_format=json_schema). ' +
-      'agy 1.1.12+ 의 --json-schema 지원이 필요합니다.',
-    );
-  }
-  return typeof result.structured_output === 'string'
-    ? result.structured_output
-    : JSON.stringify(result.structured_output);
 }
 
 function toTokenUsage(usage: AgyUsage | undefined, fallbackText = ''): TokenUsage {
@@ -157,9 +138,7 @@ export class AgyProvider extends BaseProvider {
     const prompt = convertMessagesToSinglePrompt(options.messages);
 
     // 스키마도 -p와 같은 인수 공간을 쓰므로 프롬프트와 합산해 ARG_MAX를 지킨다.
-    const schemaArg = wantsSchemaEnforcement(options.chatResponseFormat)
-      ? JSON.stringify(options.chatResponseFormat.json_schema.schema)
-      : undefined;
+    const schemaArg = schemaArgument(options.chatResponseFormat);
     const argBytes = Buffer.byteLength(prompt, 'utf8')
       + (schemaArg ? Buffer.byteLength(schemaArg, 'utf8') : 0);
 
@@ -234,7 +213,7 @@ export class AgyProvider extends BaseProvider {
     // 스키마를 요청했으면 response(프로즈 + 스키마 외 필드 혼재)가 아니라
     // structured_output을 그대로 message.content로 돌려준다.
     const content = wantsSchemaEnforcement(options.chatResponseFormat)
-      ? requireStructuredOutput(result)
+      ? requireStructuredOutput(result.structured_output, 'agy', 'structured_output')
       : stripAnsi(result.response ?? '').trim();
     return {
       content,
@@ -323,7 +302,7 @@ export class AgyProvider extends BaseProvider {
 
       if (schemaEnforced) {
         // 스키마 준수 JSON 하나만 내보낸다 (delta는 위에서 억제됨).
-        yield { type: 'text_delta', text: requireStructuredOutput(finalResult) };
+        yield { type: 'text_delta', text: requireStructuredOutput(finalResult.structured_output, 'agy', 'structured_output') };
       } else {
         // Delta를 내보내지 않은 호환 구현에서도 최종 response를 잃지 않는다.
         const fallbackContent = stripAnsi(finalResult.response ?? '').trim();
