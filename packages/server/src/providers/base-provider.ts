@@ -105,7 +105,7 @@ export abstract class BaseProvider {
     }
 
     options.onDebug?.({ cliArgs: this.fullCommand(args), stdout, stderr });
-    return this.parseNonStreamOutput(stdout);
+    return this.parseNonStreamOutput(stdout, options);
   }
 
   // streaming 실행
@@ -264,7 +264,8 @@ export abstract class BaseProvider {
   }
 
   // non-streaming 출력에서 텍스트 추출 (서브클래스에서 오버라이드 가능)
-  protected parseNonStreamOutput(stdout: string): ExecuteResult {
+  // options는 structured output처럼 요청 컨텍스트가 필요한 파싱을 위해 전달된다 (선택적).
+  protected parseNonStreamOutput(stdout: string, _options?: ExecuteOptions): ExecuteResult {
     // 기본: NDJSON 라인들에서 텍스트 추출
     const lines = stdout.trim().split('\n');
     const contentParts: string[] = [];

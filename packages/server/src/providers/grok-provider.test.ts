@@ -297,3 +297,112 @@ describe('GrokProvider.executeStream (streaming-json)', () => {
     await expect(collect()).rejects.toThrow(/bad model/);
   });
 });
+
+describe('GrokProvider - structured output (response_format)', () => {
+  const jsonSchemaFormat = {
+    type: 'json_schema' as const,
+    json_schema: {
+      name: 'answer_shape',
+      strict: true,
+      schema: {
+        type: 'object',
+        properties: { answer: { type: 'string' } },
+        required: ['answer'],
+        additionalProperties: false,
+      },
+    },
+  };
+
+  it('중첩 schema만 --json-schema로 전달', () => {
+    const provider = new GrokProvider(baseConfig());
+    const args = (provider as unknown as BuildArgs).buildArgs(
+      baseOptions({ chatResponseFormat: jsonSchemaFormat }),
+    );
+    const idx = args.indexOf('--json-schema');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(JSON.parse(args[idx + 1])).toEqual(jsonSchemaFormat.json_schema.schema);
+  });
+
+  it('json_object/text는 --json-schema를 추가하지 않음', () => {
+    const provider = new GrokProvider(baseConfig());
+    for (const format of [{ type: 'json_object' as const }, { type: 'text' as const }]) {
+      const args = (provider as unknown as BuildArgs).buildArgs(baseOptions({ chatResponseFormat: format }));
+      expect(args).not.toContain('--json-schema');
+    }
+  });
+
+  it('extra_args에 --json-schema가 있으면 사용자 값 존중', () => {
+    const provider = new GrokProvider(baseConfig({ extra_args: ['--json-schema', '/etc/custom.json'] }));
+    const args = (provider as unknown as BuildArgs).buildArgs(
+      baseOptions({ chatResponseFormat: jsonSchemaFormat }),
+    );
+    expect(args.filter((arg) => arg === '--json-schema')).toHaveLength(1);
+    expect(args).toContain('/etc/custom.json');
+  });
+
+  it('execute는 structuredOutput을 content로 반환', async () => {
+    spawnMock.mockReturnValue(fakeChild(JSON.stringify({
+      text: '{"answer": "blue"}',
+      stopReason: 'EndTurn',
+      structuredOutput: { answer: 'blue' },
+      usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+    })));
+    const provider = new GrokProvider(baseConfig());
+    const result = await provider.execute(baseOptions({ chatResponseFormat: jsonSchemaFormat }));
+    expect(JSON.parse(result.content)).toEqual({ answer: 'blue' });
+  });
+
+  it('execute는 snake_case structured_output도 인식', async () => {
+    spawnMock.mockReturnValue(fakeChild(JSON.stringify({
+      text: 'x',
+      stopReason: 'EndTurn',
+      structured_output: { answer: 'blue' },
+      usage: { total_tokens: 3 },
+    })));
+    const provider = new GrokProvider(baseConfig());
+    const result = await provider.execute(baseOptions({ chatResponseFormat: jsonSchemaFormat }));
+    expect(JSON.parse(result.content)).toEqual({ answer: 'blue' });
+  });
+
+  it('구조화 출력이 없으면 throw (텍스트 폴백 금지)', async () => {
+    spawnMock.mockReturnValue(fakeChild(grokJson('plain prose')));
+    const provider = new GrokProvider(baseConfig());
+    await expect(provider.execute(baseOptions({ chatResponseFormat: jsonSchemaFormat })))
+      .rejects.toThrow(/structuredOutput/);
+  });
+
+  it('response_format이 없으면 structuredOutput이 있어도 기존 text 경로 유지', async () => {
+    spawnMock.mockReturnValue(fakeChild(JSON.stringify({
+      text: 'plain answer',
+      stopReason: 'EndTurn',
+      structuredOutput: { answer: 'ignored' },
+      usage: { total_tokens: 3 },
+    })));
+    const provider = new GrokProvider(baseConfig());
+    const result = await provider.execute(baseOptions());
+    expect(result.content).toBe('plain answer');
+  });
+
+  it('스트리밍은 delta를 억제하고 구조화 값 1회만 emit', async () => {
+    // 실측(grok 1.0.3): delta가 JSON 조각으로 오지만 CLI마다 동작이 갈리므로 통일해 버퍼링한다.
+    spawnMock.mockReturnValue(fakeChild(JSON.stringify({
+      text: '{"answer": "blue"}',
+      stopReason: 'EndTurn',
+      structuredOutput: { answer: 'blue' },
+      usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+    })));
+    const provider = new GrokProvider(baseConfig());
+    const events: ProviderEvent[] = [];
+    for await (const ev of provider.executeStream(baseOptions({ stream: true, chatResponseFormat: jsonSchemaFormat }))) {
+      events.push(ev);
+    }
+    expect(events.map((e) => e.type)).toEqual(['text_delta', 'usage', 'done']);
+    expect((events[0] as { type: 'text_delta'; text: string }).text).toBe('{"answer":"blue"}');
+  });
+
+  it('json_schema만 강제 가능하다고 선언', () => {
+    const provider = new GrokProvider(baseConfig());
+    expect(provider.supportsResponseFormat(jsonSchemaFormat)).toBe(true);
+    expect(provider.supportsResponseFormat({ type: 'json_object' })).toBe(false);
+  });
+});

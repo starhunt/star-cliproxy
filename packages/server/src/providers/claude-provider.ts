@@ -1,5 +1,6 @@
-import type { ExecuteOptions, ExecuteResult, ProviderEvent, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
+import type { ChatResponseFormat, ExecuteOptions, ExecuteResult, ProviderEvent, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
 import { BaseProvider } from './base-provider.js';
+import { requireStructuredOutput, schemaArgument, shouldBufferStream, wantsSchemaEnforcement } from './structured-output.js';
 import { convertMessages } from '../utils/message-converter.js';
 import { executeSdk, executeStreamSdk, type SdkExecutorConfig, type SdkMeta } from './claude-sdk-executor.js';
 import { ClaudeSdkSessionManager } from './claude-sdk-session-manager.js';
@@ -123,36 +124,40 @@ export class ClaudeProvider extends BaseProvider {
       args.push('--effort', options.reasoningEffort);
     }
 
+    // OpenAI response_format.json_schema → claude --json-schema (중첩 schema만).
+    // 사용자가 extra_args로 스키마를 고정했다면 --effort와 같은 정책으로 그 값을 존중한다.
+    const schemaArg = schemaArgument(options.chatResponseFormat);
+    const userHasSchema = effective.extra_args.some(
+      (arg) => arg === '--json-schema' || arg.startsWith('--json-schema='),
+    );
+    if (schemaArg && !userHasSchema) {
+      args.push('--json-schema', schemaArg);
+    }
+
     args.push(...effective.extra_args);
 
     return args;
   }
 
+  // CLI 모드에서만 --json-schema를 줄 수 있다. sdk/channel-worker는 별도 실행기를 타므로
+  // 미지원으로 선언하고 라우트가 X-Unsupported-Params로 알리게 한다.
+  override supportsResponseFormat(format: ChatResponseFormat): boolean {
+    if (format.type !== 'json_schema') return false;
+    return this.config.mode !== 'sdk' && this.config.mode !== 'channel-worker';
+  }
+
   // Claude json 출력에서 결과 추출
-  protected override parseNonStreamOutput(stdout: string): ExecuteResult {
+  protected override parseNonStreamOutput(stdout: string, options?: ExecuteOptions): ExecuteResult {
     const trimmed = stdout.trim();
     if (!trimmed) {
       return { content: '', usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, finishReason: 'error' };
     }
 
+    // JSON 파싱만 try로 감싼다 — 아래 structured output 검증 실패는 텍스트 폴백이 아니라
+    // 그대로 던져야 한다(스키마를 만족하지 않는 문자열을 구조화 응답으로 넘기지 않기 위해).
+    let data: Record<string, unknown> & { usage?: Record<string, number> };
     try {
-      const data = JSON.parse(trimmed);
-
-      const content = data.result ?? '';
-      const inputTokens = data.usage?.input_tokens ?? 0;
-      const outputTokens = data.usage?.output_tokens ?? 0;
-      const cacheRead = data.usage?.cache_read_input_tokens ?? 0;
-      const cacheCreate = data.usage?.cache_creation_input_tokens ?? 0;
-
-      return {
-        content,
-        usage: {
-          promptTokens: inputTokens + cacheRead + cacheCreate,
-          completionTokens: outputTokens,
-          totalTokens: inputTokens + outputTokens + cacheRead + cacheCreate,
-        },
-        finishReason: data.stop_reason === 'max_tokens' ? 'length' : 'stop',
-      };
+      data = JSON.parse(trimmed);
     } catch {
       // JSON 파싱 실패 시 텍스트로 처리
       return {
@@ -161,6 +166,27 @@ export class ClaudeProvider extends BaseProvider {
         finishReason: 'stop',
       };
     }
+
+    // 스키마를 요청했으면 result 텍스트가 아니라 structured_output을 정본으로 쓴다.
+    // (claude는 내부 StructuredOutput tool round-trip으로 값을 만들며, result가 항상
+    //  스키마를 만족한다는 보장은 CLI 버전에 의존한다.)
+    const content = wantsSchemaEnforcement(options?.chatResponseFormat)
+      ? requireStructuredOutput(data.structured_output, 'claude', 'structured_output')
+      : (data.result as string | undefined) ?? '';
+    const inputTokens = data.usage?.input_tokens ?? 0;
+    const outputTokens = data.usage?.output_tokens ?? 0;
+    const cacheRead = data.usage?.cache_read_input_tokens ?? 0;
+    const cacheCreate = data.usage?.cache_creation_input_tokens ?? 0;
+
+    return {
+      content,
+      usage: {
+        promptTokens: inputTokens + cacheRead + cacheCreate,
+        completionTokens: outputTokens,
+        totalTokens: inputTokens + outputTokens + cacheRead + cacheCreate,
+      },
+      finishReason: data.stop_reason === 'max_tokens' ? 'length' : 'stop',
+    };
   }
 
   // --- mode 기반 분기 ---
@@ -195,6 +221,17 @@ export class ClaudeProvider extends BaseProvider {
 
   override async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
     const effective = this.getEffectiveConfig(options);
+
+    // 스키마 요청은 완성된 구조화 값 1회 emit으로 통일한다 (structured-output.ts 주석 참고).
+    // 실측(claude 2.1.228): delta는 프로즈를 흘리고 최종 result에만 스키마 준수 값이 담긴다.
+    if (shouldBufferStream(options.chatResponseFormat) && effective.mode !== 'sdk' && effective.mode !== 'channel-worker') {
+      const result = await this.execute({ ...options, stream: false });
+      yield { type: 'text_delta', text: result.content };
+      yield { type: 'usage', usage: result.usage };
+      yield { type: 'done', finishReason: 'stop' };
+      return;
+    }
+
     if (effective.mode === 'sdk') {
       const sdkLines: string[] = [];
       let streamMeta: SdkMeta | undefined;

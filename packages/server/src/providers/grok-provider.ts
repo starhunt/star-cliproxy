@@ -1,5 +1,6 @@
-import type { ExecuteOptions, ExecuteResult, ProviderConfigYaml, ProviderEvent, TokenUsage } from '@star-cliproxy/shared';
+import type { ChatResponseFormat, ExecuteOptions, ExecuteResult, ProviderConfigYaml, ProviderEvent, TokenUsage } from '@star-cliproxy/shared';
 import { BaseProvider, gracefulKill, trackProcess } from './base-provider.js';
+import { requireStructuredOutput, schemaArgument, shouldBufferStream, wantsSchemaEnforcement } from './structured-output.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -36,10 +37,18 @@ interface GrokJsonResult {
   type?: string;
   data?: string;
   text?: string;
+  // --json-schema로 요청했을 때만 채워지는 스키마 준수 값. 버전에 따라 표기가 갈려 둘 다 읽는다.
+  structuredOutput?: unknown;
+  structured_output?: unknown;
   error?: string;
   message?: string;
   stopReason?: string;
   usage?: GrokUsage;
+}
+
+// grok 버전에 따라 camelCase/snake_case가 갈리므로 둘 다 확인한다.
+function grokStructuredOutput(result: GrokJsonResult): unknown {
+  return result.structuredOutput ?? result.structured_output;
 }
 
 interface PreparedInvocation {
@@ -144,11 +153,19 @@ export class GrokProvider extends BaseProvider {
       ? []
       : ['--no-auto-update'];
     const modelArgs = model ? ['-m', model] : [];
+
+    // OpenAI response_format.json_schema → grok --json-schema (중첩 schema만).
+    // 사용자가 extra_args로 스키마를 고정했다면 --model/--effort와 같은 정책으로 그 값을 존중한다.
+    const schemaArg = schemaArgument(options.chatResponseFormat);
+    const userHasSchema = hasFlag(this.config.extra_args, ['--json-schema']);
+    const schemaArgs = schemaArg && !userHasSchema ? ['--json-schema', schemaArg] : [];
+
     return [
       ...extraArgs,
       ...updateArgs,
       ...effortArgs,
       ...modelArgs,
+      ...schemaArgs,
       '--output-format',
       outputFormat,
     ];
@@ -216,7 +233,10 @@ export class GrokProvider extends BaseProvider {
       throw new Error(`grok CLI failed: ${result.message || result.error || 'unknown error'}`);
     }
 
-    const content = stripAnsi(result.text ?? result.data ?? '').trim();
+    // 스키마를 요청했으면 텍스트가 아니라 구조화 출력을 정본으로 쓴다.
+    const content = wantsSchemaEnforcement(options.chatResponseFormat)
+      ? requireStructuredOutput(grokStructuredOutput(result), 'grok', 'structuredOutput')
+      : stripAnsi(result.text ?? result.data ?? '').trim();
     return {
       content,
       usage: toTokenUsage(result.usage, content),
@@ -224,8 +244,23 @@ export class GrokProvider extends BaseProvider {
     };
   }
 
+  // grok은 --json-schema로 스키마만 강제할 수 있다. json_object/text는 강제 수단이 없다.
+  override supportsResponseFormat(format: ChatResponseFormat): boolean {
+    return format.type === 'json_schema';
+  }
+
   // streaming-json의 text/thought/end 이벤트를 실제 ProviderEvent로 변환한다.
   override async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
+    // 스키마 요청은 완성된 구조화 값 1회 emit으로 통일한다 (structured-output.ts 주석 참고).
+    // grok의 delta는 JSON 조각이라 이어붙이면 유효하지만, CLI마다 동작이 갈리므로 버퍼링한다.
+    if (shouldBufferStream(options.chatResponseFormat)) {
+      const result = await this.execute({ ...options, stream: false });
+      yield { type: 'text_delta', text: result.content };
+      yield { type: 'usage', usage: result.usage };
+      yield { type: 'done', finishReason: 'stop' };
+      return;
+    }
+
     const invocation = await this.prepareInvocation({ ...options, stream: true }, 'streaming-json');
     const { args } = invocation;
     const child = spawn(this.config.cli_path, args, {

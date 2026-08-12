@@ -1,5 +1,6 @@
-import type { ExecuteOptions, ExecuteResult, ProviderEvent, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
+import type { ChatResponseFormat, ExecuteOptions, ExecuteResult, ProviderEvent, ProviderConfigYaml, HealthStatus } from '@star-cliproxy/shared';
 import { BaseProvider } from './base-provider.js';
+import { schemaArgument, shouldBufferStream, wantsSchemaEnforcement } from './structured-output.js';
 import { convertMessagesToSinglePrompt } from '../utils/message-converter.js';
 import { prepareCodexPrompt } from '../utils/image-extractor.js';
 import { CodexAppServerProcess, type CodexAppServerProcessConfig } from './codex-appserver-process.js';
@@ -7,7 +8,9 @@ import { CodexAppServerSessionManager } from './codex-appserver-session-manager.
 import { executeAppServer, executeStreamAppServer, type AppServerExecutorConfig, type AppServerMeta } from './codex-appserver-executor.js';
 import { CodexCliSessionManager } from './codex-cli-session-manager.js';
 import { mergeProviderConfig } from './provider-override.js';
-import { unlink } from 'node:fs/promises';
+import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 interface CodexExecuteContext {
   text: string;
@@ -16,6 +19,9 @@ interface CodexExecuteContext {
 
 interface CodexExecuteOptions extends ExecuteOptions {
   __codexPrompt?: CodexExecuteContext;
+  // codex는 스키마를 인라인 인수가 아니라 파일 경로로 받는다(--output-schema <path>).
+  // execute/executeStream이 임시 파일을 만들고 buildArgs가 그 경로를 사용한다.
+  __codexSchemaPath?: string;
 }
 
 // codex exec resume <id>에서 미지원되는 옵션 (검증된 --help 기준).
@@ -200,9 +206,13 @@ export class CodexProvider extends BaseProvider {
     const model = options.model || effective.default_model;
     const ctx = (options as CodexExecuteOptions).__codexPrompt;
 
+    // 스키마 요청은 resume을 타지 않는다 — codex exec resume은 --output-schema를 지원하지 않아
+    // 세션을 재사용하면 스키마 강제가 조용히 사라진다. 세션 연속성보다 스키마 준수를 우선한다.
+    const schemaPath = (options as CodexExecuteOptions).__codexSchemaPath;
+
     // resume 분기 판정: effective cli_options.enable_session_reuse + clientKey + 기존 thread 보유
     let resumeThreadId: string | null = null;
-    if (effective.cli_options?.enable_session_reuse === true && options.clientKey && !ctx?.imageFiles?.length) {
+    if (!schemaPath && effective.cli_options?.enable_session_reuse === true && options.clientKey && !ctx?.imageFiles?.length) {
       const sm = this.ensureCliSessionManager(effective.cli_options.session_ttl_ms);
       const existing = sm.get(options.clientKey, model);
       if (existing) {
@@ -245,6 +255,12 @@ export class CodexProvider extends BaseProvider {
       ];
     }
 
+    // 사용자가 extra_args로 스키마를 고정했다면 그 값을 존중한다(다른 provider와 동일 정책).
+    const userHasSchema = effective.extra_args.some(
+      (arg) => arg === '--output-schema' || arg.startsWith('--output-schema='),
+    );
+    const schemaArgs = schemaPath && !userHasSchema ? ['--output-schema', schemaPath] : [];
+
     const args: string[] = [
       'exec',
       // --json 필수: 없으면 TUI 출력이 되어 stdout 캡처 불가
@@ -252,6 +268,7 @@ export class CodexProvider extends BaseProvider {
       ...(injectEphemeral ? ['--ephemeral'] : []),
       ...reasoningArgs,
       ...effective.extra_args,
+      ...schemaArgs,
       ...((ctx?.imageFiles ?? []).flatMap((file) => ['--image', file])),
       // 모델 지정 (빈 값이면 Codex 기본 모델 사용)
       ...(model ? ['-m', model] : []),
@@ -318,9 +335,11 @@ export class CodexProvider extends BaseProvider {
       return result;
     }
     const { prompt, imageFiles, tempFiles } = await prepareCodexPrompt(options.messages);
+    const schema = await this.prepareSchemaFile(options);
     const ext: CodexExecuteOptions = {
       ...options,
       __codexPrompt: { text: prompt, imageFiles },
+      ...(schema ? { __codexSchemaPath: schema.path } : {}),
     };
 
     // CLI 모드: effective enable_session_reuse 기준으로 SessionManager 갱신 여부 결정
@@ -348,10 +367,44 @@ export class CodexProvider extends BaseProvider {
       throw err;
     } finally {
       await Promise.allSettled(tempFiles.map((file) => unlink(file)));
+      await schema?.cleanup();
     }
   }
 
+  // codex는 --output-schema로 파일 경로만 받으므로 요청마다 임시 파일에 스키마를 쓴다.
+  private async prepareSchemaFile(
+    options: ExecuteOptions,
+  ): Promise<{ path: string; cleanup: () => Promise<void> } | undefined> {
+    const schemaArg = schemaArgument(options.chatResponseFormat);
+    if (!schemaArg) return undefined;
+
+    const dir = await mkdtemp(join(tmpdir(), 'star-cliproxy-codex-schema-'));
+    const path = join(dir, 'response-schema.json');
+    try {
+      await writeFile(path, `${schemaArg}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    } catch (err) {
+      await rm(dir, { recursive: true, force: true });
+      throw err;
+    }
+    return { path, cleanup: () => rm(dir, { recursive: true, force: true }) };
+  }
+
+  // codex는 --output-schema로 스키마만 강제할 수 있고, app-server 모드는 별도 실행기를 탄다.
+  override supportsResponseFormat(format: ChatResponseFormat): boolean {
+    if (format.type !== 'json_schema') return false;
+    return !this.isAppServerMode;
+  }
+
   override async *executeStream(options: ExecuteOptions): AsyncIterable<ProviderEvent> {
+    // 스키마 요청은 완성된 구조화 값 1회 emit으로 통일한다 (structured-output.ts 주석 참고).
+    if (!this.isAppServerMode && shouldBufferStream(options.chatResponseFormat)) {
+      const result = await this.execute({ ...options, stream: false });
+      yield { type: 'text_delta', text: result.content };
+      yield { type: 'usage', usage: result.usage };
+      yield { type: 'done', finishReason: 'stop' };
+      return;
+    }
+
     if (this.isAppServerMode) {
       if (!this.appServerProcess?.isAlive()) {
         throw new Error('Codex app-server process is not running');
@@ -376,9 +429,11 @@ export class CodexProvider extends BaseProvider {
       return;
     }
     const { prompt, imageFiles, tempFiles } = await prepareCodexPrompt(options.messages);
+    const schema = await this.prepareSchemaFile(options);
     const ext: CodexExecuteOptions = {
       ...options,
       __codexPrompt: { text: prompt, imageFiles },
+      ...(schema ? { __codexSchemaPath: schema.path } : {}),
     };
 
     // CLI 모드: thread_started 이벤트 가로채서 SessionManager 갱신.
